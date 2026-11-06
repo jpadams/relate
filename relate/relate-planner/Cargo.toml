@@ -1,0 +1,17 @@
+[package]
+name = "relate-planner"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bind OpenCypher AST to a logical plan"
+license.workspace = true
+
+[dependencies]
+# ADR-0509 §4: the planner reads IR name fields (SmallName).
+relate-names = { workspace = true }
+relate-parser = { workspace = true }
+relate-core = { workspace = true }
+relate-ir = { workspace = true }
+relate-model = { workspace = true }
+relate-front = { workspace = true }
+relate-catalog = { workspace = true }

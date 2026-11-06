@@ -1,0 +1,134 @@
+name: Create loadtest baselines
+
+# Manual re-freeze (ADR-0071). Opens a PR; never pushes to main.
+# The default runner class is `vars.LOADTEST_RUNNER` — the ONE source
+# every stamping lane (`ci.yml` query-latency + loadtest-baselines) and
+# this freeze read, so a default freeze always lands on the class the
+# per-PR comparisons run on. The `runner` input re-pins all envelopes
+# onto a new runner class after a deliberate class change: set the
+# variable first, then dispatch with it.
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_runs:
+        description: "BASELINE_RUNS (worst-of-N envelope)"
+        required: false
+        default: "5"
+      runner:
+        description: "Runner label for the freeze (re-freeze class; empty = vars.LOADTEST_RUNNER, the class the CI comparisons run on)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: create-loadtest-baselines
+  cancel-in-progress: false
+
+# CI is not a user session: the CLI's anonymous usage metrics
+# (ADR-0079) are opted out on every relate spawn a lane of this
+# workflow can reach. Workflow-level — the ADR-0255 single-source
+# placement, so every lane inherits the identical value — and
+# DO_NOT_TRACK is not a CARGO* var, so the Swatinem/rust-cache
+# environment hash is untouched. (The baseline recipe's Docker
+# containers still receive only their explicit -e flags; silencing
+# them is the recipe's own layer.)
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  freeze:
+    name: Freeze loadtest envelopes
+    # `inputs.runner || vars.LOADTEST_RUNNER`: an explicit input re-pins the
+    # class; an empty input freezes on the variable — the same class every
+    # CI stamping lane runs on, so the default freeze is always comparable.
+    runs-on: ${{ inputs.runner || vars.LOADTEST_RUNNER }}
+    env:
+      BASELINE_FREEZE_SOURCE: ci
+      BASELINE_RUNNER: github-actions:${{ inputs.runner || vars.LOADTEST_RUNNER }}
+      BASELINE_RUNS: ${{ inputs.baseline_runs }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Require a branch dispatch
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+            echo "Dispatch from a branch (got ${GITHUB_REF_TYPE} ${GITHUB_REF_NAME}); refusing." >&2
+            exit 1
+          fi
+
+      # Same rate-limit relief as the CI loadtest gate (LABS-248).
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v4
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Pull baseline images
+        run: bash scripts/baseline-env.sh pull
+
+      - name: Envelope freeze (Docker baseline env)
+        run: make baseline-loadtests
+
+      - name: Upload frozen baselines
+        uses: actions/upload-artifact@v7
+        with:
+          name: loadtest-baseline-envelopes
+          path: |
+            baselines/fraud-loadtest.json
+            baselines/identity-loadtest.json
+            baselines/fraud-checkpoint.json
+            baselines/memory-shape-loadtest.json
+            baselines/query-latency-sf0.1.json
+          if-no-files-found: error
+
+      - name: Open PR with envelopes
+        env:
+          # Shell-inert delivery of the resolved runner label (explicit
+          # input, else the shared variable): bash never re-evaluates
+          # variable-expansion results, so a hostile runner label cannot
+          # execute in this contents:write job.
+          RUNNER_LABEL: ${{ inputs.runner || vars.LOADTEST_RUNNER }}
+        run: |
+          set -euo pipefail
+          branch="baselines/freeze-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${branch}"
+          git add \
+            baselines/fraud-loadtest.json \
+            baselines/identity-loadtest.json \
+            baselines/fraud-checkpoint.json \
+            baselines/memory-shape-loadtest.json \
+            baselines/query-latency-sf0.1.json
+          if git diff --cached --quiet; then
+            echo "No envelope changes; skipping PR."
+            exit 0
+          fi
+          git commit -m "$(cat <<EOF
+          Re-freeze CI loadtest baseline envelopes.
+
+          Produced by create-loadtest-baselines on ${RUNNER_LABEL} (ADR-0071).
+          EOF
+          )"
+          git push -u origin "HEAD:refs/heads/${branch}"
+          gh pr create \
+            --base "${GITHUB_REF_NAME}" \
+            --head "${branch}" \
+            --title "Re-freeze loadtest baselines (CI envelope)" \
+            --body "$(cat <<EOF
+          ## Summary
+          - CI-owned worst-of-N loadtest envelopes from \`create-loadtest-baselines\` (run ${GITHUB_RUN_ID}).
+          - Runner class \`github-actions:${RUNNER_LABEL}\`; does not push to \`${GITHUB_REF_NAME}\` directly.
+
+          ## Test plan
+          - [ ] \`loadtest-baselines\` on this PR is green (environment class match + ADR-0046 bands)
+          - [ ] Artifact \`loadtest-baseline-envelopes\` matches the committed JSON
+          EOF
+          )"

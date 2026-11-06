@@ -1,0 +1,59 @@
+name: Cancel on merge
+
+# Merging a PR does not cancel its in-flight check runs — GitHub only
+# cancels on a new push to the same ref (ci.yml's concurrency group) or a
+# manual cancel. After a squash-merge the ready run's long tail (corpus,
+# Bolt smokes, OS sweeps) burns to completion for a PR that no longer
+# exists. This cancels every in-progress/queued run on the merged PR's
+# head branch the moment it closes as merged.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+
+concurrency:
+  group: cancel-on-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  cancel:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - name: Cancel in-flight runs on the merged branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          ids=$(gh run list --repo "$REPO" --branch "$BRANCH" \
+            --status in_progress --json databaseId --jq '.[].databaseId')
+          ids="$ids $(gh run list --repo "$REPO" --branch "$BRANCH" \
+            --status queued --json databaseId --jq '.[].databaseId')"
+          for id in $ids; do
+            echo "canceling run $id on $BRANCH"
+            gh run cancel "$id" --repo "$REPO" || true
+          done
+          if [ -z "$(echo $ids | tr -d ' ')" ]; then
+            echo "no in-flight runs to cancel"
+          fi

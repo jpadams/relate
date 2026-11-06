@@ -1,0 +1,4 @@
+// r063: ( ( A | B ) | C ) [WALK-RE] — (workAt | knows) | likes (seed label Person, source seed p10)
+// source: restrictor matrix re-spelling of the PathDB template (faithful path-mode spelling); spike 2026-11-01
+// status: ok at SF0.1 (342.2 ms)
+MATCH REPEATABLE ELEMENTS p = WALK (x:Person)-[:workAt|knows|likeComment|likePost]-(y) WHERE x.ID = $seed RETURN p LIMIT 100

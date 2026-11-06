@@ -1,0 +1,12 @@
+[package]
+name = "relate-catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Label, relationship-type, and named-index catalog"
+license.workspace = true
+
+[dependencies]
+relate-core = { workspace = true }
+relate-model = { workspace = true }
+serde = { workspace = true }

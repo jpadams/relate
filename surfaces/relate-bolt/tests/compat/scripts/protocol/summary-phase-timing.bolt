@@ -1,0 +1,21 @@
+# ADR-0491: the SUCCESS ending a result carries the statement's
+# PARSE/PLAN/EXECUTE split beside t_last, under the ADR-0491 contract's
+# keys — parsing_time, planning_time and plan_execution_time as Float
+# seconds (a statement's split is timing-dependent, so the values are
+# pinned as "*" here; the Rust summary tests pin the Float type, the
+# exact placement and the phase-split values). RUN SUCCESS carries none
+# of the three — its ADR-0309 contract is unchanged.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS x" {} {}
+S: SUCCESS {"fields": ["x"]}
+C: PULL {"n": -1}
+S: RECORD [1]
+S: SUCCESS {"t_last": "*", "parsing_time": "*", "planning_time": "*", "plan_execution_time": "*"}
+
+C: RUN "CREATE (p:PhaseTiming {v: 1}) RETURN p.v AS v" {} {}
+S: SUCCESS {"fields": ["v"]}
+C: DISCARD {"n": -1}
+S: SUCCESS {"t_last": "*", "parsing_time": "*", "planning_time": "*", "plan_execution_time": "*"}

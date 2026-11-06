@@ -1,0 +1,40 @@
+{
+  "name": "@relate/relate",
+  "version": "0.16.1",
+  "description": "Relate Node.js client (C ABI via koffi)",
+  "main": "index.js",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relatedb/relate",
+    "directory": "clients/javascript"
+  },
+  "files": [
+    "index.js",
+    "values.js",
+    "graph.js",
+    "errors.js",
+    "index.d.ts",
+    ".agents/skills/relate/SKILL.md"
+  ],
+  "types": "index.d.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "koffi": "^2.9.0"
+  },
+  "optionalDependencies": {
+    "@relate/darwin-arm64": "0.16.1",
+    "@relate/darwin-x64": "0.16.1",
+    "@relate/linux-arm64": "0.16.1",
+    "@relate/linux-x64": "0.16.1",
+    "@relate/win32-x64": "0.16.1"
+  },
+  "scripts": {
+    "test": "node test.js && node loadtest/test.js"
+  },
+  "allowScripts": {
+    "koffi@2.16.3": true
+  }
+}

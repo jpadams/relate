@@ -1,0 +1,18 @@
+# ADR-0484 decision 4: the 5.4 LOGON flow. The HELLO carries no auth
+# fields — user_agent plus the mandatory bolt_agent map alone (decision 3)
+# — and answers SUCCESS without opening a session; LOGON with the
+# configured basic credential opens it (SUCCESS {}); RUN and PULL then
+# serve a result; GOODBYE closes. The server runs with a preset
+# credential, so the basic scheme is really checked.
+!: BOLT 5.4
+!: SERVER_ARGS --uri :memory: --auth relate:compat-pass
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: LOGON {"scheme": "basic", "principal": "relate", "credentials": "compat-pass"}
+S: SUCCESS {}
+C: RUN "RETURN 1 AS n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["n"]}
+   RECORD [1]
+   SUCCESS {}

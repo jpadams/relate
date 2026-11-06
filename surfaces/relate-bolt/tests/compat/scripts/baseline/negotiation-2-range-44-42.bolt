@@ -1,0 +1,11 @@
+# Baseline B-02 (negotiation-2; also pins F-03): the range proposal
+# 4.4 down to 4.2 (00 02 04 04) covers 4.4, so it is answered with the
+# plain version 00 00 04 04, and the connection then serves a session:
+# HELLO succeeds (ADR-0303). The leading C: <RAW> is the script's own
+# handshake, so there is no automatic one and no !: AUTO HELLO.
+!: AUTO GOODBYE
+
+C: <RAW> 60 60 B0 17 00 02 04 04 00 00 00 00 00 00 00 00 00 00 00 00
+S: <RAW> 00 00 04 04
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "scheme": "none"}
+S: SUCCESS {}

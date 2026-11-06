@@ -1,0 +1,38 @@
+[package]
+name = "relate-git-to-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The `git-to-graph` importer as a first-party extension crate (ADR-0431
+# §11): the checkout-history reader and planner as an MCP stdio child the
+# `relate run` host drives (ADR-0442, ADR-0447). The lib is the importer
+# — `git log` reading and the bounded pre-write plan, moved from the CLI's
+# `lab` tree, carrying no `Database` and never touching a store
+# (ADR-0447 §4); the bin is the child: one request envelope on stdin, then
+# the MCP session whose `update_schema`, `write_cypher` and `report_output`
+# calls are the import.
+#
+# `relate-core` is the engine's leaf crate the temporal parser lives
+# in (ADR-0021): the importer calls `parse_iso` for `%aI` instants
+# instead of hand-rolling calendar arithmetic — an engine crate with no
+# `Database`, the one engine reach a first-party child makes.
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+relate-core = { workspace = true }
+# The wire kit: the capped `git log` read, the record writer, the shared
+# stored-path rendering.
+relate-wire = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# The git fixtures the reader and plan tests drive (`Repo`,
+# `history_fixture`): a test-support dev dependency, the testing group's
+# one sanctioned reach (ADR-0103's dev-dep rule, extended to this group).
+relate-test-support = { workspace = true, features = ["envelope"] }
+
+[[bin]]
+name = "git-to-graph"
+path = "src/main.rs"

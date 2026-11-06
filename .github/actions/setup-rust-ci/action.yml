@@ -1,0 +1,153 @@
+# Shared Rust CI preamble (LABS-310 round 4): the sccache +
+# rust-toolchain + free-disk + mold + rust-cache block that every
+# Rust-compiling ci.yml lane used to copy by hand. One canonical copy kills
+# the drift class that produced the free-disk-on-4-core bug (a lane skipping
+# or mis-ordering one of these steps). Checkout stays the job's own first
+# step; this action runs immediately after it.
+#
+# Behavior is byte-identical to the replaced blocks: same steps, same order
+# (sccache -> toolchain -> free-disk -> mold install -> mold env -> cache),
+# same env writes. The mold RUSTFLAGS line must land BEFORE the cache step
+# (it feeds the rust-cache env hash; a RUSTFLAGS change invalidates cargo
+# fingerprints), so this action is the thing that keeps that ordering.
+name: Setup Rust CI
+description: >-
+  Set up sccache, install the pinned Rust toolchain, free runner
+  disk, install/select the mold linker, and restore the (optionally shared)
+  rust-cache — the standard preamble of every Rust-compiling CI lane.
+inputs:
+  sccache:
+    description: >-
+      Stamp tracked sources with the HEAD committer date so a restored
+      compiles are served from the content-addressed sccache (ADR-0331).
+    default: "true"
+  toolchain-components:
+    description: >-
+      Comma-separated rustup components for dtolnay/rust-toolchain (e.g.
+      "rustfmt, clippy"). Empty installs no extra components.
+    default: ""
+  toolchain-targets:
+    description: >-
+      Comma-separated rustup targets (e.g. "wasm32-unknown-unknown"). Empty
+      installs no extra targets.
+    default: ""
+  free-disk:
+    description: >-
+      Run scripts/free-disk.sh on Linux. False on the bigger-runner lanes
+      (~150 GB SSD) where the cleanup time buys nothing.
+    default: "true"
+  free-disk-aggressive:
+    description: >-
+      Pass FREE_DISK_AGGRESSIVE=1 to free-disk.sh (the 8-dir trim). Only for
+      pure-Rust jobs that run no language setup action afterwards.
+    default: "false"
+  mold:
+    description: >-
+      Install mold and link Linux builds with it (ADR-0255). The steps are
+      Linux-guarded, so leaving this true on macOS/Windows jobs is a no-op.
+    default: "true"
+  cache:
+    description: "Restore/save a rust-cache at all."
+    default: "true"
+  cache-shared-key:
+    description: >-
+      rust-cache shared-key (ADR-0251 §5, docs/testing/build-caches.md).
+      Empty restores the default content-hash key with no workspace crates.
+    default: ""
+  cache-save-if-cold-only:
+    description: >-
+      Save the shared key only on a cold miss (last-writer-wins race
+      avoidance between parallel lanes sharing one key).
+    default: "false"
+  cache-workspace-crates:
+    description: >-
+      Cache the workspace crates' artifacts, not only third-party deps — the
+      engine codegen is the expensive half.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+      uses: ./.github/actions/ca-certificates-patch
+    # sccache (content-addressed compile cache) replaces the removed
+    # mtime-normalization hack: it keys on source *content*, so it can never
+    # serve an artifact built from different content (the mtime scheme could —
+    # it served #317 a stale `ir` rlib). Set RUSTC_WRAPPER + the GHA backend
+    # BEFORE rust-cache so they land in the env hash.
+    - uses: mozilla-actions/sccache-action@v0.0.7
+      if: inputs.sccache == 'true'
+    # The GHA cache backend hard-fails the entire build when the Actions
+    # cache service is down (observed 2026-10-16: the service served "Our
+    # services aren't available right now" and every sccache lane died on
+    # `sccache rustc -vV`). Probe the backend with a server start — startup
+    # performs the cache-check read — and only export RUSTC_WRAPPER when it
+    # answers. On an outage the lane compiles uncached (slower, correct)
+    # instead of going red; the ::warning:: names the reason in the log.
+    # RUSTC_WRAPPER is deliberately left unset (not set empty) so cargo
+    # calls rustc directly; it also leaves the rust-cache env hash as the
+    # no-wrapper variant for that run, which is fine — it only happens
+    # when the backend that variant exists for is unreachable anyway.
+    - name: Probe sccache backend (fall back to plain rustc on outage)
+      if: inputs.sccache == 'true'
+      shell: bash
+      env:
+        SCCACHE_GHA_ENABLED: 'true'
+      run: |
+        probe='sccache --start-server'
+        command -v timeout >/dev/null 2>&1 && probe='timeout 60 sccache --start-server'
+        if ! $probe; then
+          echo "::warning::sccache backend unavailable — compiling without the shared compile cache this run"
+        else
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+        fi
+
+    # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0"): the
+    # action installs the toolchain named by @rev, including any
+    # components/targets; @stable would put them on a toolchain nothing uses
+    # because cargo resolves rust-toolchain.toml instead.
+    - uses: dtolnay/rust-toolchain@1.88.0
+      with:
+        components: ${{ inputs.toolchain-components }}
+        targets: ${{ inputs.toolchain-targets }}
+
+    # LABS: ubuntu runners ran out of disk in the linker (No space left on
+    # device) on multi-feature build lanes; drop preinstalled toolchains and
+    # docker images these Rust-only jobs never touch.
+    - name: Free runner disk (Linux)
+      if: runner.os == 'Linux' && inputs.free-disk == 'true'
+      shell: bash
+      env:
+        FREE_DISK_AGGRESSIVE: ${{ inputs.free-disk-aggressive == 'true' && '1' || '0' }}
+      run: scripts/free-disk.sh
+
+    # ADR-0255: mold links the debug-binary-heavy builds. The RUSTFLAGS
+    # string is identical on every Linux lane and set BEFORE rust-cache so
+    # it lands in the cache env hash (a RUSTFLAGS change invalidates cargo
+    # fingerprints; restoring a pre-mold cache would be a wasted download).
+    - name: Install mold linker (Linux)
+      if: runner.os == 'Linux' && inputs.mold == 'true'
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y mold
+    - name: Link with mold (Linux)
+      if: runner.os == 'Linux' && inputs.mold == 'true'
+      shell: bash
+      run: echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-C link-arg=-fuse-ld=mold" >> "$GITHUB_ENV"
+
+    # Shared-key variant (ADR-0251 §5): the dev/release/corpus lanes share
+    # one rust-cache per profile so the engine+CLI compile is paid once per
+    # Cargo.lock hash, not once per job. Cold-key race: a lane saves the
+    # shared key ONLY on a cold miss when cache-save-if-cold-only is set;
+    # the first to finish wins, the rest no-op.
+    - uses: Swatinem/rust-cache@v2
+      if: inputs.cache == 'true' && inputs.cache-shared-key != ''
+      id: cache-shared
+      with:
+        shared-key: ${{ inputs.cache-shared-key }}
+        save-if: ${{ inputs.cache-save-if-cold-only != 'true' || steps.cache-shared.outputs.cache-hit != 'true' }}
+        cache-workspace-crates: ${{ inputs.cache-workspace-crates }}
+
+    # Plain variant: default content-hash key, default save behavior.
+    - uses: Swatinem/rust-cache@v2
+      if: inputs.cache == 'true' && inputs.cache-shared-key == ''
+      id: cache-plain

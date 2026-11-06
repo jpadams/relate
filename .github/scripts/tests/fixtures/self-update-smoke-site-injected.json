@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30T11:00:00Z",
+  "latest": {
+    "tag": "v0.13.1\nINJECTED_LOG_ENTRY",
+    "published_at": "2026-10-20T10:00:00Z",
+    "prerelease": false,
+    "notes": "A tag carrying embedded log-injection content: the gate's regex must reject it before any log line, so the injected text can never render as its own entry.",
+    "assets": [
+      "relate-linux-amd64",
+      "relate-darwin-arm64",
+      "SHA256SUMS",
+      "SHA256SUMS.sig"
+    ]
+  },
+  "latest_prerelease": null,
+  "releases": []
+}

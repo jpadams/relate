@@ -1,0 +1,57 @@
+name: npm publish
+description: >-
+  Download packed npm tarballs and publish them to the registry with
+  provenance via trusted publishing (OIDC). Implements the publish half of
+  ADR-0278: the calling job must grant `id-token: write` and carry no
+  NODE_AUTH_TOKEN. Shared by release.yml's npm-publish and npm-publish-main
+  jobs so the setup/download/count-check/publish body exists exactly once.
+
+inputs:
+  pattern:
+    description: >-
+      download-artifact glob (minimatch) naming the artifact(s) that hold the
+      tarballs to publish; brace expansion is supported, e.g.
+      'npm-{platform-*,wasm}'
+    required: true
+  expected-count:
+    description: >-
+      Exact number of .tgz tarballs the download must produce; the publish
+      fails closed on any other count
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    # npm >= 11.5.1 is required for OIDC trusted publishing (ADR-0278). Pin
+    # the major instead of tracking `latest` so a future npm release cannot
+    # change publish behavior mid-pipeline.
+    - name: Upgrade npm for trusted publishing
+      shell: bash
+      run: npm install -g npm@11
+
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: ${{ inputs.pattern }}
+        path: dist
+        merge-multiple: true
+
+    - name: npm publish
+      shell: bash
+      env:
+        EXPECTED_COUNT: ${{ inputs.expected-count }}
+        PATTERN: ${{ inputs.pattern }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        tarballs=(dist/*.tgz)
+        if [ "${#tarballs[@]}" -ne "$EXPECTED_COUNT" ]; then
+          echo "expected $EXPECTED_COUNT npm tarball(s) matching '$PATTERN', found ${#tarballs[@]}" >&2
+          exit 1
+        fi
+        for tgz in "${tarballs[@]}"; do
+          npm publish "$tgz" --provenance --access public
+        done

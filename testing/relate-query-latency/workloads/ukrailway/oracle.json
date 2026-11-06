@@ -1,0 +1,46 @@
+{
+ "_source": {
+  "what": "Oracle answers for the ukrailway workload. Every value was verified by execution against the pinned dogofbrian/ukrailway data set (2026-11-02, in-house verification \u2014 no upstream query text exists for r02/r03; see the workload README). Rows compare with the graph-benchmark-ldbc lane's no-coercion rules (answers::compare).",
+  "data": "dogofbrian/ukrailway @ ce82229e547f46ef4dd0c680f42756e17bde8922 (Apache-2.0), data/*.csv fetched on demand and verified against data.sha256, never committed",
+  "verified": "2026-11-02, by execution over the imported graph: r02 1248 routePairs / 19 changeoverStations; r03 15 hops / the station list below"
+ },
+ "r02-route-pairs": {
+  "rows": [
+   {
+    "routePairs": 1248,
+    "changeoverStations": 19
+   }
+  ],
+  "order_sensitive": false,
+  "note": "one row; the earlier draft's changeoverCallingPoints key is superseded \u2014 the verified query counts DISTINCT changeover stations, and the expected key is changeoverStations",
+  "query_sha256": "04477d064703ca4ca7ce0b8499a393140687029d571c5208c24462dc00bb3604"
+ },
+ "r03-shortest": {
+  "rows": [
+   {
+    "hops": 15,
+    "stations": [
+     "Denmark Hill",
+     "Brixton",
+     "Herne Hill",
+     "Tulse Hill",
+     "West Norwood",
+     "Gipsy Hill",
+     "Crystal Palace",
+     "Norwood Junction",
+     "East Croydon",
+     "South Croydon",
+     "Purley Oaks",
+     "Purley",
+     "Earlswood (Surrey)",
+     "Salfords",
+     "Horley",
+     "Gatwick Airport"
+    ]
+   }
+  ],
+  "order_sensitive": true,
+  "note": "one row; the station list is the geographically verified Brighton main line route \u2014 16 stations, 15 hops",
+  "query_sha256": "79337a02fc25bf792f9d6e59a6daf665f04e4202d3ae62866604bb683e604e4f"
+ }
+}

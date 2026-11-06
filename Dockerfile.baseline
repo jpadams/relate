@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+# The one build recipe every image-built baseline lane shares (ADR-0495).
+# A lane supplies what makes it itself through three build args: the cargo
+# binaries it measures, its BuildKit target-cache suffix (one lane's cargo
+# cache must not be another's) and the container's entrypoint. The context is
+# the filtered tree in .dockerignore. Cargo's registry and target directory
+# stay in BuildKit caches, so a source edit does not resend docs/ or
+# re-download dependencies -- but cargo still rebuild-verifies the unchanged
+# crates (the measured CI finding the main Dockerfile records: restored
+# cache, full rebuild).
+ARG BASELINE_BUILD_IMAGE=rust:1.88-bookworm
+ARG BASELINE_RUN_IMAGE=debian:bookworm-slim
+FROM ${BASELINE_BUILD_IMAGE} AS build
+# The eMudhra CA break (2026-10): the crates.io TLS fetches ride this
+# image's CA bundle, so the current ca-certificates package is installed
+# before any cargo network access (bookworm-security ships the fix; a
+# plain install covers both the missing and the older-package case).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates
+ARG TARGETARCH
+ARG LANE_BINS
+ARG LANE_CACHE_ID
+WORKDIR /src
+COPY . /src
+RUN --mount=type=cache,id=relate-cargo-registry-${TARGETARCH},target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=relate-cargo-git-${TARGETARCH},target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=relate-${LANE_CACHE_ID}-target-1.88-${TARGETARCH},target=/src/target,sharing=locked \
+    set -eu; \
+    if [ -z "${LANE_BINS}" ] || [ -z "${LANE_CACHE_ID}" ]; then \
+      echo "LANE_BINS and LANE_CACHE_ID are required (see the header)" >&2; \
+      exit 1; \
+    fi; \
+    bins=""; \
+    for bin in ${LANE_BINS}; do bins="${bins} --bin ${bin}"; done; \
+    cargo build --release ${bins}; \
+    mkdir -p /out; \
+    for bin in ${LANE_BINS}; do cp "target/release/${bin}" /out/; done
+
+FROM ${BASELINE_RUN_IMAGE}
+ARG LANE_ENTRYPOINT
+COPY --from=build /out/ /usr/local/bin/
+RUN mkdir -p /report
+# The entrypoint is a build arg, so the exec form cannot carry it; the one
+# shim execs the lane's binary with the container's own arguments.
+ENV RELATE_LANE_ENTRYPOINT=${LANE_ENTRYPOINT}
+ENTRYPOINT ["/bin/sh", "-c", "exec \"$RELATE_LANE_ENTRYPOINT\" \"$@\"", ""]

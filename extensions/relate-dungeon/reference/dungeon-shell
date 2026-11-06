@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# The wrapper is deliberately dumb (LABS-884): one read loop, and the
+# only shell mechanics are the two things bash owns —
+#   - newline restore: report_output is one-line by host design
+#     (ADR-0430 §7), so the child's multi-line output carries %%NL%%
+#     placeholders;
+#   - readline history: `read -e` edits always, but arrow-up recall
+#     needs the history list, and `set -o history` in a script records
+#     the script's own lines — so it toggles on only per accepted line.
+# Everything else (seed-or-resume, status, legend) is the child's
+# `start` verb; game state is the store.
+STORE="${1:-dungeon.rl}"
+HIST="${DUNGEON_HISTFILE:-$HOME/.dungeon_history}"
+run() {
+  out="$(relate run dungeon -d "$STORE" --command "$1")"
+  printf '%s\n' "${out//%%NL%%/$'\n'}"
+}
+[ -f "$HIST" ] && { set -o history; history -r "$HIST"; set +o history; }
+run start
+while read -e -p "dungeon> " line; do
+  [ -z "$line" ] && continue
+  set -o history; history -s "$line"; set +o history
+  printf '%s\n' "$line" >> "$HIST"
+  run "$line"
+done

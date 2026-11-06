@@ -1,0 +1,29 @@
+[package]
+name = "relate-mcp"
+description = "MCP (Model Context Protocol) server surface for Relate (ADR-0232)"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The standalone `relate-mcp` binary is retired (LABS-381, ADR-0368): the
+# crate is the MCP implementation `relate serve --mcp PORT|stdio` embeds, and
+# its transports are library entry points (`serve_shared`).
+
+[dependencies]
+relate = { workspace = true, features = ["parquet"] }
+relate-model = { workspace = true }
+relate-auth = { workspace = true }
+relate-http = { workspace = true }
+# The one JSON-RPC error-code table and version constant (ADR-0442): the
+# extension mount's wire kit owns the numbers; this surface re-exports them.
+relate-wire = { workspace = true }
+# The shared accept loop and admission defaults (ADR-0238, ADR-0451).
+relate-serve = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+relate-test-support = { workspace = true, features = ["wire"] }
+tempfile = { workspace = true }

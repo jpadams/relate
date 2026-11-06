@@ -1,0 +1,42 @@
+# ADR-0484 decision 5: TELEMETRY is the opted-out no-op. The HELLO
+# SUCCESS hints carry telemetry.enabled false; every in-range api Int
+# (0-3) answers SUCCESS {} and nothing is recorded. An out-of-range Int
+# answers the probed UnknownError and a non-Int api the probed
+# Request.Invalid; both leave the failed state, so a RUN is IGNORED until
+# RESET succeeds.
+!: BOLT 5.4
+!: AUTO GOODBYE
+
+# The session open stays hand-written: the HELLO SUCCESS pins the
+# telemetry hint, which !: AUTO HELLO's any-SUCCESS expectation does not
+# check — and !: AUTO LOGON needs !: AUTO HELLO, so the LOGON pair rides
+# with it.
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "bolt_agent": {"product": "relate-bolt-compat/1.0"}}
+S: SUCCESS {"hints": {"telemetry.enabled": false}}
+C: LOGON {"scheme": "none"}
+S: SUCCESS {}
+C: TELEMETRY 0
+S: SUCCESS {}
+C: TELEMETRY 1
+S: SUCCESS {}
+C: TELEMETRY 2
+S: SUCCESS {}
+C: TELEMETRY 3
+S: SUCCESS {}
+C: TELEMETRY 9001
+S: FAILURE {"code": "Neo.DatabaseError.General.UnknownError", "message": "org.neo4j.packstream.error.reader.PackstreamReaderException: Unknown driver interface type 9001"}
+C: RUN "RETURN 1 AS n" {} {}
+S: IGNORED
+C: RESET
+S: SUCCESS {}
+C: TELEMETRY "0"
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "Unexpected type: Expected INT but got STRING"}
+C: RUN "RETURN 1 AS n" {} {}
+S: IGNORED
+C: RESET
+S: SUCCESS {}
+C: RUN "RETURN 1 AS n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["n"]}
+   RECORD [1]
+   SUCCESS {}

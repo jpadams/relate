@@ -1,0 +1,34 @@
+# ADR-0307: every FAILURE carries a Neo4j status code (F-41, D-46, D-47,
+# D-50, D-51). Only compile-time and server-side failures, so each reply
+# holds whether execution errors are reported at RUN or at the first PULL.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+# A syntax error is Neo.ClientError.Statement.SyntaxError.
+C: RUN "RETURN 1 +" {} {}
+S: FAILURE {"code": "Neo.ClientError.Statement.SyntaxError", "message": "*"}
+C: PULL {"n": -1}
+S: IGNORED
+C: RESET
+S: SUCCESS {}
+
+# An unknown database in the RUN extra is DatabaseNotFound.
+C: RUN "RETURN 1 AS n" {} {"db": "nosuchdb"}
+S: FAILURE {"code": "Neo.ClientError.Database.DatabaseNotFound", "message": "semantic error: DatabaseNotFound: Graph not found: nosuchdb"}
+C: RESET
+S: SUCCESS {}
+
+# A parameter the server cannot convert (a Node struct, ADR-0177) is
+# Neo.ClientError.Request.Invalid.
+C: RUN "RETURN $p AS p" {"p": {"#4E": [1, [], {}]}} {}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "unsupported parameter value for $p: Struct(0x4E)"}
+C: RESET
+S: SUCCESS {}
+
+# The session is usable afterwards.
+C: RUN "RETURN 1 AS n" {} {}
+S: SUCCESS {"fields": ["n"]}
+C: PULL {"n": -1}
+S: RECORD [1]
+   SUCCESS {}

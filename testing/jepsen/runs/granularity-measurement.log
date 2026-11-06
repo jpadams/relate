@@ -1,0 +1,47 @@
+time="2026-11-01T05:13:48+01:00" level=warning msg="volume \"relate-jepsen-m2\" already exists but was not created by Docker Compose. Use `external: true` to use an existing volume"
+ Container relate-jepsen-db Running 
+ Container relate-jepsen-control-run-cf2a349a30af Creating 
+ Container relate-jepsen-control-run-cf2a349a30af Created 
+04:13:49.923 [main] DEBUG io.netty.util.internal.logging.InternalLoggerFactory -- Using SLF4J as the default logging framework
+04:13:49.924 [main] DEBUG io.netty.channel.MultithreadEventLoopGroup -- -Dio.netty.eventLoopThreads: 32
+04:13:49.928 [main] DEBUG io.netty.util.concurrent.GlobalEventExecutor -- -Dio.netty.globalEventExecutor.quietPeriodSeconds: 1
+04:13:49.930 [main] DEBUG io.netty.util.internal.InternalThreadLocalMap -- -Dio.netty.threadLocalMap.stringBuilder.initialSize: 1024
+04:13:49.930 [main] DEBUG io.netty.util.internal.InternalThreadLocalMap -- -Dio.netty.threadLocalMap.stringBuilder.maxSize: 4096
+04:13:49.941 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- -Dio.netty.noUnsafe: false
+04:13:49.941 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- Java version: 21
+04:13:49.942 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- sun.misc.Unsafe.theUnsafe: available
+04:13:49.942 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- sun.misc.Unsafe base methods: all available
+04:13:49.942 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- sun.misc.Unsafe.storeFence: available
+04:13:49.943 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- java.nio.Buffer.address: available
+04:13:49.943 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- direct buffer constructor: unavailable: Reflective setAccessible(true) disabled
+04:13:49.943 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- java.nio.Bits.unaligned: available, true
+04:13:49.943 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- jdk.internal.misc.Unsafe.allocateUninitializedArray(int): unavailable: class io.netty.util.internal.PlatformDependent0$7 cannot access class jdk.internal.misc.Unsafe (in module java.base) because module java.base does not export jdk.internal.misc to unnamed module @d84b3a2
+04:13:49.944 [main] DEBUG io.netty.util.internal.PlatformDependent0 -- java.nio.DirectByteBuffer.<init>(long, {int,long}): unavailable
+04:13:49.944 [main] DEBUG io.netty.util.internal.PlatformDependent -- sun.misc.Unsafe: available
+04:13:49.944 [main] DEBUG io.netty.util.internal.PlatformDependent -- -Dio.netty.tmpdir: /tmp (java.io.tmpdir)
+04:13:49.944 [main] DEBUG io.netty.util.internal.PlatformDependent -- -Dio.netty.bitMode: 64 (sun.arch.data.model)
+04:13:49.944 [main] DEBUG io.netty.util.internal.PlatformDependent -- -Dio.netty.maxDirectMemory: -1 bytes
+04:13:49.944 [main] DEBUG io.netty.util.internal.PlatformDependent -- -Dio.netty.uninitializedArrayAllocationThreshold: -1
+04:13:49.945 [main] DEBUG io.netty.util.internal.CleanerJava9 -- java.nio.ByteBuffer.cleaner(): available
+04:13:49.945 [main] DEBUG io.netty.util.internal.PlatformDependent -- -Dio.netty.noPreferDirect: false
+04:13:49.946 [main] DEBUG io.netty.channel.nio.NioEventLoop -- -Dio.netty.noKeySetOptimization: false
+04:13:49.946 [main] DEBUG io.netty.channel.nio.NioEventLoop -- -Dio.netty.selectorAutoRebuildThreshold: 512
+04:13:49.949 [main] DEBUG io.netty.util.internal.PlatformDependent -- org.jctools-core.MpscChunkedArrayQueue: available
+
+== different-properties ==
+  iteration 0 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 1 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 2 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 3 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 4 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+
+== same-properties-control ==
+  iteration 0 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 1 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 2 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 3 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+  iteration 4 | B (first committer): :committed | A (second committer): :outdated (Neo.TransientError.Transaction.Outdated)
+
+B (first committer) in every iteration: (:committed)
+MEASURED: CONFLICT ? two transactions SETting different properties of the same node conflict; the second COMMIT fails with Neo.TransientError.Transaction.Outdated (Transaction.Outdated). Conflict granularity is NODE IDENTITY, confirming the ADR-0015 ?4 reading.
+Control (same property): conflicted as documented ? the rig observes conflicts.

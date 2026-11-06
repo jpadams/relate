@@ -1,0 +1,17 @@
+[package]
+name = "relate-names"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+
+# Engine leaf, dependency-free by contract (ADR-0509 §4): seven engine
+# crates consume it (parser, IR, front, ontology, planner, executor,
+# relate), so a dependency here would land in all of them — the leaf
+# keeps SmallName Clone + 'static with one classification point
+# (SmallName::from_name, ADR-0509 §1). rustc-hash is dev-only (the bench's
+# table strategies and their test); R2-legal, never shipped.
+
+[dependencies]
+
+[dev-dependencies]
+rustc-hash = { workspace = true }

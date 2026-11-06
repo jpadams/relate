@@ -1,0 +1,12 @@
+# ADR-0316 (F-29): a client NOOP chunk (00 00) between messages is skipped;
+# the connection stays open and the next message is answered.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS x" {} {}
+S: SUCCESS {"fields": ["x"]}
+C: <NOOP>
+C: PULL {"n": -1}
+S: RECORD [1]
+   SUCCESS {}

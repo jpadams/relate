@@ -1,0 +1,43 @@
+# ADR-0484 decision 8: the Bolt 5.2 notifications filter keys at 5.4.
+# The HELLO extra's notifications_minimum_severity WARNING is the
+# connection's base: the cartesian notification (INFORMATION) drops from
+# the ending SUCCESS while the unknown-label one (WARNING) stays. A RUN
+# extra's key overrides the base per statement — INFORMATION reopens the
+# whole list — and notifications_disabled_categories drops a category
+# the severity alone would keep.
+!: BOLT 5.4
+!: AUTO GOODBYE
+
+# The session open stays hand-written: the connection's severity base
+# rides the HELLO extra, which the fixed-form !: AUTO HELLO does not
+# carry — and !: AUTO LOGON needs !: AUTO HELLO, so the LOGON pair rides
+# with it.
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "bolt_agent": {"product": "relate-bolt-compat/1.0"}, "notifications_minimum_severity": "WARNING"}
+S: SUCCESS {}
+C: LOGON {"scheme": "none"}
+S: SUCCESS {}
+C: RUN "CREATE (:Person), (:City)" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": []}
+   SUCCESS {}
+
+# Over the connection's WARNING threshold only the unknown-label
+# notification survives the ending summary.
+C: RUN "EXPLAIN MATCH (a:Person), (b:City), (n:NotALabel) RETURN a, b, n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": []}
+   SUCCESS {"notifications": [{"code": "Neo.ClientNotification.Statement.UnknownLabelWarning", "severity": "WARNING", "category": "UNRECOGNIZED"}]}
+
+# The RUN extra's INFORMATION overrides the HELLO's WARNING for this
+# statement: both notifications ride the ending summary again.
+C: RUN "EXPLAIN MATCH (a:Person), (b:City), (n:NotALabel) RETURN a, b, n" {} {"notifications_minimum_severity": "INFORMATION"}
+   PULL {"n": -1}
+S: SUCCESS {"fields": []}
+   SUCCESS {"notifications": [{"code": "Neo.ClientNotification.Statement.CartesianProduct", "severity": "INFORMATION", "category": "PERFORMANCE"}, {"code": "Neo.ClientNotification.Statement.UnknownLabelWarning", "severity": "WARNING", "category": "UNRECOGNIZED"}]}
+
+# The categories key drops the PERFORMANCE cartesian while the severity
+# threshold alone would keep it: only the unknown-label stays.
+C: RUN "EXPLAIN MATCH (a:Person), (b:City), (n:NotALabel) RETURN a, b, n" {} {"notifications_minimum_severity": "INFORMATION", "notifications_disabled_categories": ["PERFORMANCE"]}
+   PULL {"n": -1}
+S: SUCCESS {"fields": []}
+   SUCCESS {"notifications": [{"code": "Neo.ClientNotification.Statement.UnknownLabelWarning", "severity": "WARNING", "category": "UNRECOGNIZED"}]}

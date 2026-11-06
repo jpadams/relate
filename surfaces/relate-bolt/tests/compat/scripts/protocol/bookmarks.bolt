@@ -1,0 +1,32 @@
+# ADR-0310 (F-14, F-21, D-57), ADR-0502 §7: the SUCCESS that ends an
+# auto-commit write carries the engine's commit bookmark, and so does the
+# COMMIT SUCCESS of a transaction that wrote; a read commits nothing and
+# carries none. Bookmarks a client sends back in BEGIN or RUN are accepted.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "CREATE (:Bookmarked) RETURN 1 AS x" {} {}
+S: SUCCESS {"fields": ["x"]}
+C: PULL {"n": -1}
+S: RECORD [1]
+   SUCCESS {"bookmark": "*", "type": "rw"}
+
+C: RUN "RETURN 1 AS x" {} {"bookmarks": ["relate:0"]}
+S: SUCCESS {}
+C: DISCARD {"n": -1}
+S: SUCCESS {"type": "r"}
+
+C: BEGIN {"bookmarks": ["relate:0"]}
+S: SUCCESS {}
+C: RUN "CREATE (:Bookmarked)" {} {}
+S: SUCCESS {}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "w"}
+C: COMMIT
+S: SUCCESS {"bookmark": "*"}
+
+C: BEGIN {}
+S: SUCCESS {}
+C: ROLLBACK
+S: SUCCESS {}

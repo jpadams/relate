@@ -1,0 +1,16 @@
+[package]
+name = "relate-agentbench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Headless agent A/B harness: measures the tokens a coding agent reads from Relate CLI tool output per output mode (ADR-0404 principle 5, LABS-481 G-3)"
+publish = false
+license.workspace = true
+
+[dependencies]
+relate-formatter = { workspace = true }
+relate-test-support = { workspace = true }
+clap = { workspace = true }
+tempfile = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,162 @@
+[package]
+name = "relate-cli"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+
+[[bin]]
+name = "relate"
+path = "src/main.rs"
+
+# The MCP fixture child (ADR-0442, ADR-0447): the compiled half of the
+# extension e2e's language pair, installed as a package's executable by the
+# fixtures and MCP suites. It links the wire kit's `McpChild` client and
+# performs the five-tool surface in order. A test fixture, not a product
+# artifact: the release workflow ships the `relate` binary alone, and
+# the `extensions` required-feature keeps the minimal build from compiling
+# it.
+[[bin]]
+name = "mcp-extension-fixture"
+path = "tests/fixtures/mcp-extension-fixture.rs"
+required-features = ["extensions"]
+
+[dependencies]
+relate-formatter = { workspace = true }
+relate-splitter = { workspace = true }
+relate-storage = { workspace = true }
+relate-model = { workspace = true }
+indexmap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+relate = { workspace = true }
+# The extension mount's shared kit (ADR-0447): the bounded reads
+# `--fetch-params` and the extension wire's reader run through, and
+# the MCP wire facts (the handshake revision, the JSON-RPC vocabulary,
+# the caps) the host's extension mount states from.
+relate-wire = { workspace = true, optional = true }
+relate-load = { workspace = true, optional = true }
+relate-auth = { workspace = true, optional = true }
+# relate-serve for the one shutdown-signal wait (ADR-0238); the same
+# primitive bolt's signal.rs delegates to, so no surface hand-rolls its own.
+relate-serve = { workspace = true, optional = true }
+relate-http = { workspace = true, optional = true }
+relate-bolt = { workspace = true, optional = true }
+relate-mcp = { workspace = true, optional = true }
+# Non-optional: the ungated `.info` store block renders the manifest catalog
+# types through the shared store-info projection (ADR-0165).
+relate-catalog = { workspace = true }
+ureq = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+ssh-key = { workspace = true, optional = true }
+# The extension tarball's gzip layer (ADR-0431 §2): flate2 with the
+# pure-Rust miniz_oxide backend, already a workspace dependency (ADR-0385).
+flate2 = { workspace = true, optional = true }
+rustyline = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+
+# Feature bundles (ADR-0104). Every feature only adds capability; the
+# `full` bundle is the default and matches the release binary.
+[features]
+default = ["full"]
+full = ["repl", "pull", "push", "skill", "upgrade", "telemetry", "fetch-params", "remote-database", "parquet", "info", "http", "mcp", "bolt", "agent-context", "extensions", "extension-install"]
+agent = ["skill", "pull", "push", "fetch-params", "remote-database", "info", "agent-context", "extensions", "extension-install"]
+minimal = []
+repl = ["dep:rustyline"]
+pull = ["dep:relate-load"]
+# `relate push` (ADR-0401): pull's mirror over the same Query API v2
+# client, so the same optional `relate-load` dependency.
+push = ["dep:relate-load"]
+skill = []
+# The signed-release verification dep set (LABS-638): `upgrade` and
+# `extension-install` verify first-party signatures with the same trio —
+# stated once here, so the two features cannot drift apart.
+release-verify = ["dep:ureq", "dep:sha2", "dep:ssh-key"]
+upgrade = ["release-verify", "staging"]
+telemetry = ["dep:ureq", "dep:rand", "staging"]
+# The staged-file marker (LABS-872): the `atomic_file` kit — the shared
+# non-predictable staging-name recipe, the exclusive create step, and the
+# atomic writers — compiled exactly when a feature that stages a file is on
+# (`telemetry`, `upgrade`, `remote-database`). Dependency-free; the
+# `serve`/`surface` single-word-gate precedent (ADR-0232). Like `surface`,
+# never enabled alone: bare `--features staging` compiles the kit with no
+# caller (the uncovered-combination class the bare-`serve` lane records as
+# LABS-648's boundary question).
+staging = []
+# The CLI-process HTTP fetch's dependency set, stated once so `fetch-params`
+# and `remote-database` cannot drift apart (the `release-verify` pattern):
+# `ureq` for the GET, the wire kit for the bounded read.
+http-fetch = ["dep:ureq", "dep:relate-wire"]
+fetch-params = ["http-fetch"]
+# The remote `--load` source (LABS-872, ADR-0496): fetch a remote `.rl`
+# bundle over http(s) — a CLI-process fetch like `--fetch-params` (ADR-0267
+# posture), staged as scratch and released by the load (LABS-903, ADR-0500).
+# `full` + `agent`. The URL parses in every build; the fetch fails closed
+# without the feature.
+remote-database = ["http-fetch", "staging"]
+parquet = ["relate/parquet"]
+# `relate info` cold store-metadata read (ADR-0165). `full` + `agent`.
+info = []
+# `relate serve` itself: no code of its own beyond the command; every
+# network-surface feature implies it so the compile gate is the single word
+# `serve` instead of a three-way disjunction copied per site (ADR-0232).
+# Enabled alone it is a `serve` whose surface flags are all unknown flags —
+# the same shape as a build with a surface flag but no other surface. The
+# two deps feed the listener prologue (auth resolution, admission, the
+# banner) that a serve-only build compiles but never runs — its parse
+# rejects every invocation; LABS-648 records the boundary question.
+serve = ["dep:relate-auth", "dep:relate-serve"]
+# The any-surface marker (ADR-0232's single-word-gate intent, landed with
+# LABS-638): implied by `http`, `mcp`, and `bolt` through `serve`, never
+# enabled alone. Gates for surface-only code read
+# `#[cfg(feature = "surface")]` — one word, no three-way disjunction
+# copied per site. Bare `serve` does NOT imply it: a serve-only build
+# compiles no surface.
+surface = ["serve"]
+# `relate serve --http PORT`: the HTTP Query API v2 endpoint (ADR-0232).
+# `parquet` is implied because `relate-http` enables it on the engine
+# unconditionally; implying it keeps `--help`/`--snapshot-format` honest.
+http = ["surface", "dep:relate-http", "parquet"]
+# `relate serve --mcp PORT`: the MCP server, streamable HTTP transport
+# (ADR-0232). Implies `parquet` for the same reason as `http`.
+mcp = ["surface", "dep:relate-mcp", "parquet"]
+# `relate serve --bolt PORT`: the Bolt server (ADR-0224; LABS-298).
+# Implies `parquet` for the same reason as `http`.
+bolt = ["surface", "dep:relate-bolt", "parquet"]
+# `relate agent-context [COMMAND]` agent discovery readout (ADR-0242).
+# `full` + `agent`.
+agent-context = []
+# The extension system (ADR-0429 §8): command-kind extensions mounted as
+# `relate run <name>` — the MCP mount, the registry and the host. The
+# mount runs the product MCP server's one tool implementation
+# (`relate-mcp`, ADR-0447 §3), so this feature carries that dependency
+# and the engine's parquet feature it implies. `full` + `agent`, never
+# `minimal`.
+extensions = ["dep:relate-mcp", "dep:relate-wire", "parquet"]
+# The extension install verbs (ADR-0431 §3): `extension install` and
+# `extension list --available` — the network fetch, the signature and
+# checksum verification, and the tarball unpacker. Pulls the upgrade
+# feature's own optional dependency set plus the unpack reader; `full` +
+# `agent`, never `minimal`. A build with `extensions` but without it keeps
+# `extension list` and `extension remove` (dependency-free) and prints the
+# not-included error for `extension install`.
+extension-install = ["extensions", "release-verify", "dep:flate2"]
+
+# The `--width` auto-detect asks the terminal itself (TIOCGWINSZ,
+# LABS-399) — a unix-only, already-in-tree dependency.
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+base64 = { workspace = true }
+relate-test-support = { workspace = true, features = ["durability", "loopback"] }
+tempfile = { workspace = true }
+# The first-party importer children (ADR-0431 §11), as dev dependencies so
+# the importer e2e can pin the summaries and starters the built-ins printed
+# against the crates that own them — the crates' libs link in; their bins
+# are spawned as installed packages through the wire.
+relate-fs-to-graph = { workspace = true }
+relate-git-to-graph = { workspace = true }
+
+# The serve e2e sends SIGINT to the spawned server (Unix only).
+[target.'cfg(unix)'.dev-dependencies]
+libc = { workspace = true }

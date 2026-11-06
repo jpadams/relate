@@ -1,0 +1,44 @@
+# lychee link-checker configuration for Relate.
+#
+# Used by the CI "link-check" job (.github/workflows/ci.yml) over README.md and
+# the plain-markdown documentation (docs/guides, docs/reference). Its purpose is to
+# catch broken *relative* documentation links (a renamed or moved page) and dead
+# *external* links before they ship.
+#
+# NOTE: the input scope is README.md + docs/guides + docs/reference +
+# docs/cookbook only.
+
+# --- Documented allowlist: not-yet-public URLs (publication pending) ----------
+# The relatedb GitHub repository and its site 404 until the repo
+# is made public and the site is live (see docs/PUBLISHING.md). They are excluded
+# so the checker can still guard every OTHER link. Delete these two entries as
+# part of the publication checklist, once the URLs go live.
+exclude = [
+  '^https://github\.com/relatedb/relate',
+  '^https://relatedb\.ai',
+  # stackoverflow.com persistently answers 503 to the CI runners (bot
+  # protection), reddening the link-check job on main and on PRs. Excluded
+  # so the checker can still guard every OTHER link; revisit if SO stops
+  # blocking CI runners.
+  '^https://stackoverflow\.com',
+]
+
+# Some internal links are written without a file extension; let lychee try
+# appending ".md" so they resolve to the real source files.
+fallback_extensions = ["md"]
+
+# Fragment/anchor checking is left at its default (off): we assert that link
+# *targets* exist / respond, not that in-page "#anchor" fragments are present.
+
+# Be resilient to transient network conditions and API rate limiting so the job
+# fails on genuinely broken links, not on flaky infrastructure.
+max_retries = 3
+retry_wait_time = 2
+timeout = 20
+# 429 = rate limited (e.g. anonymous GitHub API), 403 = some hosts block bots.
+accept = ["200..=206", "403", "429"]
+
+# Caching is intentionally left off: the link set is small, the CI job passes a
+# GITHUB_TOKEN to avoid GitHub rate limits, and disabling it avoids leaving a
+# stray, un-ignored `.lycheecache` file behind on local runs.
+cache = false

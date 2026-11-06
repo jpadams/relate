@@ -1,0 +1,10 @@
+# dogofbrian/ukrailway @ ce82229e547f46ef4dd0c680f42756e17bde8922, data/ (Apache-2.0)
+# Fetched (never committed), verified against these sha256 before load.
+dfb4d89da7123cde3c0eeb42b1fd0bcfbf97ffe34faff02e4c713cfeb939d14b  calling_point_seq.csv
+aa934c085ba461f376b7221249cf92eb63f2a67352875acda8976da1831eb251  calling_point_stops.csv
+8300efb675cad24346fb0b9074a660daaf42d2d7d28e1dfa9307638e0d938b51  calling_points.csv
+23c7733fa90147b276dc78c8f5325a50eb792a544b5bd113ffe757bee80d3ba3  calls_at.csv
+1006934d2423ec44ac23dfeb66a4eab9edb0195e8f595ebb5958a46cc2d4d151  links.csv
+c90febb048ce81b459d9132cececaecd0033a9a530d542d890a18c1afeca3d65  stations.csv
+0bd61e3c332eaa3e42c815ddbe46c92337255a55aa421bfa86968e8fada02022  stop_seq.csv
+b59d308a14b3e4d5375cf21e4e1bf02320ca611056560d91b97d85b988c93e61  stops.csv

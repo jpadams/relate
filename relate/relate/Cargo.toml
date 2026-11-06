@@ -1,0 +1,45 @@
+[package]
+name = "relate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Embedded in-memory OpenCypher graph database"
+license.workspace = true
+
+[features]
+default = ["parquet"]
+# Parquet snapshot codec (ADR-0105).
+parquet = ["relate-storage/parquet"]
+# Research-only speed-of-light kernels: forwards the executor's
+# quarantine feature (ADR-0476). Non-default: the `sol` re-export and
+# `Database::sol_graph` compile only under it. The `qpp` re-export
+# retired with the prototype (ADR-0478).
+research = ["relate-executor/research"]
+
+[dependencies]
+# ADR-0509 §4: the facade reads IR name fields (SmallName).
+relate-names = { workspace = true }
+relate-parser = { workspace = true }
+relate-model = { workspace = true }
+relate-core = { workspace = true }
+# ADR-0502 §2: the engine's one error classification, re-exported below
+# and consulted by the bindings' error metadata.
+relate-error = { workspace = true }
+relate-ir = { workspace = true }
+relate-front = { workspace = true }
+relate-planner = { workspace = true }
+relate-executor = { workspace = true }
+relate-ontology = { workspace = true }
+relate-storage = { workspace = true }
+relate-catalog = { workspace = true }
+# Script execution (`run_script_wire`) splits with the canonical scanner.
+relate-splitter = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+indexmap = { workspace = true }
+web-time = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+crc32fast = { workspace = true }
+relate-test-support = { workspace = true, features = ["durability", "nested_eval", "vfs_walk"] }

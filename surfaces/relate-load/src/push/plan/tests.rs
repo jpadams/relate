@@ -1,0 +1,462 @@
+use super::*;
+use crate::push::collect::{LocalNode, LocalRel};
+use crate::push::policy::PolicySpec;
+
+fn keys() -> MergeKeys {
+    let mut nodes = BTreeMap::new();
+    nodes.insert("Person".to_string(), vec!["name".to_string()]);
+    nodes.insert(
+        "Event".to_string(),
+        vec!["tenant".to_string(), "code".to_string()],
+    );
+    let mut rels = BTreeMap::new();
+    rels.insert("SPOKE_AT".to_string(), vec!["slot".to_string()]);
+    MergeKeys { nodes, rels }
+}
+
+fn person(id: i64, name: &str) -> LocalNode {
+    LocalNode {
+        id,
+        labels: vec!["Person".into()],
+        properties: BTreeMap::from([
+            ("name".to_string(), Value::String(name.into())),
+            ("age".to_string(), Value::Int(40)),
+        ]),
+    }
+}
+
+fn spoke_at(start: i64, end: i64) -> LocalRel {
+    LocalRel {
+        rel_type: "SPOKE_AT".into(),
+        start,
+        end,
+        properties: BTreeMap::from([
+            ("slot".to_string(), Value::Int(3)),
+            ("note".to_string(), Value::String("keynote".into())),
+        ]),
+    }
+}
+
+fn event(id: i64, code: &str) -> LocalNode {
+    LocalNode {
+        id,
+        labels: vec!["Event".into()],
+        properties: BTreeMap::from([
+            ("tenant".to_string(), Value::String("acme".into())),
+            ("code".to_string(), Value::String(code.into())),
+        ]),
+    }
+}
+
+fn opts() -> PlanOpts {
+    PlanOpts {
+        nodes_update: PolicySpec::default_spec(),
+        rels_update: PolicySpec::default_spec(),
+        rel_mode: RelMode::Keyed,
+        unkeyed_labels: UnkeyedAction::Skip,
+    }
+}
+
+fn graph(nodes: Vec<LocalNode>, rels: Vec<LocalRel>) -> ScopeGraph {
+    ScopeGraph {
+        nodes,
+        rels,
+        dangling_rels: 0,
+    }
+}
+/// The plan groups nodes by their full sorted label set (the merge
+/// identity is the set's keyed label — see
+/// `secondary_labels_form_their_own_groups_and_survive` for the
+/// multi-label case) and rels by `(type, start label, end label)`,
+/// keys come from the endpoint nodes' own properties, and node groups
+/// precede rel groups.
+#[test]
+fn plan_groups_nodes_then_rels_with_resolved_keys() {
+    let g = graph(
+        vec![person(1, "Ada"), person(2, "Bob"), event(3, "gql")],
+        vec![spoke_at(1, 3), spoke_at(2, 3)],
+    );
+    let plan = build_plan(&g, &keys(), &opts()).unwrap();
+    assert_eq!(plan.entities.len(), 3, "{plan:?}");
+    // Keyed node groups in sorted label order: Event, Person, then rels.
+    let events = &plan.entities[0];
+    assert_eq!(
+        events.kind,
+        EntityKind::NodeLabel {
+            labels: vec!["Event".into()],
+            keyed_label: "Event".into(),
+        }
+    );
+    assert_eq!(events.rows.len(), 1);
+    assert_eq!(events.merge_key, ["tenant".to_string(), "code".to_string()]);
+    let people = &plan.entities[1];
+    assert_eq!(
+        people.kind,
+        EntityKind::NodeLabel {
+            labels: vec!["Person".into()],
+            keyed_label: "Person".into(),
+        }
+    );
+    assert_eq!(people.rows.len(), 2);
+    assert_eq!(people.merge_key, ["name".to_string()]);
+    let rel = &plan.entities[2];
+    assert_eq!(
+        rel.kind,
+        EntityKind::Rel {
+            rel_type: "SPOKE_AT".into(),
+            start_label: "Person".into(),
+            start_key: vec!["name".into()],
+            end_label: "Event".into(),
+            end_key: vec!["tenant".into(), "code".into()],
+        }
+    );
+    assert_eq!(rel.rows.len(), 2);
+    // The first rel row carries locally resolved endpoint keys, and —
+    // under the keyed default with the type's key resolved — the rel
+    // key properties too.
+    match &rel.rows[0] {
+        EntityRow::Rel {
+            start, end, key, ..
+        } => {
+            assert_eq!(start["name"], Value::String("Ada".into()));
+            assert_eq!(end["code"], Value::String("gql".into()));
+            assert_eq!(key["slot"], Value::Int(3));
+        }
+        other => panic!("a rel row, got {other:?}"),
+    }
+}
+
+/// Secondary labels survive the push (LABS-907): the group is the
+/// node's full label set, the statement writes every label, and two
+/// nodes sharing the keyed label but carrying different secondaries
+/// are separate groups. Rel endpoints still resolve through the
+/// keyed label alone — the write created the node carrying it.
+#[test]
+fn secondary_labels_form_their_own_groups_and_survive() {
+    let mut session_chunk = person(1, "Ada");
+    session_chunk.labels = vec!["Chunk".into(), "SessionChunk".into()];
+    let mut plain_chunk = person(2, "Bob");
+    plain_chunk.labels = vec!["Chunk".into()];
+    // Person keyed; Chunk is not — the keyed label is Person for both.
+    session_chunk.labels.push("Person".into());
+    plain_chunk.labels.push("Person".into());
+    let g = graph(vec![session_chunk, plain_chunk], vec![spoke_at(1, 2)]);
+    let plan = build_plan(&g, &keys(), &opts()).unwrap();
+    // Two node groups (one per label set) plus the rel group.
+    assert_eq!(plan.entities.len(), 3, "{plan:?}");
+    let first = &plan.entities[0];
+    assert_eq!(
+        first.kind,
+        EntityKind::NodeLabel {
+            labels: vec!["Chunk".into(), "Person".into()],
+            keyed_label: "Person".into(),
+        }
+    );
+    // The merge is on the KEYED label; the secondary is SET onto the
+    // node it found — an update of the labels, never a fork.
+    assert!(
+        first
+            .statement
+            .contains("MERGE (n:`Person` {`name`: row.key.`name`}) SET n:`Chunk`,"),
+        "merge on the keyed label, set the secondary: {}",
+        first.statement
+    );
+    let second = &plan.entities[1];
+    assert_eq!(
+        second.kind,
+        EntityKind::NodeLabel {
+            labels: vec!["Chunk".into(), "Person".into(), "SessionChunk".into()],
+            keyed_label: "Person".into(),
+        }
+    );
+    assert!(
+        second
+            .statement
+            .contains("MERGE (n:`Person` {`name`: row.key.`name`}) SET n:`Chunk`:`SessionChunk`,"),
+        "merge on the keyed label, set both secondaries: {}",
+        second.statement
+    );
+    // The rel resolves its endpoints through the keyed label.
+    let rel = &plan.entities[2];
+    assert_eq!(
+        rel.kind,
+        EntityKind::Rel {
+            rel_type: "SPOKE_AT".into(),
+            start_label: "Person".into(),
+            start_key: vec!["name".into()],
+            end_label: "Person".into(),
+            end_key: vec!["name".into()],
+        }
+    );
+}
+
+/// A node with several labels groups under the first of its sorted
+/// labels that carries a key; an unkeyed label is skipped and counted
+/// by default.
+#[test]
+fn unkeyed_labels_are_skipped_and_counted_by_default() {
+    let mut unkeyed = person(9, "no-key");
+    unkeyed.labels = vec!["Untyped".into()];
+    let g = graph(vec![person(1, "Ada"), unkeyed], vec![]);
+    let plan = build_plan(&g, &keys(), &opts()).unwrap();
+    assert_eq!(plan.entities.len(), 2, "{plan:?}");
+    let skipped = &plan.entities[1];
+    assert_eq!(
+        skipped.kind,
+        EntityKind::NodeSkipped {
+            labels: vec!["Untyped".into()]
+        }
+    );
+    assert_eq!(skipped.skipped_unkeyed, 1);
+    assert_eq!(skipped.rows.len(), 0);
+}
+
+/// `--unkeyed-labels create` switches unkeyed labels to CREATE rows
+/// (non-idempotent) and a labelless node lands in the reserved
+/// labelless group.
+#[test]
+fn unkeyed_labels_create_switches_to_create_rows() {
+    let mut unkeyed = person(9, "no-key");
+    unkeyed.labels = vec!["Untyped".into()];
+    let mut bare = person(10, "bare");
+    bare.labels = vec![];
+    let mut o = opts();
+    o.unkeyed_labels = UnkeyedAction::Create;
+    let g = graph(vec![unkeyed, bare], vec![]);
+    let plan = build_plan(&g, &keys(), &o).unwrap();
+    let create: Vec<_> = plan
+        .entities
+        .iter()
+        .filter(|e| matches!(e.kind, EntityKind::NodeCreate { .. }))
+        .collect();
+    assert_eq!(create.len(), 2, "{plan:?}");
+    assert_eq!(
+        create[0].kind,
+        EntityKind::NodeCreate { labels: Vec::new() }
+    );
+    assert_eq!(
+        create[0].statement,
+        "UNWIND $rows AS row CREATE (n) SET n += row.props"
+    );
+    assert_eq!(
+        create[1].statement,
+        "UNWIND $rows AS row CREATE (n:`Untyped`) SET n += row.props"
+    );
+}
+
+/// A rel whose endpoint label is unkeyed is skipped and counted on the
+/// rel's group — never written, never silently dropped.
+#[test]
+fn rels_with_unkeyed_endpoints_are_counted_not_written() {
+    let mut unkeyed = person(9, "no-key");
+    unkeyed.labels = vec!["Untyped".into()];
+    let g = graph(
+        vec![person(1, "Ada"), unkeyed.clone(), event(3, "gql")],
+        vec![spoke_at(1, 9), spoke_at(9, 3), spoke_at(1, 3)],
+    );
+    let plan = build_plan(&g, &keys(), &opts()).unwrap();
+    // Three groups, discriminated by kind where it is decided:
+    // (Person, Untyped) and (Untyped, Event) are RelSkipped buckets;
+    // (Person, Event) is the one written Rel.
+    let written: Vec<_> = plan
+        .entities
+        .iter()
+        .filter(|e| matches!(e.kind, EntityKind::Rel { .. }))
+        .collect();
+    let counted: Vec<_> = plan
+        .entities
+        .iter()
+        .filter(|e| matches!(e.kind, EntityKind::RelSkipped { .. }))
+        .collect();
+    assert_eq!(written.len(), 1, "{plan:?}");
+    assert_eq!(written[0].rows.len(), 1);
+    assert_eq!(counted.len(), 2, "{plan:?}");
+    let skipped: usize = counted.iter().map(|e| e.skipped_unkeyed).sum();
+    assert_eq!(skipped, 2);
+}
+
+/// The keyed default merges on the resolved relationship key
+/// (constraint- or `--rel-key`-derived) and falls back to structural
+/// for a type with no key; the structural force ignores a key.
+#[test]
+fn keyed_mode_uses_the_relationship_key_and_falls_back() {
+    let g = graph(
+        vec![person(1, "Ada"), event(3, "gql")],
+        vec![spoke_at(1, 3)],
+    );
+    let plan = build_plan(&g, &keys(), &opts()).unwrap();
+    let rel = &plan.entities[2];
+    assert_eq!(rel.merge_key, ["slot".to_string()]);
+    assert!(rel
+        .statement
+        .contains("MERGE (a)-[r:`SPOKE_AT` {`slot`: row.key.`slot`}]->(b)"));
+    match &rel.rows[0] {
+        EntityRow::Rel { key, .. } => assert_eq!(key["slot"], Value::Int(3)),
+        other => panic!("a rel row, got {other:?}"),
+    }
+    // A type with no resolved key falls back to structural (no error).
+    let mut rel = spoke_at(1, 3);
+    rel.rel_type = "WROTE_ABT".into();
+    let g2 = graph(vec![person(1, "Ada"), event(3, "gql")], vec![rel]);
+    let plan2 = build_plan(&g2, &keys(), &opts()).unwrap();
+    let rel2 = &plan2.entities[2];
+    assert_eq!(rel2.merge_key, Vec::<String>::new());
+    assert!(rel2.statement.contains("MERGE (a)-[r:`WROTE_ABT`]->(b)"));
+    // The structural force ignores a resolved key.
+    let mut o = opts();
+    o.rel_mode = RelMode::Structural;
+    let plan3 = build_plan(&g, &keys(), &o).unwrap();
+    let rel3 = &plan3.entities[2];
+    assert!(rel3.statement.contains("MERGE (a)-[r:`SPOKE_AT`]->(b)"));
+}
+
+/// A node whose merge-key property is missing fails closed, naming the
+/// label and property.
+#[test]
+fn missing_key_property_fails_closed() {
+    let mut broken = person(5, "nobody");
+    broken.properties.remove("name");
+    let g = graph(vec![broken], vec![]);
+    let err = build_plan(&g, &keys(), &opts()).unwrap_err();
+    assert!(err.to_string().contains("merge-key property"), "{err}");
+    assert!(err.to_string().contains("name"), "{err}");
+    assert!(err.to_string().contains("Person"), "{err}");
+}
+
+/// A dangling rel (endpoint not in the scope) is attributed to the
+/// reserved dangling bucket, not silently dropped.
+#[test]
+fn dangling_rels_land_in_the_reserved_bucket() {
+    // finish_graph keeps dangling rels out of the row set (they cannot
+    // resolve endpoints), so the plan sees only the counter.
+    let mut g = graph(vec![person(1, "Ada")], vec![]);
+    g.dangling_rels = 1;
+    let plan = build_plan(&g, &keys(), &opts()).unwrap();
+    let dangling: Vec<_> = plan
+        .entities
+        .iter()
+        .filter(|e| matches!(&e.kind, EntityKind::Dangling))
+        .collect();
+    assert_eq!(dangling.len(), 1, "{plan:?}");
+    assert_eq!(dangling[0].skipped_dangling, 1);
+}
+
+/// Keyedness is part of the rel group's identity: a keyed label
+/// literally named `A:B` and an unkeyed {A, B} label set are
+/// DIFFERENT endpoints (a joined spelling would collide them, and a
+/// colliding group's keyedness would come from whichever rel arrived
+/// first — the later rel could then panic on valid data).
+#[test]
+fn keyedness_is_part_of_the_rel_group_identity() {
+    // A keyed node whose whole label is the odd spelling `A:B`.
+    let mut odd = person(7, "Zoe");
+    odd.labels = vec!["A:B".into()];
+    // Person is keyed; a rel with a keyed :A:B start endpoint, and
+    // one with an unkeyed {A, B} start endpoint.
+    let mut unkeyed_start = person(8, "Mel");
+    unkeyed_start.labels = vec!["A".into(), "B".into()];
+    let mut rel_odd = spoke_at(7, 1);
+    rel_odd.rel_type = "LINKED".into();
+    let mut rel_unkeyed = spoke_at(8, 1);
+    rel_unkeyed.rel_type = "LINKED".into();
+    let g = graph(
+        vec![person(1, "Ada"), odd, unkeyed_start],
+        vec![rel_odd, rel_unkeyed],
+    );
+    // The odd spelling is a keyed label (its own merge key); the
+    // {A, B} set carries none. `unkeyed_labels: Skip` counts the
+    // unkeyed endpoint's rel, never written — and neither group
+    // touches the other.
+    let mut local_keys = keys();
+    local_keys
+        .nodes
+        .insert("A:B".to_string(), vec!["name".to_string()]);
+    let plan = build_plan(&g, &local_keys, &opts()).unwrap();
+    // The kinds say which is which — the written Rel and the counted
+    // RelSkipped, never a rows-shape proxy and never the emission
+    // order.
+    let written: Vec<_> = plan
+        .entities
+        .iter()
+        .filter(|e| matches!(&e.kind, EntityKind::Rel { .. }))
+        .collect();
+    let counted: Vec<_> = plan
+        .entities
+        .iter()
+        .filter(|e| matches!(&e.kind, EntityKind::RelSkipped { .. }))
+        .collect();
+    assert_eq!(
+        written.len(),
+        1,
+        "one written group, the keyed-endpoint rel: {plan:?}"
+    );
+    assert_eq!(written[0].rows.len(), 1);
+    assert_eq!(
+        counted.len(),
+        1,
+        "one counted group, the unkeyed-endpoint rel: {plan:?}"
+    );
+    assert_eq!(
+        counted[0].skipped_unkeyed, 1,
+        "the unkeyed-endpoint rel is counted, not written"
+    );
+}
+
+/// Per-entity policies resolve onto the groups they name.
+#[test]
+fn per_entity_policies_reach_their_groups() {
+    let g = graph(vec![person(1, "Ada"), event(3, "gql")], vec![]);
+    let mut o = opts();
+    o.nodes_update = PolicySpec::parse("Event=replace").unwrap();
+    let plan = build_plan(&g, &keys(), &o).unwrap();
+    assert_eq!(plan.entities[0].policy, UpdatePolicy::Replace); // Event
+    assert_eq!(plan.entities[1].policy, UpdatePolicy::Add); // Person
+    assert!(plan.entities[0].statement.contains("SET n = row.props"));
+}
+
+#[test]
+fn display_names_cover_every_kind() {
+    assert_eq!(
+        EntityKind::NodeLabel {
+            labels: vec!["Movie".into()],
+            keyed_label: "Movie".into(),
+        }
+        .display_name(),
+        "Movie"
+    );
+    assert_eq!(
+        EntityKind::NodeCreate {
+            labels: vec!["Untyped".into()]
+        }
+        .display_name(),
+        "Untyped"
+    );
+    assert_eq!(
+        EntityKind::NodeSkipped {
+            labels: vec!["Untyped".into()]
+        }
+        .display_name(),
+        "Untyped (unkeyed)"
+    );
+    assert_eq!(
+        EntityKind::Rel {
+            rel_type: "ACTED_IN".into(),
+            start_label: "Person".into(),
+            start_key: vec!["name".into()],
+            end_label: "Movie".into(),
+            end_key: vec!["title".into()],
+        }
+        .display_name(),
+        "(Person)-[:ACTED_IN]->(Movie)"
+    );
+    assert_eq!(
+        EntityKind::RelSkipped {
+            rel_type: "SPOKE_AT".into(),
+            start: "Person".into(),
+            end: "Untyped".into(),
+        }
+        .display_name(),
+        "(Person)-[:SPOKE_AT]->(Untyped) (unkeyed)"
+    );
+    assert_eq!(EntityKind::Dangling.display_name(), "(dangling)");
+}

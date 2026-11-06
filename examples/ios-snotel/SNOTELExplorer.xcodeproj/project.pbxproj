@@ -1,0 +1,151 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000001 /* SNOTELExplorerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000001 /* SNOTELExplorerApp.swift */; };
+		100000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000002 /* ContentView.swift */; };
+		100000000000000000000003 /* MapContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000003 /* MapContainerView.swift */; };
+		100000000000000000000004 /* FilterPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000004 /* FilterPanelView.swift */; };
+		100000000000000000000005 /* StationDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000005 /* StationDetailSheet.swift */; };
+		100000000000000000000006 /* SWELegendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000006 /* SWELegendView.swift */; };
+		100000000000000000000020 /* SWELevel+Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000020 /* SWELevel+Color.swift */; };
+		100000000000000000000007 /* MapViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000007 /* MapViewModel.swift */; };
+		100000000000000000000008 /* Basin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000008 /* Basin.swift */; };
+		100000000000000000000009 /* Station.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000009 /* Station.swift */; };
+		10000000000000000000000A /* SWELevel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000A /* SWELevel.swift */; };
+		10000000000000000000000B /* DataLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000B /* DataLoader.swift */; };
+		10000000000000000000000C /* DatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000C /* DatabaseService.swift */; };
+		10000000000000000000000D /* snotel_stations.csv in Resources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000D /* snotel_stations.csv */; };
+		10000000000000000000000E /* snotel_readings.csv in Resources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000E /* snotel_readings.csv */; };
+		10000000000000000000000F /* basins.json in Resources */ = {isa = PBXBuildFile; fileRef = 20000000000000000000000F /* basins.json */; };
+		100000000000000000000010 /* Relate in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000002 /* Relate */; };
+		100000000000000000000011 /* DemoQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000011 /* DemoQuery.swift */; };
+		100000000000000000000021 /* DatabaseStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000021 /* DatabaseStats.swift */; };
+		100000000000000000000012 /* InsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000012 /* InsightsView.swift */; };
+		100000000000000000000013 /* QueryWorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000013 /* QueryWorkbenchView.swift */; };
+		100000000000000000000014 /* QueryLogEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000014 /* QueryLogEntry.swift */; };
+		100000000000000000000015 /* QueryLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000015 /* QueryLogView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		200000000000000000000001 /* SNOTELExplorerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SNOTELExplorerApp.swift; sourceTree = "<group>"; };
+		200000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		200000000000000000000003 /* MapContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapContainerView.swift; sourceTree = "<group>"; };
+		200000000000000000000004 /* FilterPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterPanelView.swift; sourceTree = "<group>"; };
+		200000000000000000000005 /* StationDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationDetailSheet.swift; sourceTree = "<group>"; };
+		200000000000000000000006 /* SWELegendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SWELegendView.swift; sourceTree = "<group>"; };
+		200000000000000000000020 /* SWELevel+Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SWELevel+Color.swift"; sourceTree = "<group>"; };
+		200000000000000000000007 /* MapViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewModel.swift; sourceTree = "<group>"; };
+		200000000000000000000008 /* Basin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Basin.swift; sourceTree = "<group>"; };
+		200000000000000000000009 /* Station.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Station.swift; sourceTree = "<group>"; };
+		20000000000000000000000A /* SWELevel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SWELevel.swift; sourceTree = "<group>"; };
+		20000000000000000000000B /* DataLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataLoader.swift; sourceTree = "<group>"; };
+		20000000000000000000000C /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
+		20000000000000000000000D /* snotel_stations.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = snotel_stations.csv; sourceTree = "<group>"; };
+		20000000000000000000000E /* snotel_readings.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = snotel_readings.csv; sourceTree = "<group>"; };
+		20000000000000000000000F /* basins.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = basins.json; sourceTree = "<group>"; };
+		200000000000000000000010 /* SNOTELExplorer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SNOTELExplorer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		200000000000000000000011 /* DemoQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoQuery.swift; sourceTree = "<group>"; };
+		200000000000000000000021 /* DatabaseStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseStats.swift; sourceTree = "<group>"; };
+		200000000000000000000012 /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
+		200000000000000000000013 /* QueryWorkbenchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryWorkbenchView.swift; sourceTree = "<group>"; };
+		200000000000000000000014 /* QueryLogEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryLogEntry.swift; sourceTree = "<group>"; };
+		200000000000000000000015 /* QueryLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueryLogView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		300000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (100000000000000000000010 /* Relate in Frameworks */,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		400000000000000000000001 = {
+			isa = PBXGroup;
+			children = (400000000000000000000002 /* SNOTELExplorer */, 400000000000000000000008 /* Products */,);
+			sourceTree = "<group>";
+		};
+		400000000000000000000002 /* SNOTELExplorer */ = {
+			isa = PBXGroup;
+			children = (200000000000000000000001 /* SNOTELExplorerApp.swift */, 400000000000000000000003 /* Models */, 400000000000000000000004 /* Services */, 400000000000000000000005 /* ViewModels */, 400000000000000000000006 /* Views */, 400000000000000000000007 /* Data */,);
+			path = SNOTELExplorer;
+			sourceTree = "<group>";
+		};
+		400000000000000000000003 /* Models */ = {isa = PBXGroup; children = (200000000000000000000008, 200000000000000000000021, 200000000000000000000011, 200000000000000000000014, 200000000000000000000009, 20000000000000000000000A,); path = Models; sourceTree = "<group>"; };
+		400000000000000000000004 /* Services */ = {isa = PBXGroup; children = (20000000000000000000000B, 20000000000000000000000C,); path = Services; sourceTree = "<group>"; };
+		400000000000000000000005 /* ViewModels */ = {isa = PBXGroup; children = (200000000000000000000007,); path = ViewModels; sourceTree = "<group>"; };
+		400000000000000000000006 /* Views */ = {isa = PBXGroup; children = (200000000000000000000002, 200000000000000000000004, 200000000000000000000012, 200000000000000000000003, 200000000000000000000015, 200000000000000000000013, 200000000000000000000006, 200000000000000000000020, 200000000000000000000005,); path = Views; sourceTree = "<group>"; };
+		400000000000000000000007 /* Data */ = {isa = PBXGroup; children = (20000000000000000000000F, 20000000000000000000000E, 20000000000000000000000D,); path = Data; sourceTree = "<group>"; };
+		400000000000000000000008 /* Products */ = {isa = PBXGroup; children = (200000000000000000000010 /* SNOTELExplorer.app */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		500000000000000000000001 /* SNOTELExplorer */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 900000000000000000000002 /* Build configuration list for PBXNativeTarget "SNOTELExplorer" */;
+			buildPhases = (700000000000000000000001 /* Sources */, 300000000000000000000001 /* Frameworks */, 700000000000000000000002 /* Resources */,);
+			buildRules = ();
+			dependencies = ();
+			name = SNOTELExplorer;
+			packageProductDependencies = (A00000000000000000000002 /* Relate */,);
+			productName = SNOTELExplorer;
+			productReference = 200000000000000000000010 /* SNOTELExplorer.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		600000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2660; LastUpgradeCheck = 2660; TargetAttributes = {500000000000000000000001 = {CreatedOnToolsVersion = 26.0; }; }; };
+			buildConfigurationList = 900000000000000000000001 /* Build configuration list for PBXProject "SNOTELExplorer" */;
+			compatibilityVersion = "Xcode 15.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = 400000000000000000000001;
+			packageReferences = (A00000000000000000000001 /* XCLocalSwiftPackageReference "relate" */,);
+			productRefGroup = 400000000000000000000008 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (500000000000000000000001 /* SNOTELExplorer */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		700000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (10000000000000000000000F, 10000000000000000000000E, 10000000000000000000000D,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		700000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001, 100000000000000000000002, 100000000000000000000003, 100000000000000000000004, 100000000000000000000005, 100000000000000000000006, 100000000000000000000007, 100000000000000000000008, 100000000000000000000009, 10000000000000000000000A, 10000000000000000000000B, 10000000000000000000000C, 100000000000000000000011, 100000000000000000000012, 100000000000000000000013, 100000000000000000000014, 100000000000000000000015, 100000000000000000000020, 100000000000000000000021,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		800000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ANALYZER_NONNULL = YES; CLANG_CXX_LANGUAGE_STANDARD = "gnu++20"; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; CLANG_WARN_DOCUMENTATION_COMMENTS = YES; CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES; COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES; ENABLE_USER_SCRIPT_SANDBOXING = YES; GCC_C_LANGUAGE_STANDARD = gnu17; GCC_NO_COMMON_BLOCKS = YES; GCC_OPTIMIZATION_LEVEL = 0; GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)",); IPHONEOS_DEPLOYMENT_TARGET = 17.0; MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; name = Debug; };
+		800000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ANALYZER_NONNULL = YES; CLANG_CXX_LANGUAGE_STANDARD = "gnu++20"; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; CLANG_WARN_DOCUMENTATION_COMMENTS = YES; CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES; COPY_PHASE_STRIP = YES; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; ENABLE_NS_ASSERTIONS = NO; ENABLE_USER_SCRIPT_SANDBOXING = YES; GCC_C_LANGUAGE_STANDARD = gnu17; GCC_NO_COMMON_BLOCKS = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; MTL_ENABLE_DEBUG_INFO = NO; SDKROOT = iphoneos; SWIFT_COMPILATION_MODE = wholemodule; VALIDATE_PRODUCT = YES; }; name = Release; };
+		800000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "SNOTEL Explorer"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather"; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks",); MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = org.relate.SNOTELExplorer; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Debug; };
+		800000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "SNOTEL Explorer"; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather"; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks",); MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = org.relate.SNOTELExplorer; PRODUCT_NAME = "$(TARGET_NAME)"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		900000000000000000000001 /* Build configuration list for PBXProject "SNOTELExplorer" */ = {isa = XCConfigurationList; buildConfigurations = (800000000000000000000001, 800000000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		900000000000000000000002 /* Build configuration list for PBXNativeTarget "SNOTELExplorer" */ = {isa = XCConfigurationList; buildConfigurations = (800000000000000000000003, 800000000000000000000004,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A00000000000000000000001 /* XCLocalSwiftPackageReference "relate" */ = {isa = XCLocalSwiftPackageReference; relativePath = ../..; };
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A00000000000000000000002 /* Relate */ = {isa = XCSwiftPackageProductDependency; package = A00000000000000000000001 /* XCLocalSwiftPackageReference "relate" */; productName = Relate; };
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 600000000000000000000001 /* Project object */;
+}

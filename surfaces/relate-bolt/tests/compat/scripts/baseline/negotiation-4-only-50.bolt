@@ -1,0 +1,6 @@
+# Baseline B-04 (negotiation-4; also pins F-04): a proposal of Bolt 5.0
+# only covers no 4.4, so the server answers 00 00 00 00 and closes the
+# connection (ADR-0303).
+C: <RAW> 60 60 B0 17 00 00 00 05 00 00 00 00 00 00 00 00 00 00 00 00
+S: <RAW> 00 00 00 00
+S: <EXIT>

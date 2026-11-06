@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.relate</groupId>
+  <artifactId>java-driver-smoke</artifactId>
+  <version>0.1.0</version>
+  <name>java-driver-smoke</name>
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+    </license>
+  </licenses>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <!-- The official Java driver, pinned to the same driver line as the Go
+         smoke's v5.28.5: 5.x negotiates down to Bolt 4.4 — Relate's
+         only protocol version. -->
+    <dependency>
+      <groupId>org.neo4j.driver</groupId>
+      <artifactId>neo4j-java-driver</artifactId>
+      <version>5.28.5</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <configuration>
+          <mainClass>com.relate.smoke.JavaDriverSmoke</mainClass>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

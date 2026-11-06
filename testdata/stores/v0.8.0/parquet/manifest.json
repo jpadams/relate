@@ -1,0 +1,151 @@
+{
+  "format_version": 3,
+  "next_node_id": 2,
+  "next_rel_id": 1,
+  "checkpoint_lsn": 10,
+  "commit_ts": 10,
+  "node_parts": [
+    {
+      "path": "nodes/0-262144-b6bd9fc639653106fd033b73ccf5da46.parquet",
+      "id_lo": 0,
+      "id_hi": 262144,
+      "rows": 2,
+      "bytes": 4109
+    }
+  ],
+  "rel_parts": [
+    {
+      "path": "relationships/0-262144-bc0426263aa25ceba8500ab017144eb1.parquet",
+      "id_lo": 0,
+      "id_hi": 262144,
+      "rows": 1,
+      "bytes": 2050
+    }
+  ],
+  "pull_identity_path": "pull-identity/3fc90282b9962212ea219b3ba5d56deb.json",
+  "bytes_per_node": 2054.5,
+  "bytes_per_rel": 2050.0,
+  "codec": "parquet",
+  "indexes": [
+    {
+      "name": "person_bio",
+      "label": "Person",
+      "property": "bio#FULLTEXT#person_bio"
+    },
+    {
+      "name": "person_email_unique",
+      "label": "Person",
+      "property": "email#RANGE#person_email_unique"
+    },
+    {
+      "name": "person_embedding",
+      "label": "Person",
+      "property": "embedding#VECTOR#person_embedding"
+    },
+    {
+      "name": "person_name",
+      "label": "Person",
+      "property": "name"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "person_email_unique",
+      "relationship": false,
+      "label": "Person",
+      "properties": [
+        "email"
+      ],
+      "kind": "unique",
+      "property_type": null
+    },
+    {
+      "name": "person_name_exists",
+      "relationship": false,
+      "label": "Person",
+      "properties": [
+        "name"
+      ],
+      "kind": "exists",
+      "property_type": null
+    }
+  ],
+  "theater": {
+    "databases": {
+      "analytics": [
+        25,
+        false
+      ],
+      "neo4j": [
+        5,
+        false
+      ],
+      "system": [
+        25,
+        false
+      ]
+    },
+    "index_details": {
+      "person_bio": {
+        "kind": "Fulltext",
+        "relationship": false,
+        "labels": [
+          "Person"
+        ],
+        "properties": [
+          "bio"
+        ],
+        "with_properties": []
+      },
+      "person_embedding": {
+        "kind": "Vector",
+        "relationship": false,
+        "labels": [
+          "Person"
+        ],
+        "properties": [
+          "embedding"
+        ],
+        "with_properties": []
+      }
+    },
+    "index_options": {
+      "person_bio": {},
+      "person_embedding": {
+        "indexConfig": {
+          "t": "map",
+          "v": {
+            "vector.dimensions": {
+              "t": "int",
+              "v": 3
+            },
+            "vector.hnsw.ef_construction": {
+              "t": "int",
+              "v": 100
+            },
+            "vector.hnsw.m": {
+              "t": "int",
+              "v": 16
+            },
+            "vector.quantization.enabled": {
+              "t": "bool",
+              "v": true
+            },
+            "vector.similarity_function": {
+              "t": "string",
+              "v": "COSINE"
+            }
+          }
+        }
+      }
+    },
+    "graph_types": {},
+    "current_graph_type": {
+      "node_types": [],
+      "edge_types": [],
+      "constraints": [],
+      "drop_constraint_names": []
+    },
+    "derived_constraints": {}
+  }
+}

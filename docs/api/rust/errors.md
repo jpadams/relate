@@ -1,0 +1,50 @@
+# Rust crate — typed error variants
+
+Part of the [Rust spec](spec.md). These `relate::Error` variants carry
+an error class typed, so a surface maps it without reading the message
+(ADR-0307: the Bolt server sends a Neo4j status code per variant). Each
+renders exactly the text of the error it replaced, so the C ABI, Python,
+JS, Java, Go, HTTP and MCP messages are unchanged, and
+`binding_error_metadata` and the CLI error envelope classify each as they
+classified its predecessor — with one deliberate exception: the WAL
+payload cap's capacity kind (ADR-0494), which changed both its message
+and its class from the storage error it replaced, while no external
+clients existed.
+
+## The one classification — `error_info` (ADR-0502 §2)
+
+`relate::error_info(&Error) -> relate::ErrorInfo` is the engine's
+single-source classification of any `Error`: `ErrorInfo { neo4j_code,
+gql_status, stage, retryable }` — the Neo4j status code the caller-facing
+classes carry (the internal class carries the genericized
+`Neo.DatabaseError.General.UnknownError`, ADR-0260), the GQLSTATUS, the
+`ErrorStage` (`Compile` the statement is rejected before any work,
+`Runtime` it is discovered while producing rows, `Internal` it is not the
+statement's fault — ADR-0319), and the drivers' transient test (`true`
+only for a write-write conflict and a retryable processing cap). The match
+is exhaustive: a new `Error` variant does not compile until it is
+classified. Bolt's FAILURE rendering, HTTP's error envelope, the CLI's
+exit-code classifier, Python and the C ABI derive from it — never a
+second table. The GQLSTATUS values are the codes the surfaces emit today
+(the engine-documented fixed-namespace codes of ADR-0116 §9 and the GQL
+general code `42000` for every other caller-facing class); a nested
+`<Class>:` token in a still-stringly `Syntax`/`Semantic`/`Execution`
+payload carries its own documented code, resolved by the same canonical
+scan the bindings use. The per-class code constants
+(`relate_error::SYNTAX_ERROR_CODE`, …) are the classification's own
+data, re-exported from the defining crate.
+
+| Variant | Contract |
+| --- | --- |
+| `ParameterMissing(String)` | A referenced parameter was not supplied (ADR-0308). `Display` `semantic error: ParameterMissing: Expected parameter(s): <names>`: each missing name once, in order of first appearance, joined by `, `. Raised before execution; `EXPLAIN` plans without parameter values. `Error::parameters_missing(names)` builds it. |
+| `DatabaseNotFound { name }` | A session namespace (`connect_namespace`, `set_namespace`, a Bolt `db`) or static `USE` target that is not a fixed namespace (ADR-0146, ADR-0307). `Display` `semantic error: DatabaseNotFound: Graph not found: <name>`, byte-identical to the `Semantic` text it replaced. `typed_detail()` returns `("DatabaseNotFound", "Graph not found: <name>")`; `Error::database_not_found(name)` builds it. |
+| `Error::undefined_variable(name)` (a `Syntax` error) | A variable with no binding in the evaluated row (ADR-0335), raised for the expressions the plan-time binding walks cannot see (a `SHOW … WHERE` predicate lowered at run time). `Display` `syntax error: UndefinedVariable: variable '<name>' not defined`, byte-identical to the front-end's scope-check error; `Error::undefined_variable(name)` builds it. An unbound variable never evaluates to `null`. |
+| `Arithmetic(ArithmeticFailure)` | An arithmetic failure while evaluating an expression (ADR-0307). `ArithmeticFailure` is `DivisionByZero` (`Display` `/ by zero`), `ModuloByZero` (`% by zero`) or `RoundingNecessary` (`round(x, p, 'UNNECESSARY')` on a value that needs rounding: `ArithmeticError: rounding necessary`) — each the payload of the `Type`/`Execution` error it replaced. `ArithmeticFailure::detail()` is that payload; `Error::Arithmetic`'s own `Display` composes the legacy full text (`type error: / by zero`, …, ADR-0338). `relate::ArithmeticFailure` is exported. |
+| `Cancelled` | The query was stopped through its `CancelToken` (ADR-0111, ADR-0307). `Display` `query cancelled`, the text of the `Execution("query cancelled")` it replaced; `Error::cancelled()` returns it. |
+| `Capacity { used, limit, kind: CapacityKind::WalPayload }` | A commit record refused by the per-record WAL payload cap (ADR-0086; typed ADR-0492; reclassified ADR-0494): its serialized payload crosses `Error::WAL_PAYLOAD_CAP_BYTES` (64 MiB), so it cannot be journaled — refused before any frame is written or LSN published. The refusal is the capacity family's memory-limit class on every surface (binding kind `MemoryLimitExceeded`, HTTP 507, Bolt `Neo.ClientError.General.TransactionOutOfMemoryError`, CLI kind `capacity`). `used` is the counted byte total at which the bounded serializer stopped — a lower bound of the record the statement tried to commit — and `limit` the bound the check consulted; `Error::capacity_wal_payload(counted, limit)` builds it. `Display` is the communicative capacity line, both figures through the one byte-size renderer: `This statement tried to commit a single WAL record of at least <used>. This is a safety limit protecting against memory exhaustion — the per-record WAL payload cap is <limit>; commit the data in smaller transactions.` (64 MiB renders `64 MB`.) |
+
+The runnable example is
+[examples/typed_error_variants.md](examples/typed_error_variants.md) —
+`cargo run -p relate --example typed_error_variants --locked`, built and
+run in CI's engine lane; `relate-core`'s `error/tests.rs` pin each
+`Display` against the text it replaced.

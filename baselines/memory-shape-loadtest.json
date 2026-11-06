@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "name": "memory-shape",
+  "started_at": "2026-11-05T13:27:33Z",
+  "finished_at": "2026-11-05T13:33:51Z",
+  "workload": {
+    "kind": "memory-shape"
+  },
+  "config": {
+    "scale": "large",
+    "logical_target_bytes": 33554432,
+    "attributes": 1,
+    "text_indexes": 0,
+    "point_indexes": 0,
+    "range_indexes": 0,
+    "uri": "/tmp/memory-shape-loadtest-20261105T132732",
+    "container_memory_bytes": 2147483648
+  },
+  "shapes": [
+    {
+      "shape": "base",
+      "index": "none",
+      "nodes": 0,
+      "relationships": 0,
+      "logical_bytes": 258,
+      "disk_bytes": 769,
+      "rss_bytes": 13791232,
+      "peak_rss_bytes": 13803520,
+      "baseline_rss_bytes": 13791232,
+      "attributed_rss_bytes": 0,
+      "ratio": 0.0
+    },
+    {
+      "shape": "flat",
+      "index": "none",
+      "nodes": 120000,
+      "relationships": 0,
+      "logical_bytes": 33120516,
+      "disk_bytes": 2041295,
+      "rss_bytes": 64159744,
+      "peak_rss_bytes": 64204800,
+      "baseline_rss_bytes": 13606912,
+      "attributed_rss_bytes": 50552832,
+      "ratio": 1.52632984341186
+    },
+    {
+      "shape": "fanout",
+      "index": "none",
+      "nodes": 52016,
+      "relationships": 52000,
+      "logical_bytes": 33316930,
+      "disk_bytes": 1837437,
+      "rss_bytes": 59736064,
+      "peak_rss_bytes": 59785216,
+      "baseline_rss_bytes": 13844480,
+      "attributed_rss_bytes": 45891584,
+      "ratio": 1.3774253510152346
+    },
+    {
+      "shape": "ring",
+      "index": "none",
+      "nodes": 46000,
+      "relationships": 46000,
+      "logical_bytes": 33121108,
+      "disk_bytes": 1850979,
+      "rss_bytes": 58908672,
+      "peak_rss_bytes": 58978304,
+      "baseline_rss_bytes": 13606912,
+      "attributed_rss_bytes": 45301760,
+      "ratio": 1.3677610060629615
+    },
+    {
+      "shape": "dense ring",
+      "index": "none",
+      "nodes": 5000,
+      "relationships": 100000,
+      "logical_bytes": 33366110,
+      "disk_bytes": 1699957,
+      "rss_bytes": 54042624,
+      "peak_rss_bytes": 54988800,
+      "baseline_rss_bytes": 13606912,
+      "attributed_rss_bytes": 40435712,
+      "ratio": 1.2118797186726291
+    }
+  ],
+  "environment": {
+    "class": "relate-loadtest-baseline/v1",
+    "arch": "x86_64",
+    "os": "linux",
+    "build_image": "rust:1.88-bookworm@sha256:af306cfa71d987911a781c37b59d7d67d934f49684058f96cf72079c3626bfe0",
+    "run_image": "debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc",
+    "cpus": 2,
+    "cpu_period_us": 10000,
+    "cpu_quota_us": 20000,
+    "memory": "2g",
+    "ops": null,
+    "warmup": null,
+    "workers": null,
+    "runner": "github-actions:linux-4-core-x86"
+  },
+  "baseline_envelope": {
+    "policy": "worst-of-n",
+    "runs": 5,
+    "sources": [
+      "memory-shape-loadtest-envelope-run1.json",
+      "memory-shape-loadtest-envelope-run2.json",
+      "memory-shape-loadtest-envelope-run3.json",
+      "memory-shape-loadtest-envelope-run4.json",
+      "memory-shape-loadtest-envelope-run5.json"
+    ],
+    "rss_ratio": "max",
+    "logical_bytes": "exact"
+  }
+}

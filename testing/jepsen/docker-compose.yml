@@ -1,0 +1,135 @@
+# The Jepsen topology (LABS-650): one control container and one DB node.
+#
+#   control  JVM 21 + Clojure CLI + this harness (bind-mounted from the
+#            repo) — the Jepsen control node. It receives the docker
+#            socket: the DB's lifecycle (wipe / start / kill / restart —
+#            the nemesis) is driven through it, because the DB image is
+#            scratch-based with no shell and no SSH.
+#
+#   db       the STOCK product image `make docker` builds — the binary
+#            under test is exactly what ships to users. The entrypoint
+#            is PID 1; a `docker kill` is a faithful SIGKILL of the
+#            serve process with the /data volume (WAL + checkpoints)
+#            surviving; `docker start` replays the WAL on the way back
+#            up. Store on the persistent relate-jepsen-data volume.
+#
+# The two talk on this compose network: control connects to
+# bolt://db:7687 and http://db:7474. No ports are published to the
+# host — add a `ports:`` mapping under `db` if you want host-side
+# access for debugging.
+#
+# ISOLATION: every identifier below is env-parameterized with the
+# historical default. The lane program runs its nodes concurrently on
+# one docker daemon, and one lane's `compose up` / hermetic wipe
+# against FIXED names resurrects or empties another lane's mid-run DB
+# (observed as a kill whose wire never went down and a final read of
+# an empty store another lane's setup! had just wiped). Every lane
+# wrapper (run.sh, run-http.sh, run-poweroff.sh; lanes.sh via run.sh)
+# derives a private project, DB container, control container, data
+# volume, and — for the compare lane — neo4j reference container from
+# its own suffix through the one sourced lib/isolation.sh and passes the
+# matching --db-container / --data-volume flags; the m2 dependency cache
+# is shared deliberately across the suffixed stock lanes (identical
+# content, and the cache is what keeps later runs fast) — the power-off
+# rig pins its own, and a suffixed project builds its own control image.
+
+name: ${COMPOSE_PROJECT_NAME:-relate-jepsen}
+
+services:
+  db:
+    # The stock product image `make docker` builds, overridable for
+    # lane evidence runs on a shared docker daemon (RELATE_IMAGE —
+    # the harness's setup probe fails loudly on an image whose binary
+    # predates the ADR-0470 mode wiring, so an override can never
+    # silently degrade a lane).
+    image: ${RELATE_IMAGE:-relate-bolt:latest}
+    container_name: ${DB_CONTAINER:-relate-jepsen-db}
+    # Args pass through to `relate serve` (the image CMD default is
+    # --host 0.0.0.0 --database /data/graph --bolt 7687). The additions:
+    #   --auth jepsen:jepsen            preset credentials (deterministic,
+    #                                   not parsed from docker logs)
+    #   --bolt-identity Neo4j/5.26.0    the identity gate the official
+    #                                   driver 5.x requires — it rejects
+    #                                   any agent not starting `Neo4j/`
+    #                                   (LABS-649). The harness asserts
+    #                                   this value verbatim.
+    #   --database ${RELATE_DATABASE:-/data/graph}
+    #                                   the lane's store: /data/graph on
+    #                                   the persistent volume, or
+    #                                   :memory: for the memory-vfs
+    #                                   negative control. run.sh exports
+    #                                   it per lane.
+    command:
+      - --host
+      - 0.0.0.0
+      - --database
+      - ${RELATE_DATABASE:-/data/graph}
+      - --bolt
+      - "7687"
+      - --auth
+      - jepsen:jepsen
+      - --bolt-identity
+      - Neo4j/5.26.0
+    environment:
+      # Test containers opt out of telemetry (the docker_smoke.py convention).
+      - DO_NOT_TRACK=1
+      # The lane's durability knobs (ADR-0470 / ADR-0077), exported per
+      # lane by run.sh: the mode the serve open resolves, and the timed
+      # checkpoint period (the snapshot lane's loss window). The
+      # harness's setup guard asserts the container really runs them.
+      - RELATE_DURABILITY_MODE=${RELATE_DURABILITY_MODE:-full}
+      - RELATE_CHECKPOINT_INTERVAL_SECS=${RELATE_CHECKPOINT_INTERVAL_SECS:-300}
+    volumes:
+      - relate-jepsen-data:/data
+
+  control:
+    build:
+      context: .
+      dockerfile: control.Dockerfile
+    container_name: ${RELATE_JEPSEN_CONTROL_CONTAINER:-relate-jepsen-control}
+    working_dir: /src/testing/jepsen
+    # The repo is bind-mounted (not baked in) so harness edits on the
+    # host take effect on the next run with no image rebuild; the m2
+    # volume caches the Clojure/Maven dependencies between runs.
+    volumes:
+      - ../..:/src
+      - /var/run/docker.sock:/var/run/docker.sock
+      - relate-jepsen-m2:/root/.m2
+    depends_on:
+      - db
+
+  # neo4j:5.26.0 community — same 5.26 line the pinned bolt-identity
+  # advertises, exact patch so the reference never drifts. Behind the
+  # `compare` compose profile: it exists only for the on-demand
+  # differential lane (WORKLOAD=compare ./run.sh), never for the set
+  # lane and never in CI.
+  #   docker compose --profile compare up -d db neo4j
+  # No persistent volume on purpose: the harness wipes it over Bolt at
+  # setup (MATCH (n) DETACH DELETE n), and recreating the container —
+  # which compose down/up does — is the coarse-grained wipe.
+  neo4j:
+    image: neo4j:5.26.0
+    container_name: ${NEO4J_CONTAINER:-relate-jepsen-neo4j}
+    profiles: ["compare"]
+    environment:
+      - NEO4J_AUTH=neo4j/jepsenref
+      - DO_NOT_TRACK=1
+
+volumes:
+  # The DB node's persistent store: survives docker kill — WAL replay
+  # recovering what it holds IS the test.
+  #
+  # The explicit `name:` pins each volume to the exact unprefixed name
+  # the harness's --data-volume / m2 cache targets. Without it compose
+  # prefixes with the project name (relate-jepsen_data), and the
+  # harness's `docker run -v relate-jepsen-data:...` wipe would
+  # AUTO-CREATE a different, empty volume and silently clean the wrong
+  # one — every run after the first inherited the previous store
+  # (LABS-650 review finding). The env override is the isolation knob
+  # above; the m2 cache keeps the fixed shared name on purpose.
+  relate-jepsen-data:
+    name: ${DATA_VOLUME:-relate-jepsen-data}
+  # The shared Clojure/Maven cache (deliberately NOT suffixed — see the
+  # header note on concurrent runs).
+  relate-jepsen-m2:
+    name: relate-jepsen-m2

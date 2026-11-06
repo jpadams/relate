@@ -1,0 +1,21 @@
+[package]
+name = "relate-wire"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The extension mount's shared kit (ADR-0447): the bounded-read mechanism
+# both wire sides read through, the mount's caps and commit vocabulary, and
+# the child-side emission kit the first-party importer children speak MCP
+# stdio through. The host side — spawn, the request envelope, the tool
+# dispatch, the typed refusals — lives in the CLI (`extensions::protocol`
+# and `extensions::mcp`), which consumes this crate's reads and states its
+# caps from these constants.
+#
+# No `Database` here and no engine dependency: a child links this crate to
+# speak the wire, so the kit stays pure std + serde_json (ADR-0447 §4 — the
+# child never touches a store).
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

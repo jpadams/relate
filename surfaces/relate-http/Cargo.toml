@@ -1,0 +1,29 @@
+[package]
+name = "relate-http"
+description = "HTTP Query API v2 statement endpoint for Relate (ADR-0232)"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# ADR-0359: the boundary's plan text rendering.
+relate-formatter = { workspace = true }
+relate = { workspace = true, features = ["parquet"] }
+httparse = { workspace = true }
+# gzip response compression on the reply seam (ADR-0385).
+flate2 = { workspace = true }
+relate-auth = { workspace = true }
+chrono = { workspace = true }
+relate-serve = { workspace = true }
+relate-model = { workspace = true }
+indexmap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+relate-test-support = { workspace = true, features = ["wire"] }
+# The pull client's HTTP stack (ADR-0386 §Context): its chunk decode and gzip
+# decode are what the streaming reply must satisfy end to end.
+ureq = { workspace = true }

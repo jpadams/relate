@@ -1,0 +1,12 @@
+{
+  "text": "Relate v0.1.0 released",
+  "blocks": [
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Relate v0.1.0* is out: <https://example.invalid/release|GitHub release>"
+      }
+    }
+  ]
+}

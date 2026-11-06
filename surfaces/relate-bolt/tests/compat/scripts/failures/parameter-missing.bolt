@@ -1,0 +1,20 @@
+# ADR-0308: a statement that references a parameter missing from the RUN
+# parameters fails at RUN with ParameterMissing (F-42, F-67, D-48). Nothing
+# executes and no RECORD with null arrives; PULL is IGNORED and RESET
+# recovers. With the parameter supplied, the same statement runs.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN $p AS p" {} {}
+S: FAILURE {"code": "Neo.ClientError.Statement.ParameterMissing", "message": "semantic error: ParameterMissing: Expected parameter(s): p"}
+C: PULL {"n": -1}
+S: IGNORED
+C: RESET
+S: SUCCESS {}
+
+C: RUN "RETURN $p AS p" {"p": 1} {}
+S: SUCCESS {"fields": ["p"]}
+C: PULL {"n": -1}
+S: RECORD [1]
+   SUCCESS {}

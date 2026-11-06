@@ -1,0 +1,13 @@
+{
+  "name": "relate-bolt-websocket-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Official Neo4j JS driver (browser bundle) over Bolt-over-WebSocket against relate serve's Bolt surface",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "neo4j-driver": "6.2.0"
+  }
+}

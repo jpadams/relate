@@ -1,0 +1,12 @@
+[package]
+name = "relate-error"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+relate-parser = { workspace = true }
+# ADR-0502 §2: the query-engine `Error` the classification matches over,
+# and (moved down from here by the same ADR) the shared error-kind
+# vocabulary this crate re-exports.
+relate-core = { workspace = true }

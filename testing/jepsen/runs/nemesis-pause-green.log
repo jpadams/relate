@@ -1,0 +1,779 @@
+ Image relate-jepsen-nemesis-control Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 698B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from control.Dockerfile
+#2 transferring dockerfile: 705B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/clojure:temurin-21-bookworm
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [1/2] FROM docker.io/library/clojure:temurin-21-bookworm@sha256:ea619ffa1ae2cd1b083e7a97340325947cdb5aec16cb6dba6165ecd030adf952
+#5 resolve docker.io/library/clojure:temurin-21-bookworm@sha256:ea619ffa1ae2cd1b083e7a97340325947cdb5aec16cb6dba6165ecd030adf952 done
+#5 DONE 0.0s
+
+#6 [2/2] RUN apt-get update     && apt-get install -y --no-install-recommends gnuplot graphviz docker.io     && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 exporting to image
+#7 exporting layers done
+#7 exporting manifest sha256:3c097cc4eeaf01c2d84169465abcfe603ae5a08843ce6fb3dcdfad24b37281f5 done
+#7 exporting config sha256:ec5a64cfe4e658c973cf3624228a29481563617e5593f314a6b7a5bb7ef75f20 done
+#7 exporting attestation manifest sha256:cd4efd9284f8479fed4336e8daeb6866f0940996c65c1734bec13c82b6d8e794 0.0s done
+#7 exporting manifest list sha256:4629e975462c483b1a2ae42727807e966c0def82f36e6cf9bb6aa55c86bf2176 0.0s done
+#7 naming to docker.io/library/relate-jepsen-nemesis-control:latest done
+#7 unpacking to docker.io/library/relate-jepsen-nemesis-control:latest done
+#7 DONE 0.1s
+
+#8 resolving provenance for metadata file
+#8 DONE 0.0s
+ Image relate-jepsen-nemesis-control Built 
+ Network relate-jepsen-nemesis_default Creating 
+ Network relate-jepsen-nemesis_default Creating 
+ Network relate-jepsen-nemesis_default Created 
+ Network relate-jepsen-nemesis_default Created 
+ Container relate-jepsen-nemesis-db Creating 
+ Container relate-jepsen-nemesis-db Created 
+ Container relate-jepsen-nemesis-db Starting 
+ Container relate-jepsen-nemesis-db Started 
+ Container relate-jepsen-nemesis-db Running 
+ Container relate-jepsen-nemesis-control-run-4207187d492c Creating 
+ Container relate-jepsen-nemesis-control-run-4207187d492c Created 
+04:08:42.846 [main] INFO jepsen.cli -- Test options:
+ {:auth-password "jepsen",
+ :data-volume "relate-jepsen-nemesis-data",
+ :concurrency 5,
+ :db-image "relate-bolt:latest",
+ :leave-db-running? false,
+ :bolt-uri "bolt://db:7687",
+ :logging-json? false,
+ :nemesis-interval 5,
+ :ssh
+ {:dummy? false,
+  :username "root",
+  :password "root",
+  :strict-host-key-checking false,
+  :private-key-path nil},
+ :db-host "db",
+ :argv
+ ("test"
+  "--nemesis"
+  "pause"
+  "--concurrency"
+  "5"
+  "--time-limit"
+  "70"
+  "--nemesis-interval"
+  "5"
+  "--db-container"
+  "relate-jepsen-nemesis-db"
+  "--data-volume"
+  "relate-jepsen-nemesis-data"),
+ :nemesis :pause,
+ :nodes ["n1" "n2" "n3" "n4" "n5"],
+ :test-count 1,
+ :auth-user "jepsen",
+ :time-limit 70,
+ :db-container "relate-jepsen-nemesis-db"}
+
+INFO [2026-11-01 04:08:42,898] jepsen test runner - jepsen.core Running test:
+{:remote
+ #jepsen.control.retry.Remote{:remote #jepsen.control.scp.Remote{:cmd-remote #jepsen.control.sshj.SSHJRemote{:concurrency-limit 6,
+                                                                                                             :conn-spec nil,
+                                                                                                             :client nil,
+                                                                                                             :semaphore nil},
+                                                                 :conn-spec nil},
+                              :conn nil}
+ :concurrency 5
+ :db
+ #object[jepsen.relate.db$docker_db$reify__400
+         "0x506e382b"
+         "jepsen.relate.db$docker_db$reify__400@506e382b"]
+ :name "relate-set-pause"
+ :start-time
+ #object[java.time.OffsetDateTime "0x2267b0bb" "2026-11-01T04:08:42.850480805Z"]
+ :net
+ #object[jepsen.net$iptables_with_dev$reify__15624
+         "0x20505460"
+         "jepsen.net$iptables_with_dev$reify__15624@20505460"]
+ :client
+ #jepsen.relate.client.BoltClient{:driver nil,
+                                      :uri "bolt://db:7687",
+                                      :user "jepsen",
+                                      :password "jepsen"}
+ :barrier
+ #object[java.util.concurrent.CyclicBarrier
+         "0x8eeb4c5"
+         "java.util.concurrent.CyclicBarrier@8eeb4c5"]
+ :ssh {:dummy? true}
+ :checker
+ #jepsen.checker.Compose{:checkers {:stats #jepsen.checker.Stats{},
+                                    :set #object[jepsen.relate.checker$set_final_state$reify__213
+                                                 "0x2dc77962"
+                                                 "jepsen.relate.checker$set_final_state$reify__213@2dc77962"],
+                                    :fault-evidence #object[jepsen.relate.checker$fault_evidence$reify__265
+                                                            "0x32bae609"
+                                                            "jepsen.relate.checker$fault_evidence$reify__265@32bae609"]}}
+ :nemesis
+ #unprintable "jepsen.relate.nemesis$container_nemesis$reify__454@106b476a"
+ :nodes ["db"]
+ :generator
+ #object[jepsen.util.Forgettable
+         "0x51d2d336"
+         ((jepsen.generator.Synchronize
+           {:gen (jepsen.generator.TimeLimit
+                  {:limit 70000000000,
+                   :cutoff nil,
+                   :gen (jepsen.generator.Any
+                         {:gens [(jepsen.generator.OnThreads
+                                  {:f #{:nemesis},
+                                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                                           "0x2d568cff"
+                                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@2d568cff"],
+                                   :gen ({:type :sleep, :value 5}
+                                         {:type :info, :f :pause}
+                                         {:type :sleep, :value 5}
+                                         {:type :info, :f :resume}
+                                         {:type :sleep, :value 5}
+                                         {:type :info, :f :pause}
+                                         {:type :sleep, :value 5}
+                                         {:type :info, :f :resume}
+                                         ...)})
+                                 (jepsen.generator.OnThreads
+                                  {:f #jepsen.generator.context.AllBut{:element :nemesis},
+                                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                                           "0x6e4bccc"
+                                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@6e4bccc"],
+                                   :gen (jepsen.generator.Stagger
+                                         {:dt-fn #object[jepsen.generator$stagger_exp$dt_fn__6800
+                                                         "0x2487b621"
+                                                         "jepsen.generator$stagger_exp$dt_fn__6800@2487b621"],
+                                          :next-time nil,
+                                          :gen ({:type :invoke,
+                                                 :f :add,
+                                                 :value 1}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 2}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 3}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 4}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 5}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 6}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 7}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 8}
+                                                ...)})})]})})})
+          (jepsen.generator.Synchronize
+           {:gen (jepsen.generator.OnThreads
+                  {:f #{:nemesis},
+                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                           "0x3d2ff73a"
+                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@3d2ff73a"],
+                   :gen (jepsen.generator.Limit
+                         {:remaining 1, :gen {:type :info, :f :resume}})})})
+          (jepsen.generator.Synchronize
+           {:gen (jepsen.generator.OnThreads
+                  {:f #jepsen.generator.context.AllBut{:element :nemesis},
+                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                           "0x736a8aea"
+                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@736a8aea"],
+                   :gen (jepsen.generator.Limit
+                         {:remaining 1, :gen {:type :invoke, :f :read}})})}))]
+ :os
+ #object[jepsen.os$reify__16046 "0x504b4a97" "jepsen.os$reify__16046@504b4a97"]}
+
+INFO [2026-11-01 04:08:43,419] jepsen test runner - jepsen.db Tearing down DB
+INFO [2026-11-01 04:08:43,531] jepsen test runner - jepsen.db Setting up DB
+INFO [2026-11-01 04:08:44,367] jepsen node db - jepsen.relate.db db up: relate-jepsen-nemesis-db identity: Neo4j/5.26.0
+INFO [2026-11-01 04:08:44,368] jepsen test runner - jepsen.core Relative time begins now
+INFO [2026-11-01 04:08:44,631] jepsen worker 0 - jepsen.print 0	:invoke	:add	1
+INFO [2026-11-01 04:08:44,738] jepsen worker 0 - jepsen.print 0	:ok	:add	1
+INFO [2026-11-01 04:08:44,908] jepsen worker 2 - jepsen.print 2	:invoke	:add	2
+INFO [2026-11-01 04:08:44,924] jepsen worker 3 - jepsen.print 3	:invoke	:add	3
+INFO [2026-11-01 04:08:45,000] jepsen worker 2 - jepsen.print 2	:ok	:add	2
+INFO [2026-11-01 04:08:45,012] jepsen worker 3 - jepsen.print 3	:ok	:add	3
+INFO [2026-11-01 04:08:45,090] jepsen worker 4 - jepsen.print 4	:invoke	:add	4
+INFO [2026-11-01 04:08:45,118] jepsen worker 0 - jepsen.print 0	:invoke	:add	5
+INFO [2026-11-01 04:08:45,164] jepsen worker 0 - jepsen.print 0	:ok	:add	5
+INFO [2026-11-01 04:08:45,178] jepsen worker 4 - jepsen.print 4	:ok	:add	4
+INFO [2026-11-01 04:08:45,312] jepsen worker 0 - jepsen.print 0	:invoke	:add	6
+INFO [2026-11-01 04:08:45,358] jepsen worker 0 - jepsen.print 0	:ok	:add	6
+INFO [2026-11-01 04:08:45,404] jepsen worker 1 - jepsen.print 1	:invoke	:add	7
+INFO [2026-11-01 04:08:45,494] jepsen worker 1 - jepsen.print 1	:ok	:add	7
+INFO [2026-11-01 04:08:45,541] jepsen worker 2 - jepsen.print 2	:invoke	:add	8
+INFO [2026-11-01 04:08:45,567] jepsen worker 3 - jepsen.print 3	:invoke	:add	9
+INFO [2026-11-01 04:08:45,578] jepsen worker 4 - jepsen.print 4	:invoke	:add	10
+INFO [2026-11-01 04:08:45,587] jepsen worker 2 - jepsen.print 2	:ok	:add	8
+INFO [2026-11-01 04:08:45,602] jepsen worker 0 - jepsen.print 0	:invoke	:add	11
+INFO [2026-11-01 04:08:45,612] jepsen worker 3 - jepsen.print 3	:ok	:add	9
+INFO [2026-11-01 04:08:45,614] jepsen worker 1 - jepsen.print 1	:invoke	:add	12
+INFO [2026-11-01 04:08:45,622] jepsen worker 4 - jepsen.print 4	:ok	:add	10
+INFO [2026-11-01 04:08:45,646] jepsen worker 0 - jepsen.print 0	:ok	:add	11
+INFO [2026-11-01 04:08:45,657] jepsen worker 1 - jepsen.print 1	:ok	:add	12
+INFO [2026-11-01 04:08:45,693] jepsen worker 1 - jepsen.print 1	:invoke	:add	13
+INFO [2026-11-01 04:08:45,740] jepsen worker 1 - jepsen.print 1	:ok	:add	13
+INFO [2026-11-01 04:08:45,934] jepsen worker 2 - jepsen.print 2	:invoke	:add	14
+INFO [2026-11-01 04:08:45,975] jepsen worker 3 - jepsen.print 3	:invoke	:add	15
+INFO [2026-11-01 04:08:45,979] jepsen worker 2 - jepsen.print 2	:ok	:add	14
+INFO [2026-11-01 04:08:45,979] jepsen worker 4 - jepsen.print 4	:invoke	:add	16
+INFO [2026-11-01 04:08:46,019] jepsen worker 3 - jepsen.print 3	:ok	:add	15
+INFO [2026-11-01 04:08:46,023] jepsen worker 4 - jepsen.print 4	:ok	:add	16
+INFO [2026-11-01 04:08:46,290] jepsen worker 0 - jepsen.print 0	:invoke	:add	17
+INFO [2026-11-01 04:08:46,337] jepsen worker 0 - jepsen.print 0	:ok	:add	17
+INFO [2026-11-01 04:08:46,423] jepsen worker 0 - jepsen.print 0	:invoke	:add	18
+INFO [2026-11-01 04:08:46,472] jepsen worker 0 - jepsen.print 0	:ok	:add	18
+INFO [2026-11-01 04:08:46,560] jepsen worker 1 - jepsen.print 1	:invoke	:add	19
+INFO [2026-11-01 04:08:46,611] jepsen worker 1 - jepsen.print 1	:ok	:add	19
+INFO [2026-11-01 04:08:46,632] jepsen worker 2 - jepsen.print 2	:invoke	:add	20
+INFO [2026-11-01 04:08:46,637] jepsen worker 3 - jepsen.print 3	:invoke	:add	21
+INFO [2026-11-01 04:08:46,637] jepsen worker 4 - jepsen.print 4	:invoke	:add	22
+INFO [2026-11-01 04:08:46,677] jepsen worker 2 - jepsen.print 2	:ok	:add	20
+INFO [2026-11-01 04:08:46,681] jepsen worker 4 - jepsen.print 4	:ok	:add	22
+INFO [2026-11-01 04:08:46,681] jepsen worker 3 - jepsen.print 3	:ok	:add	21
+INFO [2026-11-01 04:08:46,973] jepsen worker 0 - jepsen.print 0	:invoke	:add	23
+INFO [2026-11-01 04:08:47,018] jepsen worker 0 - jepsen.print 0	:ok	:add	23
+INFO [2026-11-01 04:08:47,110] jepsen worker 0 - jepsen.print 0	:invoke	:add	24
+INFO [2026-11-01 04:08:47,126] jepsen worker 1 - jepsen.print 1	:invoke	:add	25
+INFO [2026-11-01 04:08:47,154] jepsen worker 0 - jepsen.print 0	:ok	:add	24
+INFO [2026-11-01 04:08:47,171] jepsen worker 1 - jepsen.print 1	:ok	:add	25
+INFO [2026-11-01 04:08:47,286] jepsen worker 2 - jepsen.print 2	:invoke	:add	26
+INFO [2026-11-01 04:08:47,330] jepsen worker 2 - jepsen.print 2	:ok	:add	26
+INFO [2026-11-01 04:08:47,349] jepsen worker 3 - jepsen.print 3	:invoke	:add	27
+INFO [2026-11-01 04:08:47,395] jepsen worker 3 - jepsen.print 3	:ok	:add	27
+INFO [2026-11-01 04:08:47,399] jepsen worker 4 - jepsen.print 4	:invoke	:add	28
+INFO [2026-11-01 04:08:47,449] jepsen worker 4 - jepsen.print 4	:ok	:add	28
+INFO [2026-11-01 04:08:47,487] jepsen worker 0 - jepsen.print 0	:invoke	:add	29
+INFO [2026-11-01 04:08:47,498] jepsen worker 1 - jepsen.print 1	:invoke	:add	30
+INFO [2026-11-01 04:08:47,531] jepsen worker 0 - jepsen.print 0	:ok	:add	29
+INFO [2026-11-01 04:08:47,543] jepsen worker 1 - jepsen.print 1	:ok	:add	30
+INFO [2026-11-01 04:08:47,563] jepsen worker 1 - jepsen.print 1	:invoke	:add	31
+INFO [2026-11-01 04:08:47,608] jepsen worker 1 - jepsen.print 1	:ok	:add	31
+INFO [2026-11-01 04:08:47,763] jepsen worker 2 - jepsen.print 2	:invoke	:add	32
+INFO [2026-11-01 04:08:47,809] jepsen worker 2 - jepsen.print 2	:ok	:add	32
+INFO [2026-11-01 04:08:47,881] jepsen worker 3 - jepsen.print 3	:invoke	:add	33
+INFO [2026-11-01 04:08:47,921] jepsen worker 4 - jepsen.print 4	:invoke	:add	34
+INFO [2026-11-01 04:08:47,926] jepsen worker 3 - jepsen.print 3	:ok	:add	33
+INFO [2026-11-01 04:08:47,937] jepsen worker 0 - jepsen.print 0	:invoke	:add	35
+INFO [2026-11-01 04:08:47,966] jepsen worker 4 - jepsen.print 4	:ok	:add	34
+INFO [2026-11-01 04:08:47,981] jepsen worker 0 - jepsen.print 0	:ok	:add	35
+INFO [2026-11-01 04:08:47,981] jepsen worker 0 - jepsen.print 0	:invoke	:add	36
+INFO [2026-11-01 04:08:48,025] jepsen worker 0 - jepsen.print 0	:ok	:add	36
+INFO [2026-11-01 04:08:48,026] jepsen worker 1 - jepsen.print 1	:invoke	:add	37
+INFO [2026-11-01 04:08:48,070] jepsen worker 1 - jepsen.print 1	:ok	:add	37
+INFO [2026-11-01 04:08:48,147] jepsen worker 2 - jepsen.print 2	:invoke	:add	38
+INFO [2026-11-01 04:08:48,170] jepsen worker 3 - jepsen.print 3	:invoke	:add	39
+INFO [2026-11-01 04:08:48,191] jepsen worker 2 - jepsen.print 2	:ok	:add	38
+INFO [2026-11-01 04:08:48,214] jepsen worker 3 - jepsen.print 3	:ok	:add	39
+INFO [2026-11-01 04:08:48,284] jepsen worker 4 - jepsen.print 4	:invoke	:add	40
+INFO [2026-11-01 04:08:48,294] jepsen worker 0 - jepsen.print 0	:invoke	:add	41
+INFO [2026-11-01 04:08:48,328] jepsen worker 4 - jepsen.print 4	:ok	:add	40
+INFO [2026-11-01 04:08:48,338] jepsen worker 0 - jepsen.print 0	:ok	:add	41
+INFO [2026-11-01 04:08:48,523] jepsen worker 0 - jepsen.print 0	:invoke	:add	42
+INFO [2026-11-01 04:08:48,544] jepsen worker 1 - jepsen.print 1	:invoke	:add	43
+INFO [2026-11-01 04:08:48,562] jepsen worker 2 - jepsen.print 2	:invoke	:add	44
+INFO [2026-11-01 04:08:48,568] jepsen worker 0 - jepsen.print 0	:ok	:add	42
+INFO [2026-11-01 04:08:48,576] jepsen worker 3 - jepsen.print 3	:invoke	:add	45
+INFO [2026-11-01 04:08:48,587] jepsen worker 4 - jepsen.print 4	:invoke	:add	46
+INFO [2026-11-01 04:08:48,589] jepsen worker 1 - jepsen.print 1	:ok	:add	43
+INFO [2026-11-01 04:08:48,607] jepsen worker 2 - jepsen.print 2	:ok	:add	44
+INFO [2026-11-01 04:08:48,620] jepsen worker 3 - jepsen.print 3	:ok	:add	45
+INFO [2026-11-01 04:08:48,638] jepsen worker 4 - jepsen.print 4	:ok	:add	46
+INFO [2026-11-01 04:08:48,684] jepsen worker 0 - jepsen.print 0	:invoke	:add	47
+INFO [2026-11-01 04:08:48,726] jepsen worker 1 - jepsen.print 1	:invoke	:add	48
+INFO [2026-11-01 04:08:48,728] jepsen worker 0 - jepsen.print 0	:ok	:add	47
+INFO [2026-11-01 04:08:48,736] jepsen worker 2 - jepsen.print 2	:invoke	:add	49
+INFO [2026-11-01 04:08:48,765] jepsen worker 3 - jepsen.print 3	:invoke	:add	50
+INFO [2026-11-01 04:08:48,770] jepsen worker 1 - jepsen.print 1	:ok	:add	48
+INFO [2026-11-01 04:08:48,779] jepsen worker 2 - jepsen.print 2	:ok	:add	49
+INFO [2026-11-01 04:08:48,808] jepsen worker 3 - jepsen.print 3	:ok	:add	50
+INFO [2026-11-01 04:08:48,866] jepsen worker 3 - jepsen.print 3	:invoke	:add	51
+INFO [2026-11-01 04:08:48,914] jepsen worker 3 - jepsen.print 3	:ok	:add	51
+INFO [2026-11-01 04:08:48,919] jepsen worker 4 - jepsen.print 4	:invoke	:add	52
+INFO [2026-11-01 04:08:48,965] jepsen worker 4 - jepsen.print 4	:ok	:add	52
+INFO [2026-11-01 04:08:49,014] jepsen worker 0 - jepsen.print 0	:invoke	:add	53
+INFO [2026-11-01 04:08:49,064] jepsen worker 0 - jepsen.print 0	:ok	:add	53
+INFO [2026-11-01 04:08:49,141] jepsen worker 0 - jepsen.print 0	:invoke	:add	54
+INFO [2026-11-01 04:08:49,196] jepsen worker 0 - jepsen.print 0	:ok	:add	54
+INFO [2026-11-01 04:08:49,284] jepsen worker 1 - jepsen.print 1	:invoke	:add	55
+INFO [2026-11-01 04:08:49,331] jepsen worker 1 - jepsen.print 1	:ok	:add	55
+INFO [2026-11-01 04:08:49,477] jepsen worker 2 - jepsen.print 2	:invoke	:add	56
+INFO [2026-11-01 04:08:49,526] jepsen worker 2 - jepsen.print 2	:ok	:add	56
+INFO [2026-11-01 04:08:49,552] jepsen worker 3 - jepsen.print 3	:invoke	:add	57
+INFO [2026-11-01 04:08:49,601] jepsen worker 3 - jepsen.print 3	:ok	:add	57
+INFO [2026-11-01 04:08:49,633] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	nil
+INFO [2026-11-01 04:08:49,863] jepsen worker 0 - jepsen.print 0	:invoke	:add	58
+INFO [2026-11-01 04:08:49,974] jepsen worker 1 - jepsen.print 1	:invoke	:add	59
+INFO [2026-11-01 04:08:50,040] jepsen worker 2 - jepsen.print 2	:invoke	:add	60
+INFO [2026-11-01 04:08:50,101] jepsen worker 3 - jepsen.print 3	:invoke	:add	61
+INFO [2026-11-01 04:08:50,255] jepsen worker 4 - jepsen.print 4	:invoke	:add	62
+INFO [2026-11-01 04:08:57,213] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	{:fired? true, :paused? true, :bolt-down? true, :storage-locked? true, :exit-code 1, :still-running? false, :error-sample "Error: Failed to open Relate: storage locked: /data/graph/.cypherlite.writer"}
+INFO [2026-11-01 04:09:02,214] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	nil
+INFO [2026-11-01 04:09:02,231] jepsen worker 0 - jepsen.print 0	:info	:add	58	Connection to the database failed
+INFO [2026-11-01 04:09:02,231] jepsen worker 3 - jepsen.print 3	:info	:add	61	Connection to the database failed
+INFO [2026-11-01 04:09:02,231] jepsen worker 2 - jepsen.print 2	:info	:add	60	Connection to the database failed
+INFO [2026-11-01 04:09:02,231] jepsen worker 4 - jepsen.print 4	:info	:add	62	Connection to the database failed
+INFO [2026-11-01 04:09:02,231] jepsen worker 1 - jepsen.print 1	:info	:add	59	Connection to the database failed
+INFO [2026-11-01 04:09:02,232] jepsen worker 0 - jepsen.print 5	:invoke	:add	63
+INFO [2026-11-01 04:09:02,235] jepsen worker 1 - jepsen.print 6	:invoke	:add	64
+INFO [2026-11-01 04:09:02,258] jepsen worker 2 - jepsen.print 7	:invoke	:add	65
+INFO [2026-11-01 04:09:02,277] jepsen worker 0 - jepsen.print 5	:ok	:add	63
+INFO [2026-11-01 04:09:02,280] jepsen worker 1 - jepsen.print 6	:ok	:add	64
+INFO [2026-11-01 04:09:02,303] jepsen worker 2 - jepsen.print 7	:ok	:add	65
+INFO [2026-11-01 04:09:02,485] jepsen worker nemesis - jepsen.relate.nemesis db resumed in 249 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 04:09:02,487] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	{:recovered? true, :identity "Neo4j/5.26.0", :resume-ms 249}
+INFO [2026-11-01 04:09:02,510] jepsen worker 4 - jepsen.print 9	:invoke	:add	66
+INFO [2026-11-01 04:09:02,554] jepsen worker 4 - jepsen.print 9	:ok	:add	66
+INFO [2026-11-01 04:09:02,606] jepsen worker 0 - jepsen.print 5	:invoke	:add	67
+INFO [2026-11-01 04:09:02,646] jepsen worker 1 - jepsen.print 6	:invoke	:add	68
+INFO [2026-11-01 04:09:02,649] jepsen worker 0 - jepsen.print 5	:ok	:add	67
+INFO [2026-11-01 04:09:02,660] jepsen worker 2 - jepsen.print 7	:invoke	:add	69
+INFO [2026-11-01 04:09:02,662] jepsen worker 3 - jepsen.print 8	:invoke	:add	70
+INFO [2026-11-01 04:09:02,691] jepsen worker 1 - jepsen.print 6	:ok	:add	68
+INFO [2026-11-01 04:09:02,702] jepsen worker 2 - jepsen.print 7	:ok	:add	69
+INFO [2026-11-01 04:09:02,706] jepsen worker 3 - jepsen.print 8	:ok	:add	70
+INFO [2026-11-01 04:09:02,854] jepsen worker 3 - jepsen.print 8	:invoke	:add	71
+INFO [2026-11-01 04:09:02,859] jepsen worker 4 - jepsen.print 9	:invoke	:add	72
+INFO [2026-11-01 04:09:02,868] jepsen worker 0 - jepsen.print 5	:invoke	:add	73
+INFO [2026-11-01 04:09:02,900] jepsen worker 3 - jepsen.print 8	:ok	:add	71
+INFO [2026-11-01 04:09:02,900] jepsen worker 1 - jepsen.print 6	:invoke	:add	74
+INFO [2026-11-01 04:09:02,902] jepsen worker 4 - jepsen.print 9	:ok	:add	72
+INFO [2026-11-01 04:09:02,913] jepsen worker 0 - jepsen.print 5	:ok	:add	73
+INFO [2026-11-01 04:09:02,951] jepsen worker 1 - jepsen.print 6	:ok	:add	74
+INFO [2026-11-01 04:09:02,955] jepsen worker 1 - jepsen.print 6	:invoke	:add	75
+INFO [2026-11-01 04:09:03,000] jepsen worker 1 - jepsen.print 6	:ok	:add	75
+INFO [2026-11-01 04:09:03,018] jepsen worker 2 - jepsen.print 7	:invoke	:add	76
+INFO [2026-11-01 04:09:03,052] jepsen worker 3 - jepsen.print 8	:invoke	:add	77
+INFO [2026-11-01 04:09:03,061] jepsen worker 2 - jepsen.print 7	:ok	:add	76
+INFO [2026-11-01 04:09:03,097] jepsen worker 3 - jepsen.print 8	:ok	:add	77
+INFO [2026-11-01 04:09:03,174] jepsen worker 4 - jepsen.print 9	:invoke	:add	78
+INFO [2026-11-01 04:09:03,185] jepsen worker 0 - jepsen.print 5	:invoke	:add	79
+INFO [2026-11-01 04:09:03,221] jepsen worker 4 - jepsen.print 9	:ok	:add	78
+INFO [2026-11-01 04:09:03,232] jepsen worker 0 - jepsen.print 5	:ok	:add	79
+INFO [2026-11-01 04:09:03,252] jepsen worker 0 - jepsen.print 5	:invoke	:add	80
+INFO [2026-11-01 04:09:03,268] jepsen worker 1 - jepsen.print 6	:invoke	:add	81
+INFO [2026-11-01 04:09:03,291] jepsen worker 2 - jepsen.print 7	:invoke	:add	82
+INFO [2026-11-01 04:09:03,296] jepsen worker 0 - jepsen.print 5	:ok	:add	80
+INFO [2026-11-01 04:09:03,314] jepsen worker 1 - jepsen.print 6	:ok	:add	81
+INFO [2026-11-01 04:09:03,334] jepsen worker 2 - jepsen.print 7	:ok	:add	82
+INFO [2026-11-01 04:09:03,391] jepsen worker 3 - jepsen.print 8	:invoke	:add	83
+INFO [2026-11-01 04:09:03,418] jepsen worker 4 - jepsen.print 9	:invoke	:add	84
+INFO [2026-11-01 04:09:03,436] jepsen worker 3 - jepsen.print 8	:ok	:add	83
+INFO [2026-11-01 04:09:03,467] jepsen worker 4 - jepsen.print 9	:ok	:add	84
+INFO [2026-11-01 04:09:03,712] jepsen worker 0 - jepsen.print 5	:invoke	:add	85
+INFO [2026-11-01 04:09:03,756] jepsen worker 0 - jepsen.print 5	:ok	:add	85
+INFO [2026-11-01 04:09:03,797] jepsen worker 0 - jepsen.print 5	:invoke	:add	86
+INFO [2026-11-01 04:09:03,841] jepsen worker 0 - jepsen.print 5	:ok	:add	86
+INFO [2026-11-01 04:09:03,859] jepsen worker 1 - jepsen.print 6	:invoke	:add	87
+INFO [2026-11-01 04:09:03,902] jepsen worker 1 - jepsen.print 6	:ok	:add	87
+INFO [2026-11-01 04:09:03,946] jepsen worker 2 - jepsen.print 7	:invoke	:add	88
+INFO [2026-11-01 04:09:03,953] jepsen worker 3 - jepsen.print 8	:invoke	:add	89
+INFO [2026-11-01 04:09:03,990] jepsen worker 2 - jepsen.print 7	:ok	:add	88
+INFO [2026-11-01 04:09:03,996] jepsen worker 3 - jepsen.print 8	:ok	:add	89
+INFO [2026-11-01 04:09:04,562] jepsen worker 4 - jepsen.print 9	:invoke	:add	90
+INFO [2026-11-01 04:09:04,608] jepsen worker 4 - jepsen.print 9	:ok	:add	90
+INFO [2026-11-01 04:09:04,667] jepsen worker 0 - jepsen.print 5	:invoke	:add	91
+INFO [2026-11-01 04:09:04,714] jepsen worker 0 - jepsen.print 5	:ok	:add	91
+INFO [2026-11-01 04:09:04,744] jepsen worker 0 - jepsen.print 5	:invoke	:add	92
+INFO [2026-11-01 04:09:04,757] jepsen worker 1 - jepsen.print 6	:invoke	:add	93
+INFO [2026-11-01 04:09:04,788] jepsen worker 0 - jepsen.print 5	:ok	:add	92
+INFO [2026-11-01 04:09:04,801] jepsen worker 1 - jepsen.print 6	:ok	:add	93
+INFO [2026-11-01 04:09:04,900] jepsen worker 2 - jepsen.print 7	:invoke	:add	94
+INFO [2026-11-01 04:09:04,944] jepsen worker 2 - jepsen.print 7	:ok	:add	94
+INFO [2026-11-01 04:09:04,967] jepsen worker 3 - jepsen.print 8	:invoke	:add	95
+INFO [2026-11-01 04:09:05,012] jepsen worker 3 - jepsen.print 8	:ok	:add	95
+INFO [2026-11-01 04:09:05,015] jepsen worker 4 - jepsen.print 9	:invoke	:add	96
+INFO [2026-11-01 04:09:05,060] jepsen worker 4 - jepsen.print 9	:ok	:add	96
+INFO [2026-11-01 04:09:05,085] jepsen worker 0 - jepsen.print 5	:invoke	:add	97
+INFO [2026-11-01 04:09:05,129] jepsen worker 0 - jepsen.print 5	:ok	:add	97
+INFO [2026-11-01 04:09:05,170] jepsen worker 0 - jepsen.print 5	:invoke	:add	98
+INFO [2026-11-01 04:09:05,208] jepsen worker 1 - jepsen.print 6	:invoke	:add	99
+INFO [2026-11-01 04:09:05,215] jepsen worker 0 - jepsen.print 5	:ok	:add	98
+INFO [2026-11-01 04:09:05,254] jepsen worker 1 - jepsen.print 6	:ok	:add	99
+INFO [2026-11-01 04:09:05,254] jepsen worker 2 - jepsen.print 7	:invoke	:add	100
+INFO [2026-11-01 04:09:05,300] jepsen worker 2 - jepsen.print 7	:ok	:add	100
+INFO [2026-11-01 04:09:05,324] jepsen worker 3 - jepsen.print 8	:invoke	:add	101
+INFO [2026-11-01 04:09:05,372] jepsen worker 3 - jepsen.print 8	:ok	:add	101
+INFO [2026-11-01 04:09:05,442] jepsen worker 4 - jepsen.print 9	:invoke	:add	102
+INFO [2026-11-01 04:09:05,481] jepsen worker 0 - jepsen.print 5	:invoke	:add	103
+INFO [2026-11-01 04:09:05,491] jepsen worker 4 - jepsen.print 9	:ok	:add	102
+INFO [2026-11-01 04:09:05,533] jepsen worker 0 - jepsen.print 5	:ok	:add	103
+INFO [2026-11-01 04:09:05,668] jepsen worker 0 - jepsen.print 5	:invoke	:add	104
+INFO [2026-11-01 04:09:05,698] jepsen worker 1 - jepsen.print 6	:invoke	:add	105
+INFO [2026-11-01 04:09:05,713] jepsen worker 0 - jepsen.print 5	:ok	:add	104
+INFO [2026-11-01 04:09:05,743] jepsen worker 1 - jepsen.print 6	:ok	:add	105
+INFO [2026-11-01 04:09:05,885] jepsen worker 2 - jepsen.print 7	:invoke	:add	106
+INFO [2026-11-01 04:09:05,900] jepsen worker 3 - jepsen.print 8	:invoke	:add	107
+INFO [2026-11-01 04:09:05,930] jepsen worker 2 - jepsen.print 7	:ok	:add	106
+INFO [2026-11-01 04:09:05,943] jepsen worker 3 - jepsen.print 8	:ok	:add	107
+INFO [2026-11-01 04:09:05,955] jepsen worker 4 - jepsen.print 9	:invoke	:add	108
+INFO [2026-11-01 04:09:05,999] jepsen worker 4 - jepsen.print 9	:ok	:add	108
+INFO [2026-11-01 04:09:06,109] jepsen worker 0 - jepsen.print 5	:invoke	:add	109
+INFO [2026-11-01 04:09:06,128] jepsen worker 1 - jepsen.print 6	:invoke	:add	110
+INFO [2026-11-01 04:09:06,153] jepsen worker 0 - jepsen.print 5	:ok	:add	109
+INFO [2026-11-01 04:09:06,162] jepsen worker 2 - jepsen.print 7	:invoke	:add	111
+INFO [2026-11-01 04:09:06,171] jepsen worker 1 - jepsen.print 6	:ok	:add	110
+INFO [2026-11-01 04:09:06,208] jepsen worker 2 - jepsen.print 7	:ok	:add	111
+INFO [2026-11-01 04:09:06,219] jepsen worker 2 - jepsen.print 7	:invoke	:add	112
+INFO [2026-11-01 04:09:06,265] jepsen worker 2 - jepsen.print 7	:ok	:add	112
+INFO [2026-11-01 04:09:06,384] jepsen worker 3 - jepsen.print 8	:invoke	:add	113
+INFO [2026-11-01 04:09:06,427] jepsen worker 3 - jepsen.print 8	:ok	:add	113
+INFO [2026-11-01 04:09:06,561] jepsen worker 4 - jepsen.print 9	:invoke	:add	114
+INFO [2026-11-01 04:09:06,606] jepsen worker 4 - jepsen.print 9	:ok	:add	114
+INFO [2026-11-01 04:09:07,113] jepsen worker 0 - jepsen.print 5	:invoke	:add	115
+INFO [2026-11-01 04:09:07,120] jepsen worker 1 - jepsen.print 6	:invoke	:add	116
+INFO [2026-11-01 04:09:07,123] jepsen worker 2 - jepsen.print 7	:invoke	:add	117
+INFO [2026-11-01 04:09:07,159] jepsen worker 0 - jepsen.print 5	:ok	:add	115
+INFO [2026-11-01 04:09:07,163] jepsen worker 1 - jepsen.print 6	:ok	:add	116
+INFO [2026-11-01 04:09:07,167] jepsen worker 2 - jepsen.print 7	:ok	:add	117
+INFO [2026-11-01 04:09:07,176] jepsen worker 2 - jepsen.print 7	:invoke	:add	118
+INFO [2026-11-01 04:09:07,184] jepsen worker 3 - jepsen.print 8	:invoke	:add	119
+INFO [2026-11-01 04:09:07,193] jepsen worker 4 - jepsen.print 9	:invoke	:add	120
+INFO [2026-11-01 04:09:07,222] jepsen worker 2 - jepsen.print 7	:ok	:add	118
+INFO [2026-11-01 04:09:07,228] jepsen worker 3 - jepsen.print 8	:ok	:add	119
+INFO [2026-11-01 04:09:07,236] jepsen worker 4 - jepsen.print 9	:ok	:add	120
+INFO [2026-11-01 04:09:07,352] jepsen worker 0 - jepsen.print 5	:invoke	:add	121
+INFO [2026-11-01 04:09:07,395] jepsen worker 1 - jepsen.print 6	:invoke	:add	122
+INFO [2026-11-01 04:09:07,396] jepsen worker 0 - jepsen.print 5	:ok	:add	121
+INFO [2026-11-01 04:09:07,439] jepsen worker 1 - jepsen.print 6	:ok	:add	122
+INFO [2026-11-01 04:09:07,488] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	nil
+INFO [2026-11-01 04:09:07,748] jepsen worker 2 - jepsen.print 7	:invoke	:add	123
+INFO [2026-11-01 04:09:07,895] jepsen worker 3 - jepsen.print 8	:invoke	:add	124
+INFO [2026-11-01 04:09:08,072] jepsen worker 4 - jepsen.print 9	:invoke	:add	125
+INFO [2026-11-01 04:09:08,154] jepsen worker 0 - jepsen.print 5	:invoke	:add	126
+INFO [2026-11-01 04:09:08,175] jepsen worker 1 - jepsen.print 6	:invoke	:add	127
+INFO [2026-11-01 04:09:14,988] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	{:fired? true, :paused? true, :bolt-down? true, :storage-locked? true, :exit-code 1, :still-running? false, :error-sample "Error: Failed to open Relate: storage locked: /data/graph/.cypherlite.writer"}
+INFO [2026-11-01 04:09:19,991] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	nil
+INFO [2026-11-01 04:09:20,010] jepsen worker 2 - jepsen.print 7	:info	:add	123	Connection to the database failed
+INFO [2026-11-01 04:09:20,010] jepsen worker 3 - jepsen.print 8	:info	:add	124	Connection to the database failed
+INFO [2026-11-01 04:09:20,010] jepsen worker 4 - jepsen.print 9	:info	:add	125	Connection to the database failed
+INFO [2026-11-01 04:09:20,010] jepsen worker 1 - jepsen.print 6	:info	:add	127	Connection to the database failed
+INFO [2026-11-01 04:09:20,010] jepsen worker 0 - jepsen.print 5	:info	:add	126	Connection to the database failed
+INFO [2026-11-01 04:09:20,010] jepsen worker 3 - jepsen.print 13	:invoke	:add	128
+INFO [2026-11-01 04:09:20,056] jepsen worker 3 - jepsen.print 13	:ok	:add	128
+INFO [2026-11-01 04:09:20,057] jepsen worker 4 - jepsen.print 14	:invoke	:add	129
+INFO [2026-11-01 04:09:20,103] jepsen worker 4 - jepsen.print 14	:ok	:add	129
+INFO [2026-11-01 04:09:20,140] jepsen worker 0 - jepsen.print 10	:invoke	:add	130
+INFO [2026-11-01 04:09:20,173] jepsen worker 1 - jepsen.print 11	:invoke	:add	131
+INFO [2026-11-01 04:09:20,191] jepsen worker 0 - jepsen.print 10	:ok	:add	130
+INFO [2026-11-01 04:09:20,225] jepsen worker 1 - jepsen.print 11	:ok	:add	131
+INFO [2026-11-01 04:09:20,257] jepsen worker 1 - jepsen.print 11	:invoke	:add	132
+INFO [2026-11-01 04:09:20,261] jepsen worker nemesis - jepsen.relate.nemesis db resumed in 247 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 04:09:20,262] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	{:recovered? true, :identity "Neo4j/5.26.0", :resume-ms 247}
+INFO [2026-11-01 04:09:20,304] jepsen worker 1 - jepsen.print 11	:ok	:add	132
+INFO [2026-11-01 04:09:20,366] jepsen worker 3 - jepsen.print 13	:invoke	:add	133
+INFO [2026-11-01 04:09:20,412] jepsen worker 3 - jepsen.print 13	:ok	:add	133
+INFO [2026-11-01 04:09:20,412] jepsen worker 4 - jepsen.print 14	:invoke	:add	134
+INFO [2026-11-01 04:09:20,430] jepsen worker 0 - jepsen.print 10	:invoke	:add	135
+INFO [2026-11-01 04:09:20,458] jepsen worker 4 - jepsen.print 14	:ok	:add	134
+INFO [2026-11-01 04:09:20,475] jepsen worker 0 - jepsen.print 10	:ok	:add	135
+INFO [2026-11-01 04:09:20,490] jepsen worker 0 - jepsen.print 10	:invoke	:add	136
+INFO [2026-11-01 04:09:20,537] jepsen worker 0 - jepsen.print 10	:ok	:add	136
+INFO [2026-11-01 04:09:20,548] jepsen worker 1 - jepsen.print 11	:invoke	:add	137
+INFO [2026-11-01 04:09:20,595] jepsen worker 1 - jepsen.print 11	:ok	:add	137
+INFO [2026-11-01 04:09:20,737] jepsen worker 2 - jepsen.print 12	:invoke	:add	138
+INFO [2026-11-01 04:09:20,789] jepsen worker 2 - jepsen.print 12	:ok	:add	138
+INFO [2026-11-01 04:09:20,836] jepsen worker 3 - jepsen.print 13	:invoke	:add	139
+INFO [2026-11-01 04:09:20,881] jepsen worker 3 - jepsen.print 13	:ok	:add	139
+INFO [2026-11-01 04:09:20,909] jepsen worker 4 - jepsen.print 14	:invoke	:add	140
+INFO [2026-11-01 04:09:20,922] jepsen worker 0 - jepsen.print 10	:invoke	:add	141
+INFO [2026-11-01 04:09:20,957] jepsen worker 4 - jepsen.print 14	:ok	:add	140
+INFO [2026-11-01 04:09:20,969] jepsen worker 0 - jepsen.print 10	:ok	:add	141
+INFO [2026-11-01 04:09:20,988] jepsen worker 0 - jepsen.print 10	:invoke	:add	142
+INFO [2026-11-01 04:09:21,036] jepsen worker 0 - jepsen.print 10	:ok	:add	142
+INFO [2026-11-01 04:09:21,238] jepsen worker 1 - jepsen.print 11	:invoke	:add	143
+INFO [2026-11-01 04:09:21,259] jepsen worker 2 - jepsen.print 12	:invoke	:add	144
+INFO [2026-11-01 04:09:21,286] jepsen worker 1 - jepsen.print 11	:ok	:add	143
+INFO [2026-11-01 04:09:21,307] jepsen worker 2 - jepsen.print 12	:ok	:add	144
+INFO [2026-11-01 04:09:21,313] jepsen worker 3 - jepsen.print 13	:invoke	:add	145
+INFO [2026-11-01 04:09:21,336] jepsen worker 4 - jepsen.print 14	:invoke	:add	146
+INFO [2026-11-01 04:09:21,360] jepsen worker 3 - jepsen.print 13	:ok	:add	145
+INFO [2026-11-01 04:09:21,384] jepsen worker 4 - jepsen.print 14	:ok	:add	146
+INFO [2026-11-01 04:09:21,519] jepsen worker 0 - jepsen.print 10	:invoke	:add	147
+INFO [2026-11-01 04:09:21,558] jepsen worker 1 - jepsen.print 11	:invoke	:add	148
+INFO [2026-11-01 04:09:21,568] jepsen worker 0 - jepsen.print 10	:ok	:add	147
+INFO [2026-11-01 04:09:21,606] jepsen worker 1 - jepsen.print 11	:ok	:add	148
+INFO [2026-11-01 04:09:21,747] jepsen worker 1 - jepsen.print 11	:invoke	:add	149
+INFO [2026-11-01 04:09:21,794] jepsen worker 1 - jepsen.print 11	:ok	:add	149
+INFO [2026-11-01 04:09:21,807] jepsen worker 2 - jepsen.print 12	:invoke	:add	150
+INFO [2026-11-01 04:09:21,856] jepsen worker 2 - jepsen.print 12	:ok	:add	150
+INFO [2026-11-01 04:09:21,861] jepsen worker 3 - jepsen.print 13	:invoke	:add	151
+INFO [2026-11-01 04:09:21,910] jepsen worker 3 - jepsen.print 13	:ok	:add	151
+INFO [2026-11-01 04:09:22,046] jepsen worker 4 - jepsen.print 14	:invoke	:add	152
+INFO [2026-11-01 04:09:22,095] jepsen worker 0 - jepsen.print 10	:invoke	:add	153
+INFO [2026-11-01 04:09:22,099] jepsen worker 4 - jepsen.print 14	:ok	:add	152
+INFO [2026-11-01 04:09:22,144] jepsen worker 0 - jepsen.print 10	:ok	:add	153
+INFO [2026-11-01 04:09:22,167] jepsen worker 0 - jepsen.print 10	:invoke	:add	154
+INFO [2026-11-01 04:09:22,173] jepsen worker 1 - jepsen.print 11	:invoke	:add	155
+INFO [2026-11-01 04:09:22,215] jepsen worker 0 - jepsen.print 10	:ok	:add	154
+INFO [2026-11-01 04:09:22,218] jepsen worker 1 - jepsen.print 11	:ok	:add	155
+INFO [2026-11-01 04:09:22,398] jepsen worker 2 - jepsen.print 12	:invoke	:add	156
+INFO [2026-11-01 04:09:22,445] jepsen worker 2 - jepsen.print 12	:ok	:add	156
+INFO [2026-11-01 04:09:22,547] jepsen worker 3 - jepsen.print 13	:invoke	:add	157
+INFO [2026-11-01 04:09:22,584] jepsen worker 4 - jepsen.print 14	:invoke	:add	158
+INFO [2026-11-01 04:09:22,593] jepsen worker 3 - jepsen.print 13	:ok	:add	157
+INFO [2026-11-01 04:09:22,603] jepsen worker 0 - jepsen.print 10	:invoke	:add	159
+INFO [2026-11-01 04:09:22,609] jepsen worker 1 - jepsen.print 11	:invoke	:add	160
+INFO [2026-11-01 04:09:22,633] jepsen worker 4 - jepsen.print 14	:ok	:add	158
+INFO [2026-11-01 04:09:22,649] jepsen worker 0 - jepsen.print 10	:ok	:add	159
+INFO [2026-11-01 04:09:22,652] jepsen worker 1 - jepsen.print 11	:ok	:add	160
+INFO [2026-11-01 04:09:22,655] jepsen worker 1 - jepsen.print 11	:invoke	:add	161
+INFO [2026-11-01 04:09:22,699] jepsen worker 1 - jepsen.print 11	:ok	:add	161
+INFO [2026-11-01 04:09:22,860] jepsen worker 2 - jepsen.print 12	:invoke	:add	162
+INFO [2026-11-01 04:09:22,907] jepsen worker 2 - jepsen.print 12	:ok	:add	162
+INFO [2026-11-01 04:09:22,910] jepsen worker 3 - jepsen.print 13	:invoke	:add	163
+INFO [2026-11-01 04:09:22,957] jepsen worker 3 - jepsen.print 13	:ok	:add	163
+INFO [2026-11-01 04:09:23,246] jepsen worker 4 - jepsen.print 14	:invoke	:add	164
+INFO [2026-11-01 04:09:23,295] jepsen worker 4 - jepsen.print 14	:ok	:add	164
+INFO [2026-11-01 04:09:23,304] jepsen worker 0 - jepsen.print 10	:invoke	:add	165
+INFO [2026-11-01 04:09:23,353] jepsen worker 0 - jepsen.print 10	:ok	:add	165
+INFO [2026-11-01 04:09:23,505] jepsen worker 0 - jepsen.print 10	:invoke	:add	166
+INFO [2026-11-01 04:09:23,541] jepsen worker 1 - jepsen.print 11	:invoke	:add	167
+INFO [2026-11-01 04:09:23,552] jepsen worker 0 - jepsen.print 10	:ok	:add	166
+INFO [2026-11-01 04:09:23,564] jepsen worker 2 - jepsen.print 12	:invoke	:add	168
+INFO [2026-11-01 04:09:23,589] jepsen worker 1 - jepsen.print 11	:ok	:add	167
+INFO [2026-11-01 04:09:23,611] jepsen worker 2 - jepsen.print 12	:ok	:add	168
+INFO [2026-11-01 04:09:23,703] jepsen worker 3 - jepsen.print 13	:invoke	:add	169
+INFO [2026-11-01 04:09:23,704] jepsen worker 4 - jepsen.print 14	:invoke	:add	170
+INFO [2026-11-01 04:09:23,750] jepsen worker 4 - jepsen.print 14	:ok	:add	170
+INFO [2026-11-01 04:09:23,750] jepsen worker 3 - jepsen.print 13	:ok	:add	169
+INFO [2026-11-01 04:09:23,890] jepsen worker 0 - jepsen.print 10	:invoke	:add	171
+INFO [2026-11-01 04:09:23,938] jepsen worker 0 - jepsen.print 10	:ok	:add	171
+INFO [2026-11-01 04:09:23,946] jepsen worker 0 - jepsen.print 10	:invoke	:add	172
+INFO [2026-11-01 04:09:23,991] jepsen worker 0 - jepsen.print 10	:ok	:add	172
+INFO [2026-11-01 04:09:24,098] jepsen worker 1 - jepsen.print 11	:invoke	:add	173
+INFO [2026-11-01 04:09:24,146] jepsen worker 1 - jepsen.print 11	:ok	:add	173
+INFO [2026-11-01 04:09:24,332] jepsen worker 2 - jepsen.print 12	:invoke	:add	174
+INFO [2026-11-01 04:09:24,369] jepsen worker 3 - jepsen.print 13	:invoke	:add	175
+INFO [2026-11-01 04:09:24,378] jepsen worker 2 - jepsen.print 12	:ok	:add	174
+INFO [2026-11-01 04:09:24,416] jepsen worker 3 - jepsen.print 13	:ok	:add	175
+INFO [2026-11-01 04:09:24,489] jepsen worker 4 - jepsen.print 14	:invoke	:add	176
+INFO [2026-11-01 04:09:24,531] jepsen worker 0 - jepsen.print 10	:invoke	:add	177
+INFO [2026-11-01 04:09:24,536] jepsen worker 4 - jepsen.print 14	:ok	:add	176
+INFO [2026-11-01 04:09:24,561] jepsen worker 1 - jepsen.print 11	:invoke	:add	178
+INFO [2026-11-01 04:09:24,578] jepsen worker 0 - jepsen.print 10	:ok	:add	177
+INFO [2026-11-01 04:09:24,607] jepsen worker 2 - jepsen.print 12	:invoke	:add	179
+INFO [2026-11-01 04:09:24,610] jepsen worker 1 - jepsen.print 11	:ok	:add	178
+INFO [2026-11-01 04:09:24,655] jepsen worker 2 - jepsen.print 12	:ok	:add	179
+INFO [2026-11-01 04:09:24,681] jepsen worker 2 - jepsen.print 12	:invoke	:add	180
+INFO [2026-11-01 04:09:24,681] jepsen worker 3 - jepsen.print 13	:invoke	:add	181
+INFO [2026-11-01 04:09:24,727] jepsen worker 3 - jepsen.print 13	:ok	:add	181
+INFO [2026-11-01 04:09:24,727] jepsen worker 2 - jepsen.print 12	:ok	:add	180
+INFO [2026-11-01 04:09:25,252] jepsen worker 4 - jepsen.print 14	:invoke	:add	182
+INFO [2026-11-01 04:09:25,263] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	nil
+INFO [2026-11-01 04:09:25,452] jepsen worker 0 - jepsen.print 10	:invoke	:add	183
+INFO [2026-11-01 04:09:25,616] jepsen worker 1 - jepsen.print 11	:invoke	:add	184
+INFO [2026-11-01 04:09:25,731] jepsen worker 2 - jepsen.print 12	:invoke	:add	185
+INFO [2026-11-01 04:09:25,797] jepsen worker 3 - jepsen.print 13	:invoke	:add	186
+INFO [2026-11-01 04:09:32,826] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	{:fired? true, :paused? true, :bolt-down? true, :storage-locked? true, :exit-code 1, :still-running? false, :error-sample "Error: Failed to open Relate: storage locked: /data/graph/.cypherlite.writer"}
+INFO [2026-11-01 04:09:37,828] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	nil
+INFO [2026-11-01 04:09:37,848] jepsen worker 2 - jepsen.print 12	:info	:add	185	Connection to the database failed
+INFO [2026-11-01 04:09:37,848] jepsen worker 1 - jepsen.print 11	:info	:add	184	Connection to the database failed
+INFO [2026-11-01 04:09:37,848] jepsen worker 0 - jepsen.print 10	:info	:add	183	Connection to the database failed
+INFO [2026-11-01 04:09:37,848] jepsen worker 4 - jepsen.print 14	:info	:add	182	Connection to the database failed
+INFO [2026-11-01 04:09:37,848] jepsen worker 3 - jepsen.print 13	:info	:add	186	Connection to the database failed
+INFO [2026-11-01 04:09:37,848] jepsen worker 0 - jepsen.print 15	:invoke	:add	187
+INFO [2026-11-01 04:09:37,856] jepsen worker 1 - jepsen.print 16	:invoke	:add	188
+INFO [2026-11-01 04:09:37,872] jepsen worker 2 - jepsen.print 17	:invoke	:add	189
+INFO [2026-11-01 04:09:37,885] jepsen worker 3 - jepsen.print 18	:invoke	:add	190
+INFO [2026-11-01 04:09:37,893] jepsen worker 0 - jepsen.print 15	:ok	:add	187
+INFO [2026-11-01 04:09:37,894] jepsen worker 4 - jepsen.print 19	:invoke	:add	191
+INFO [2026-11-01 04:09:37,901] jepsen worker 1 - jepsen.print 16	:ok	:add	188
+INFO [2026-11-01 04:09:37,918] jepsen worker 2 - jepsen.print 17	:ok	:add	189
+INFO [2026-11-01 04:09:37,929] jepsen worker 3 - jepsen.print 18	:ok	:add	190
+INFO [2026-11-01 04:09:37,938] jepsen worker 4 - jepsen.print 19	:ok	:add	191
+INFO [2026-11-01 04:09:38,102] jepsen worker nemesis - jepsen.relate.nemesis db resumed in 250 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 04:09:38,103] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	{:recovered? true, :identity "Neo4j/5.26.0", :resume-ms 250}
+INFO [2026-11-01 04:09:38,290] jepsen worker 0 - jepsen.print 15	:invoke	:add	192
+INFO [2026-11-01 04:09:38,338] jepsen worker 0 - jepsen.print 15	:ok	:add	192
+INFO [2026-11-01 04:09:38,560] jepsen worker 1 - jepsen.print 16	:invoke	:add	193
+INFO [2026-11-01 04:09:38,608] jepsen worker 1 - jepsen.print 16	:ok	:add	193
+INFO [2026-11-01 04:09:38,746] jepsen worker 2 - jepsen.print 17	:invoke	:add	194
+INFO [2026-11-01 04:09:38,769] jepsen worker 3 - jepsen.print 18	:invoke	:add	195
+INFO [2026-11-01 04:09:38,771] jepsen worker 4 - jepsen.print 19	:invoke	:add	196
+INFO [2026-11-01 04:09:38,794] jepsen worker 2 - jepsen.print 17	:ok	:add	194
+INFO [2026-11-01 04:09:38,814] jepsen worker 0 - jepsen.print 15	:invoke	:add	197
+INFO [2026-11-01 04:09:38,816] jepsen worker 4 - jepsen.print 19	:ok	:add	196
+INFO [2026-11-01 04:09:38,816] jepsen worker 3 - jepsen.print 18	:ok	:add	195
+INFO [2026-11-01 04:09:38,860] jepsen worker 0 - jepsen.print 15	:ok	:add	197
+INFO [2026-11-01 04:09:38,881] jepsen worker 0 - jepsen.print 15	:invoke	:add	198
+INFO [2026-11-01 04:09:38,930] jepsen worker 0 - jepsen.print 15	:ok	:add	198
+INFO [2026-11-01 04:09:39,000] jepsen worker 1 - jepsen.print 16	:invoke	:add	199
+INFO [2026-11-01 04:09:39,050] jepsen worker 1 - jepsen.print 16	:ok	:add	199
+INFO [2026-11-01 04:09:39,151] jepsen worker 2 - jepsen.print 17	:invoke	:add	200
+INFO [2026-11-01 04:09:39,199] jepsen worker 2 - jepsen.print 17	:ok	:add	200
+INFO [2026-11-01 04:09:39,249] jepsen worker 3 - jepsen.print 18	:invoke	:add	201
+INFO [2026-11-01 04:09:39,284] jepsen worker 4 - jepsen.print 19	:invoke	:add	202
+INFO [2026-11-01 04:09:39,298] jepsen worker 3 - jepsen.print 18	:ok	:add	201
+INFO [2026-11-01 04:09:39,329] jepsen worker 4 - jepsen.print 19	:ok	:add	202
+INFO [2026-11-01 04:09:39,331] jepsen worker 0 - jepsen.print 15	:invoke	:add	203
+INFO [2026-11-01 04:09:39,377] jepsen worker 0 - jepsen.print 15	:ok	:add	203
+INFO [2026-11-01 04:09:39,408] jepsen worker 0 - jepsen.print 15	:invoke	:add	204
+INFO [2026-11-01 04:09:39,429] jepsen worker 1 - jepsen.print 16	:invoke	:add	205
+INFO [2026-11-01 04:09:39,457] jepsen worker 0 - jepsen.print 15	:ok	:add	204
+INFO [2026-11-01 04:09:39,475] jepsen worker 1 - jepsen.print 16	:ok	:add	205
+INFO [2026-11-01 04:09:39,552] jepsen worker 2 - jepsen.print 17	:invoke	:add	206
+INFO [2026-11-01 04:09:39,591] jepsen worker 3 - jepsen.print 18	:invoke	:add	207
+INFO [2026-11-01 04:09:39,597] jepsen worker 2 - jepsen.print 17	:ok	:add	206
+INFO [2026-11-01 04:09:39,624] jepsen worker 4 - jepsen.print 19	:invoke	:add	208
+INFO [2026-11-01 04:09:39,637] jepsen worker 3 - jepsen.print 18	:ok	:add	207
+INFO [2026-11-01 04:09:39,671] jepsen worker 4 - jepsen.print 19	:ok	:add	208
+INFO [2026-11-01 04:09:39,725] jepsen worker 0 - jepsen.print 15	:invoke	:add	209
+INFO [2026-11-01 04:09:39,773] jepsen worker 0 - jepsen.print 15	:ok	:add	209
+INFO [2026-11-01 04:09:39,836] jepsen worker 0 - jepsen.print 15	:invoke	:add	210
+INFO [2026-11-01 04:09:39,841] jepsen worker 1 - jepsen.print 16	:invoke	:add	211
+INFO [2026-11-01 04:09:39,852] jepsen worker 2 - jepsen.print 17	:invoke	:add	212
+INFO [2026-11-01 04:09:39,885] jepsen worker 0 - jepsen.print 15	:ok	:add	210
+INFO [2026-11-01 04:09:39,887] jepsen worker 1 - jepsen.print 16	:ok	:add	211
+INFO [2026-11-01 04:09:39,898] jepsen worker 2 - jepsen.print 17	:ok	:add	212
+INFO [2026-11-01 04:09:39,928] jepsen worker 3 - jepsen.print 18	:invoke	:add	213
+INFO [2026-11-01 04:09:39,976] jepsen worker 3 - jepsen.print 18	:ok	:add	213
+INFO [2026-11-01 04:09:40,104] jepsen worker 4 - jepsen.print 19	:invoke	:add	214
+INFO [2026-11-01 04:09:40,133] jepsen worker 0 - jepsen.print 15	:invoke	:add	215
+INFO [2026-11-01 04:09:40,134] jepsen worker 1 - jepsen.print 16	:invoke	:add	216
+INFO [2026-11-01 04:09:40,153] jepsen worker 4 - jepsen.print 19	:ok	:add	214
+INFO [2026-11-01 04:09:40,181] jepsen worker 0 - jepsen.print 15	:ok	:add	215
+INFO [2026-11-01 04:09:40,181] jepsen worker 1 - jepsen.print 16	:ok	:add	216
+INFO [2026-11-01 04:09:40,286] jepsen worker 1 - jepsen.print 16	:invoke	:add	217
+INFO [2026-11-01 04:09:40,333] jepsen worker 1 - jepsen.print 16	:ok	:add	217
+INFO [2026-11-01 04:09:40,393] jepsen worker 2 - jepsen.print 17	:invoke	:add	218
+INFO [2026-11-01 04:09:40,440] jepsen worker 2 - jepsen.print 17	:ok	:add	218
+INFO [2026-11-01 04:09:40,478] jepsen worker 3 - jepsen.print 18	:invoke	:add	219
+INFO [2026-11-01 04:09:40,526] jepsen worker 3 - jepsen.print 18	:ok	:add	219
+INFO [2026-11-01 04:09:40,592] jepsen worker 4 - jepsen.print 19	:invoke	:add	220
+INFO [2026-11-01 04:09:40,606] jepsen worker 0 - jepsen.print 15	:invoke	:add	221
+INFO [2026-11-01 04:09:40,639] jepsen worker 4 - jepsen.print 19	:ok	:add	220
+INFO [2026-11-01 04:09:40,650] jepsen worker 0 - jepsen.print 15	:ok	:add	221
+INFO [2026-11-01 04:09:40,732] jepsen worker 0 - jepsen.print 15	:invoke	:add	222
+INFO [2026-11-01 04:09:40,795] jepsen worker 0 - jepsen.print 15	:ok	:add	222
+INFO [2026-11-01 04:09:40,925] jepsen worker 1 - jepsen.print 16	:invoke	:add	223
+INFO [2026-11-01 04:09:40,972] jepsen worker 1 - jepsen.print 16	:ok	:add	223
+INFO [2026-11-01 04:09:41,071] jepsen worker 2 - jepsen.print 17	:invoke	:add	224
+INFO [2026-11-01 04:09:41,118] jepsen worker 2 - jepsen.print 17	:ok	:add	224
+INFO [2026-11-01 04:09:41,119] jepsen worker 3 - jepsen.print 18	:invoke	:add	225
+INFO [2026-11-01 04:09:41,126] jepsen worker 4 - jepsen.print 19	:invoke	:add	226
+INFO [2026-11-01 04:09:41,164] jepsen worker 3 - jepsen.print 18	:ok	:add	225
+INFO [2026-11-01 04:09:41,169] jepsen worker 4 - jepsen.print 19	:ok	:add	226
+INFO [2026-11-01 04:09:41,281] jepsen worker 0 - jepsen.print 15	:invoke	:add	227
+INFO [2026-11-01 04:09:41,327] jepsen worker 0 - jepsen.print 15	:ok	:add	227
+INFO [2026-11-01 04:09:41,384] jepsen worker 0 - jepsen.print 15	:invoke	:add	228
+INFO [2026-11-01 04:09:41,388] jepsen worker 1 - jepsen.print 16	:invoke	:add	229
+INFO [2026-11-01 04:09:41,434] jepsen worker 0 - jepsen.print 15	:ok	:add	228
+INFO [2026-11-01 04:09:41,434] jepsen worker 1 - jepsen.print 16	:ok	:add	229
+INFO [2026-11-01 04:09:41,575] jepsen worker 2 - jepsen.print 17	:invoke	:add	230
+INFO [2026-11-01 04:09:41,615] jepsen worker 3 - jepsen.print 18	:invoke	:add	231
+INFO [2026-11-01 04:09:41,622] jepsen worker 2 - jepsen.print 17	:ok	:add	230
+INFO [2026-11-01 04:09:41,664] jepsen worker 3 - jepsen.print 18	:ok	:add	231
+INFO [2026-11-01 04:09:41,967] jepsen worker 4 - jepsen.print 19	:invoke	:add	232
+INFO [2026-11-01 04:09:42,019] jepsen worker 4 - jepsen.print 19	:ok	:add	232
+INFO [2026-11-01 04:09:42,144] jepsen worker 0 - jepsen.print 15	:invoke	:add	233
+INFO [2026-11-01 04:09:42,155] jepsen worker 1 - jepsen.print 16	:invoke	:add	234
+INFO [2026-11-01 04:09:42,197] jepsen worker 0 - jepsen.print 15	:ok	:add	233
+INFO [2026-11-01 04:09:42,201] jepsen worker 1 - jepsen.print 16	:ok	:add	234
+INFO [2026-11-01 04:09:42,254] jepsen worker 1 - jepsen.print 16	:invoke	:add	235
+INFO [2026-11-01 04:09:42,302] jepsen worker 1 - jepsen.print 16	:ok	:add	235
+INFO [2026-11-01 04:09:42,326] jepsen worker 2 - jepsen.print 17	:invoke	:add	236
+INFO [2026-11-01 04:09:42,373] jepsen worker 2 - jepsen.print 17	:ok	:add	236
+INFO [2026-11-01 04:09:42,396] jepsen worker 3 - jepsen.print 18	:invoke	:add	237
+INFO [2026-11-01 04:09:42,441] jepsen worker 4 - jepsen.print 19	:invoke	:add	238
+INFO [2026-11-01 04:09:42,444] jepsen worker 3 - jepsen.print 18	:ok	:add	237
+INFO [2026-11-01 04:09:42,487] jepsen worker 4 - jepsen.print 19	:ok	:add	238
+INFO [2026-11-01 04:09:42,552] jepsen worker 0 - jepsen.print 15	:invoke	:add	239
+INFO [2026-11-01 04:09:42,563] jepsen worker 1 - jepsen.print 16	:invoke	:add	240
+INFO [2026-11-01 04:09:42,588] jepsen worker 2 - jepsen.print 17	:invoke	:add	241
+INFO [2026-11-01 04:09:42,597] jepsen worker 0 - jepsen.print 15	:ok	:add	239
+INFO [2026-11-01 04:09:42,609] jepsen worker 1 - jepsen.print 16	:ok	:add	240
+INFO [2026-11-01 04:09:42,632] jepsen worker 3 - jepsen.print 18	:invoke	:add	242
+INFO [2026-11-01 04:09:42,636] jepsen worker 2 - jepsen.print 17	:ok	:add	241
+INFO [2026-11-01 04:09:42,637] jepsen worker 4 - jepsen.print 19	:invoke	:add	243
+INFO [2026-11-01 04:09:42,680] jepsen worker 3 - jepsen.print 18	:ok	:add	242
+INFO [2026-11-01 04:09:42,683] jepsen worker 4 - jepsen.print 19	:ok	:add	243
+INFO [2026-11-01 04:09:42,783] jepsen worker 4 - jepsen.print 19	:invoke	:add	244
+INFO [2026-11-01 04:09:42,829] jepsen worker 4 - jepsen.print 19	:ok	:add	244
+INFO [2026-11-01 04:09:42,909] jepsen worker 0 - jepsen.print 15	:invoke	:add	245
+INFO [2026-11-01 04:09:42,955] jepsen worker 0 - jepsen.print 15	:ok	:add	245
+INFO [2026-11-01 04:09:42,991] jepsen worker 0 - jepsen.print 15	:invoke	:add	246
+INFO [2026-11-01 04:09:43,023] jepsen worker 1 - jepsen.print 16	:invoke	:add	247
+INFO [2026-11-01 04:09:43,037] jepsen worker 0 - jepsen.print 15	:ok	:add	246
+INFO [2026-11-01 04:09:43,069] jepsen worker 1 - jepsen.print 16	:ok	:add	247
+INFO [2026-11-01 04:09:43,108] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	nil
+INFO [2026-11-01 04:09:43,301] jepsen worker 3 - jepsen.print 18	:invoke	:add	248
+INFO [2026-11-01 04:09:43,325] jepsen worker 4 - jepsen.print 19	:invoke	:add	249
+INFO [2026-11-01 04:09:43,474] jepsen worker 0 - jepsen.print 15	:invoke	:add	250
+INFO [2026-11-01 04:09:43,643] jepsen worker 1 - jepsen.print 16	:invoke	:add	251
+INFO [2026-11-01 04:09:43,697] jepsen worker 2 - jepsen.print 17	:invoke	:add	252
+INFO [2026-11-01 04:09:50,891] jepsen worker nemesis - jepsen.print :nemesis	:info	:pause	{:fired? true, :paused? true, :bolt-down? true, :storage-locked? true, :exit-code 1, :still-running? false, :error-sample "Error: Failed to open Relate: storage locked: /data/graph/.cypherlite.writer"}
+INFO [2026-11-01 04:11:43,429] jepsen worker 3 - jepsen.print 18	:info	:add	248	Connection read timed out due to it taking longer than the server-supplied timeout value via configuration hint.
+INFO [2026-11-01 04:11:43,434] jepsen worker 4 - jepsen.print 19	:info	:add	249	Connection read timed out due to it taking longer than the server-supplied timeout value via configuration hint.
+INFO [2026-11-01 04:11:43,603] jepsen worker 0 - jepsen.print 15	:info	:add	250	Connection read timed out due to it taking longer than the server-supplied timeout value via configuration hint.
+INFO [2026-11-01 04:11:43,670] jepsen worker 1 - jepsen.print 16	:info	:add	251	Connection read timed out due to it taking longer than the server-supplied timeout value via configuration hint.
+INFO [2026-11-01 04:11:43,826] jepsen worker 2 - jepsen.print 17	:info	:add	252	Connection read timed out due to it taking longer than the server-supplied timeout value via configuration hint.
+INFO [2026-11-01 04:11:43,826] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	nil
+INFO [2026-11-01 04:11:44,096] jepsen worker nemesis - jepsen.relate.nemesis db resumed in 248 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 04:11:44,097] jepsen worker nemesis - jepsen.print :nemesis	:info	:resume	{:recovered? true, :identity "Neo4j/5.26.0", :resume-ms 248}
+INFO [2026-11-01 04:11:44,098] jepsen worker 4 - jepsen.print 24	:invoke	:read	nil
+INFO [2026-11-01 04:11:44,148] jepsen worker 4 - jepsen.print 24	:ok	:read	#{121 65 70 218 74 164 233 188 240 110 130 128 210 229 153 213 7 86 154 20 224 72 205 175 27 1 69 101 24 102 135 55 206 165 85 225 39 88 217 46 149 239 157 4 204 77 106 197 232 119 222 95 144 176 192 54 92 221 141 137 234 104 15 48 242 50 116 75 159 99 21 31 113 32 136 139 174 208 214 193 241 226 235 40 129 91 117 172 108 156 223 181 56 33 13 22 168 90 237 109 216 191 143 178 247 167 36 41 187 195 118 150 238 196 162 219 89 100 243 131 122 43 231 29 151 44 93 6 111 28 134 64 189 198 155 227 220 103 170 51 25 201 166 34 146 228 148 17 3 12 152 2 66 236 142 107 23 230 47 180 158 35 82 76 215 97 19 57 202 68 200 11 115 9 145 5 244 112 179 245 83 138 14 45 53 78 132 26 203 140 16 133 163 81 120 79 211 38 173 98 171 87 169 160 30 207 194 73 96 10 18 105 52 114 209 147 67 161 71 42 80 199 37 63 212 94 8 246 190 177 49 84}
+INFO [2026-11-01 04:11:44,639] jepsen test runner - jepsen.core Run complete, writing
+INFO [2026-11-01 04:11:44,773] jepsen test runner - jepsen.core Analyzing...
+INFO [2026-11-01 04:11:44,779] jepsen test runner - jepsen.core Analysis complete
+INFO [2026-11-01 04:11:44,783] jepsen results - jepsen.store Wrote /src/testing/jepsen/store/relate-set-pause/2026-11-01T04:08:42.850480805Z/results.edn
+INFO [2026-11-01 04:11:44,787] jepsen test runner - jepsen.core {:stats {:valid? true,
+         :count 253,
+         :ok-count 233,
+         :fail-count 0,
+         :info-count 20,
+         :by-f {:add {:valid? true,
+                      :count 252,
+                      :ok-count 232,
+                      :fail-count 0,
+                      :info-count 20},
+                :read {:valid? true,
+                       :count 1,
+                       :ok-count 1,
+                       :fail-count 0,
+                       :info-count 0}}},
+ :set {:valid? true,
+       :attempted-count 252,
+       :acknowledged-count 232,
+       :recovered-count 232,
+       :lost-acked-writes {:count 0, :sample []},
+       :ghost-ids {:count 0, :sample []},
+       :rejected-but-present {:count 0, :sample []},
+       :read-type :ok},
+ :fault-evidence {:storage-lock-failures [],
+                  :nemesis-ops 8,
+                  :valid? true,
+                  :storage-lock-rejected 4,
+                  :checkpoint-rotation nil,
+                  :missing-fs [],
+                  :faults-without-effect [],
+                  :fault-never-fired? nil,
+                  :ops-without-evidence-key []},
+ :valid? true}
+
+
+Everything looks good! ヽ(‘ー`)ノ
+ Container relate-jepsen-nemesis-db Stopping 
+ Container relate-jepsen-nemesis-db Stopped 
+ Container relate-jepsen-nemesis-db Removing 
+ Container relate-jepsen-nemesis-db Removed 
+ Network relate-jepsen-nemesis_default Removing 
+ Network relate-jepsen-nemesis_default Removed 
+run log: runs/20261101T040839Z.log
+jepsen store: store/relate-set-pause/

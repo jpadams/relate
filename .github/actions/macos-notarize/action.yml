@@ -1,0 +1,202 @@
+name: macOS codesign and notarize
+description: >-
+  Codesign a built Mach-O with a Developer ID Application identity and notarize
+  it with Apple's notary service, then gate it through Gatekeeper. Implements
+  ADR-0123; callers pass the five MACOS_* credentials as step env because a
+  composite action cannot read repository secrets directly.
+
+inputs:
+  binary:
+    description: Path to the already-built Mach-O binary to sign and notarize
+    required: true
+
+runs:
+  # Composite steps each run in their own bash shell, so the first step exports
+  # SIGN_DIR through $GITHUB_ENV (shared across the job's steps) and later steps
+  # read it back; the always() cleanup step keeps a literal fallback in case the
+  # first step failed before exporting.
+  using: composite
+  steps:
+    - name: Validate signing credentials
+      shell: bash
+      # Fail closed: a missing secret must fail the leg, never ship an
+      # unsigned binary (ADR-0123).
+      run: |
+        set -euo pipefail
+        missing=()
+        for var in MACOS_SIGN_P12 MACOS_SIGN_PASSWORD MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID MACOS_NOTARY_KEY; do
+          if [ -z "${!var:-}" ]; then
+            missing+=("$var")
+          fi
+        done
+        if [ "${#missing[@]}" -gt 0 ]; then
+          echo "Missing required macOS signing secret(s): ${missing[*]}" >&2
+          exit 1
+        fi
+
+        # Derive the signing temp dir once; $GITHUB_ENV carries it to every
+        # later step of this job.
+        echo "SIGN_DIR=$RUNNER_TEMP/relate-signing" >> "$GITHUB_ENV"
+
+    - name: Import certificate into an ephemeral keychain
+      shell: bash
+      # Never `set -x` anywhere in this action: it would leak the cert password.
+      run: |
+        set -euo pipefail
+        # Key material must never be world/group-readable, even transiently
+        # (same guard as release.yml's SSHSIG step).
+        umask 077
+        CERT="${SIGN_DIR}/cert.p12"
+        KEYCHAIN="${SIGN_DIR}/app-signing.keychain-db"
+        mkdir -p "$SIGN_DIR"
+
+        # MACOS_SIGN_P12 is a base64-encoded PKCS#12 (.p12) bundle.
+        printf '%s' "$MACOS_SIGN_P12" | base64 --decode > "$CERT"
+
+        # Per-run random keychain password; never a fixed or secret value.
+        PW="$(openssl rand -hex 16)"
+        security create-keychain -p "$PW" "$KEYCHAIN"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN"
+        security unlock-keychain -p "$PW" "$KEYCHAIN"
+        # Restrict key access to codesign only: -T /usr/bin/codesign names the
+        # one tool allowed to use the imported key without an interactive
+        # prompt; -A would grant every process access. The
+        # set-key-partition-list step below is what makes headless signing work.
+        security import "$CERT" -P "$MACOS_SIGN_PASSWORD" -t cert -f pkcs12 -k "$KEYCHAIN" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple: -k "$PW" "$KEYCHAIN"
+        security list-keychain -d user -s "$KEYCHAIN"
+
+    - name: Codesign the binary
+      shell: bash
+      env:
+        BINARY: ${{ inputs.binary }}
+      run: |
+        set -euo pipefail
+        KEYCHAIN="${SIGN_DIR}/app-signing.keychain-db"
+
+        # Take the SHA-1 hash of the Developer ID Application identity rather
+        # than a hardcoded name or team; the keychain holds exactly one.
+        IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+          | grep 'Developer ID Application' | head -n1 | awk '{print $2}')"
+        if [ -z "$IDENTITY" ]; then
+          echo "No 'Developer ID Application' identity found in the ephemeral keychain." >&2
+          exit 1
+        fi
+
+        # --force replaces the linker's ad-hoc arm64 signature; --options
+        # runtime is hardened runtime; --timestamp gets a secure timestamp.
+        codesign --force --options runtime --timestamp --keychain "$KEYCHAIN" --sign "$IDENTITY" "$BINARY"
+        codesign --verify --deep --strict --verbose=2 "$BINARY"
+
+    - name: Package and notarize
+      shell: bash
+      env:
+        BINARY: ${{ inputs.binary }}
+      # Zip and submit; --wait fails the leg if Apple rejects the submission
+      # rather than publishing an un-notarized binary (ADR-0123).
+      run: |
+        set -euo pipefail
+        # Key material must never be world/group-readable, even transiently
+        # (same guard as release.yml's SSHSIG step).
+        umask 077
+        NOTARY_KEY="${SIGN_DIR}/notary_key.p8"
+        ZIP="${SIGN_DIR}/signed.zip"
+
+        ditto -c -k --keepParent "$BINARY" "$ZIP"
+
+        # MACOS_NOTARY_KEY is a base64-encoded App Store Connect .p8 key (the
+        # encoding RELEASING.md documents). Tolerate an already-raw PEM too.
+        if printf '%s' "$MACOS_NOTARY_KEY" | grep -q 'BEGIN PRIVATE KEY'; then
+          printf '%s' "$MACOS_NOTARY_KEY" > "$NOTARY_KEY"
+        else
+          printf '%s' "$MACOS_NOTARY_KEY" | base64 --decode > "$NOTARY_KEY"
+        fi
+
+        submit_rc=0
+        notary_json="$(xcrun notarytool submit "$ZIP" \
+          --key "$NOTARY_KEY" \
+          --key-id "$MACOS_NOTARY_KEY_ID" \
+          --issuer "$MACOS_NOTARY_ISSUER_ID" \
+          --wait --output-format json)" || submit_rc=$?
+
+        # One parse prints status then id on two lines; read picks up both
+        # (macOS bash is 3.2, so no mapfile).
+        parsed="$(printf '%s' "$notary_json" | python3 -c 'import json,sys
+        d=json.load(sys.stdin)
+        print(d.get("status",""))
+        print(d.get("id",""))' 2>/dev/null || true)"
+        { read -r status; read -r submission_id; } <<< "$parsed" || true
+        status="${status:-}"
+        submission_id="${submission_id:-}"
+
+        if [ "$submit_rc" -ne 0 ] || [ "$status" != "Accepted" ]; then
+          echo "Notarization failed (rc=${submit_rc} status=${status:-unknown}); fetching notary log for ${submission_id:-unknown}." >&2
+          if [ -n "$submission_id" ]; then
+            xcrun notarytool log "$submission_id" \
+              --key "$NOTARY_KEY" \
+              --key-id "$MACOS_NOTARY_KEY_ID" \
+              --issuer "$MACOS_NOTARY_ISSUER_ID" || true
+          fi
+          exit 1
+        fi
+        echo "Notarization accepted (${submission_id})."
+        # Export the submission id so the Gatekeeper step can print actionable
+        # diagnostics (`notarytool info`) if its ticket check never passes.
+        echo "NOTARY_SUBMISSION_ID=${submission_id}" >> "$GITHUB_ENV"
+
+    - name: Verify with Gatekeeper
+      shell: bash
+      env:
+        BINARY: ${{ inputs.binary }}
+      run: |
+        set -euo pipefail
+        # spctl only assesses app bundles, not bare Mach-O binaries (it rejects
+        # a standalone CLI even when properly signed and notarized), so verify
+        # against Gatekeeper's notarized Developer ID exec requirement with
+        # codesign -R instead. The `notarized` keyword alone checks only
+        # local/stapled tickets (man codesign), which an unstapled binary
+        # never has; `--check-notarization` is what forces the online
+        # notarization-ticket lookup.
+        NOTARIZED_REQ='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and notarized'
+        # `-R=` (inline form): without the `=` codesign treats the argument as
+        # a path to a requirements file and fails with "invalid requirement
+        # specification".
+        #
+        # The online ticket lookup can lag behind notarytool's `Accepted`
+        # status by a minute or two while Apple propagates the ticket (seen
+        # in CI run 36391160350: codesign failed with "code failed to satisfy
+        # specified code requirement(s)" ~20s after acceptance, even though
+        # the signature itself verified). Retry the check on a bounded budget
+        # instead of failing the leg immediately.
+        attempt=1
+        max_attempts=10
+        sleep_seconds=25
+        while true; do
+          echo "Gatekeeper notarized-requirement check, attempt ${attempt}/${max_attempts}."
+          if codesign --verify --check-notarization --verbose=2 -R="$NOTARIZED_REQ" "$BINARY"; then
+            echo "Gatekeeper check passed on attempt ${attempt}."
+            break
+          fi
+          if [ "$attempt" -ge "$max_attempts" ]; then
+            echo "Gatekeeper check still failing after ${max_attempts} attempts (~$((max_attempts * sleep_seconds / 60)) minutes); notarization ticket never became visible." >&2
+            echo "Notary submission diagnostics (no secrets printed):" >&2
+            xcrun notarytool info "${NOTARY_SUBMISSION_ID:-unknown}" \
+              --key "${SIGN_DIR}/notary_key.p8" \
+              --key-id "$MACOS_NOTARY_KEY_ID" \
+              --issuer "$MACOS_NOTARY_ISSUER_ID" >&2 || true
+            exit 1
+          fi
+          attempt=$((attempt + 1))
+          sleep "$sleep_seconds"
+        done
+
+    - name: Clean up ephemeral keychain and secrets
+      if: always()
+      shell: bash
+      run: |
+        # Literal fallback so the temp dir is still removed even if the first
+        # step failed before exporting SIGN_DIR to $GITHUB_ENV.
+        SIGN_DIR="${SIGN_DIR:-$RUNNER_TEMP/relate-signing}"
+        KEYCHAIN="${SIGN_DIR}/app-signing.keychain-db"
+        security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+        rm -rf "$SIGN_DIR"

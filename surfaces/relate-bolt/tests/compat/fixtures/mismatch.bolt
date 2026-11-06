@@ -1,0 +1,10 @@
+# Deliberately wrong: the RUN returns column `x`, the expectation says
+# `y`. bolt_compat.rs replays this script and asserts the failure report
+# names this file and the line of the wrong expectation. It lives outside
+# scripts/, so the corpus run never picks it up.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS x" {} {}
+S: SUCCESS {"fields": ["y"]}

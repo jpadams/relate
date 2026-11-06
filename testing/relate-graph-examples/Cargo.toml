@@ -1,0 +1,26 @@
+[package]
+name = "relate-graph-examples"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Differential Cypher suite: neo4j-graph-examples datasets as a Neo4j docker reference vs pulled relate copies (ADR-0144)"
+license.workspace = true
+
+[dependencies]
+relate = { workspace = true, features = ["parquet"] }
+relate-load = { workspace = true }
+relate-model = { workspace = true }
+relate-splitter = { workspace = true }
+# The workspace's one `hex` rendering (artifact sha256 checks) and the
+# nearest-rank percentile the differential report's per-dataset stats index
+# through — one pin for both policies.
+relate-test-support = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ureq = { workspace = true }
+
+[dev-dependencies]
+# The pull_rca example serves its synthetic Query API bodies through the
+# shared loopback fixture.
+relate-test-support = { workspace = true, features = ["loopback"] }
+tempfile = { workspace = true }

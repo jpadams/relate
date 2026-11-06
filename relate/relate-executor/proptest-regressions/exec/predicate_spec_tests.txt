@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 37c210a10d9f0d195440dd7596944529c2dc4c92415a6e45a7f7d9726ea4b886 # shrinks to nodes = [NodeCase { person: true, n: None, s: None, b: Some("00000000") }]

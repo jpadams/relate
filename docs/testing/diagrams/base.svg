@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 180" width="420" role="img" aria-label="Base: an empty graph.">
+  <title>Base: an empty graph.</title>
+  <desc>No nodes and no relationships. RSS of this server is subtracted from the other shapes.</desc>
+  <defs>
+    <marker id="base-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7781" />
+    </marker>
+    <marker id="base-arrow-focus" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0969da" />
+    </marker>
+  </defs>
+  <rect x="24" y="24" width="372" height="132" rx="12" fill="#ffffff" stroke="#6e7781" stroke-width="1.5" stroke-dasharray="6 5" />
+  <text x="210" y="82" text-anchor="middle" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="600">empty graph</text>
+  <text x="210" y="110" text-anchor="middle" fill="#656d76" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">0 nodes · 0 relationships</text>
+</svg>

@@ -1,0 +1,12 @@
+# Baseline B-24 (F-61): scalar results round-trip: Ints of three widths
+# (tiny, 16-bit, 64-bit), a Float, a non-ASCII UTF-8 String, a Boolean
+# and Null. Only the record is pinned.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS tiny, -129 AS i16, 2147483648 AS i64, 1.5 AS f, 'é' AS s, false AS b, null AS n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   RECORD [1, -129, 2147483648, 1.5, "é", false, null]
+   SUCCESS {}

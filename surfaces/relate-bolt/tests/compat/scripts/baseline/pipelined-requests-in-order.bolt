@@ -1,0 +1,26 @@
+# Baseline B-15 (F-26): seven requests written back to back, before any
+# reply is read, are answered in order, with a failure last: the
+# syntax-error RUN answers FAILURE and the PULL after it IGNORED. Pinned:
+# the reply order, the RUN fields, the records, has_more on the n = 1
+# page, and the FAILURE with code and message "*".
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS x" {} {}
+   PULL {"n": -1}
+   RUN "UNWIND [1, 2] AS j RETURN j" {} {}
+   PULL {"n": 1}
+   PULL {"n": -1}
+   RUN "RETURN 1 +" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["x"]}
+   RECORD [1]
+   SUCCESS {}
+   SUCCESS {"fields": ["j"]}
+   RECORD [1]
+   SUCCESS {"has_more": true}
+   RECORD [2]
+   SUCCESS {}
+   FAILURE {"code": "*", "message": "*"}
+   IGNORED

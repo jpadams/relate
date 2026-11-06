@@ -1,0 +1,68 @@
+[package]
+name = "relate-query-latency"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Query-latency suite on the graph-benchmark-ldbc workload (ADR-0243)"
+publish = false
+license.workspace = true
+
+[dependencies]
+relate = { workspace = true, features = ["parquet"] }
+# The in-house fraud graph generator (R4: testing/* may depend on any
+# workspace package) — the fraud-qpp corpus workload's data source and
+# oracle (ADR-0479).
+relate-datasets = { workspace = true }
+# The canonical statement splitter, for the index scripts.
+relate-splitter = { workspace = true }
+# The workspace's one `hex` rendering and the shared pinned fetch kit
+# (data-set sha256 checks, the verified download, the lock-and-stamp
+# ensure) — the same kit ADR-0243 pins for every fetched data set.
+relate-test-support = { workspace = true, features = ["fetch"] }
+clap = { workspace = true }
+csv = "1"
+# Pure-Rust zstd decoder and tar reader for the LDBC archives (ADR-0243).
+ruzstd = "0.9"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tar = "0.4"
+
+# In-process sampling profiler for `query-latency profile` (ADR-0244):
+# timer-signal based, so unix only. Default features off (they add a C++
+# demangler); `large-depth` keeps 1024 frames instead of 32, which the
+# engine's executor stacks exceed.
+[target.'cfg(unix)'.dependencies]
+pprof = { version = "0.15", default-features = false, features = ["flamegraph", "large-depth"], optional = true }
+
+[features]
+default = ["sampling"]
+# `query-latency profile`'s in-process sampler (ADR-0244).
+sampling = ["dep:pprof"]
+# The research-only kernel harness example (examples/sol.rs): forwards
+# the engine's quarantine feature (ADR-0476). Non-default — the example
+# carries `required-features = ["research"]`, so a plain
+# `cargo run --example sol` reports the missing feature instead of
+# failing to compile. The `qpp` harness retired with the prototype
+# (ADR-0478).
+research = ["relate/research"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[bin]]
+name = "query-latency"
+path = "src/bin/query-latency.rs"
+
+# PLAN-phase profiling harness (ADR-0508's measurement loop): EXPLAIN loop
+# over the suite's own corpus and store with per-phase timing and exact
+# heap-op counts. Dev tool, not CI-gated.
+[[bin]]
+name = "plan_bench"
+path = "src/bin/plan_bench.rs"
+
+# Research-only gap-measurement harness (ADR-0476): compiled only under
+# `--features research`.
+[[example]]
+name = "sol"
+required-features = ["research"]

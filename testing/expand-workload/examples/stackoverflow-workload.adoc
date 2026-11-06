@@ -1,0 +1,642 @@
+= Stack Overflow — a workload grown in rounds
+
+The expand-workload skill applied iteratively: the notebook's queries are round 0, and each round adds one capability the way a feature request would, extending queries already proven. The dataset itself grows at round 10: real comments and the related ring from the Stack Exchange API.
+
+Grown by the expand-workload skill and validated against a store of 1081 nodes / 1347 relationships on `relate`.
+
+Validation at generation time: ok 73 of 73 entries.
+
+== Round 0 — the base queries
+
+The application as it exists today: the read queries the Stack Overflow notebook runs — counts, top tags, top users, the unanswered slice, tag co-occurrence and Jaccard similarity. Every later round extends these.
+
+Base query from stackoverflow-notebook. 10 rows, 2.18 ms.
+
+[source,cypher,id="r0.cooccurring",round="0",kind="read",tier="mid",area="match"]
+----
+MATCH (t1:Tag)<-[:TAGGED]-(q)-[:TAGGED]->(t2:Tag) WHERE id(t1) < id(t2) WITH t1, t2, count(*) AS freq WHERE freq >= 2 RETURN t1.name AS tag1, t2.name AS tag2, freq ORDER BY freq DESC LIMIT 10
+----
+
+
+Base query from stackoverflow-notebook. 10 rows, 42.557 ms.
+
+[source,cypher,id="r0.jaccard",round="0",kind="read",tier="complex",area="aggregating-functions"]
+----
+MATCH (t1:Tag)<-[:TAGGED]-(q1:Question) WITH t1, collect(id(q1)) AS qs1 MATCH (t2:Tag)<-[:TAGGED]-(q2:Question) WHERE id(t1) < id(t2) WITH t1, t2, qs1, collect(id(q2)) AS qs2 WITH t1, t2, size(qs1) AS d1, size(qs2) AS d2, [x IN qs1 WHERE x IN qs2] AS both WITH t1, t2, d1, d2, size(both) AS inter WHERE inter >= 2 RETURN t1.name AS tag1, t2.name AS tag2, inter, (inter * 1.0) / (d1 + d2 - inter) AS jaccard ORDER BY jaccard DESC LIMIT 10
+----
+
+
+Base query from stackoverflow-notebook. 5 rows, 0.883 ms.
+
+[source,cypher,id="r0.labels",round="0",kind="read",tier="simple",area="node-relationship-operators"]
+----
+MATCH (n) RETURN labels(n)[0] AS label, count(*) AS freq ORDER BY freq DESC
+----
+
+
+Base query from stackoverflow-notebook. 7 rows, 1.243 ms.
+
+[source,cypher,id="r0.reltypes",round="0",kind="read",tier="simple",area="node-relationship-operators"]
+----
+MATCH ()-[r]->() RETURN type(r) AS type, count(*) AS freq ORDER BY freq DESC
+----
+
+
+Base query from stackoverflow-notebook. 10 rows, 0.714 ms.
+
+[source,cypher,id="r0.top-answerers",round="0",kind="read",tier="mid",area="aggregating-functions"]
+----
+MATCH (u:User)-[:PROVIDED]->(a:Answer)-[:ANSWERED]->(q:Question) RETURN u.display_name AS user, count(a) AS answers, avg(a.score) AS avg_score ORDER BY answers DESC LIMIT 10
+----
+
+
+Base query from stackoverflow-notebook. 10 rows, 0.488 ms.
+
+[source,cypher,id="r0.top-askers",round="0",kind="read",tier="mid",area="aggregating-functions"]
+----
+MATCH (u:User)-[:ASKED]->(q:Question) RETURN u.display_name AS user, count(*) AS questions ORDER BY questions DESC LIMIT 10
+----
+
+
+Base query from stackoverflow-notebook. 5 rows, 1.02 ms.
+
+[source,cypher,id="r0.top-tags",round="0",kind="read",tier="mid",area="aggregating-functions"]
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) RETURN t.name AS tag, count(q) AS questions ORDER BY questions DESC LIMIT 5
+----
+
+
+Base query from stackoverflow-notebook. 10 rows, 1.59 ms.
+
+[source,cypher,id="r0.unanswered-tags",round="0",kind="read",tier="mid",area="where",params='{"tag": "neo4j"}']
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) WHERE NOT t.name IN [$tag] AND NOT (q)<-[:ANSWERED]-() RETURN t.name AS tag, count(q) AS questions ORDER BY questions DESC LIMIT 10
+----
+
+
+== Round 1 — the lists get long — filtering and paging arrive
+
+The tag leaderboard pages (SKIP/LIMIT), questions filter by score and answered state, title search, tag prefixes, and ordering by a computed engagement expression that is never returned.
+
+Introduces the round's capability (order-by). 10 rows, 1.159 ms.
+
+[source,cypher,id="r1.questions-by-engagement",round="1",kind="read",tier="simple",area="order-by"]
+----
+MATCH (q:Question) RETURN q.title AS title ORDER BY q.score * q.view_count DESC LIMIT 10
+----
+
+
+Introduces the round's capability (comparison-operators). 1 rows, 1.027 ms.
+
+[source,cypher,id="r1.recently-active",round="1",kind="read",tier="simple",area="comparison-operators"]
+----
+MATCH (q:Question) WHERE q.last_activity_date > q.creation_date RETURN count(*) AS edited
+----
+
+
+Introduces the round's capability (comparison-operators). 10 rows, 0.982 ms.
+
+[source,cypher,id="r1.scored-answered",round="1",kind="read",tier="simple",area="comparison-operators",params='{"min": 2}']
+----
+MATCH (q:Question) WHERE q.score >= $min AND q.is_answered = true RETURN q.title AS title, q.score AS score ORDER BY score DESC LIMIT 10
+----
+
+
+Introduces the round's capability (string-operators). 6 rows, 0.474 ms.
+
+[source,cypher,id="r1.spring-tags",round="1",kind="read",tier="simple",area="string-operators",params='{"prefix": "spring"}']
+----
+MATCH (t:Tag) WHERE t.name STARTS WITH $prefix RETURN t.name AS tag ORDER BY tag
+----
+
+
+Introduces the round's capability (string-operators). 10 rows, 1.032 ms.
+
+[source,cypher,id="r1.titles-with-graph",round="1",kind="read",tier="simple",area="string-operators",params='{"word": "graph"}']
+----
+MATCH (q:Question) WHERE q.title CONTAINS $word RETURN q.title AS title LIMIT 10
+----
+
+
+Grows r0.top-tags with the round's capability (skip-limit). 5 rows, 1.139 ms.
+
+[source,cypher,id="r1.top-tags-page2",round="1",kind="read",tier="simple",area="skip-limit",extends="r0.top-tags"]
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) RETURN t.name AS tag, count(q) AS questions ORDER BY questions DESC SKIP 5 LIMIT 5
+----
+
+
+== Round 2 — stakeholders want numbers — aggregation over the model
+
+Repeat answerers, per-tag stats with examples, score buckets, accepted-answer share, and shaped results (list comprehensions, map projections).
+
+Introduces the round's capability (aggregating-functions). 1 rows, 0.431 ms.
+
+[source,cypher,id="r2.accepted-share",round="2",kind="read",tier="mid",area="aggregating-functions"]
+----
+MATCH (a:Answer) RETURN count(*) AS answers, sum(CASE WHEN a.is_accepted THEN 1 ELSE 0 END) AS accepted
+----
+
+
+Introduces the round's capability (conditional-expressions). 3 rows, 1.042 ms.
+
+[source,cypher,id="r2.score-buckets",round="2",kind="read",tier="mid",area="conditional-expressions"]
+----
+MATCH (q:Question) RETURN CASE WHEN q.score > 10 THEN 'high' WHEN q.score > 0 THEN 'mid' ELSE 'low' END AS bucket, count(*) AS questions ORDER BY questions DESC
+----
+
+
+Introduces the round's capability (list-expressions). 1 rows, 1.039 ms.
+
+[source,cypher,id="r2.score-cleanup",round="2",kind="read",tier="mid",area="list-expressions"]
+----
+MATCH (q:Question) WITH collect(q.score) AS scores RETURN [s IN scores WHERE s > 0 | s * 10] AS boosted LIMIT 1
+----
+
+
+Introduces the round's capability (map-expressions). 10 rows, 1.083 ms.
+
+[source,cypher,id="r2.tag-question-maps",round="2",kind="read",tier="mid",area="map-expressions"]
+----
+MATCH (t:Tag)<-[:TAGGED]-(q:Question) WITH t, q ORDER BY q.score DESC WITH t, collect(q {.title, .score})[..3] AS top RETURN t.name AS tag, top ORDER BY tag LIMIT 10
+----
+
+
+Grows r0.top-answerers with the round's capability (aggregating-functions). 9 rows, 0.646 ms.
+
+[source,cypher,id="r2.repeat-answerers",round="2",kind="read",tier="mid",area="aggregating-functions",extends="r0.top-answerers"]
+----
+MATCH (u:User)-[:PROVIDED]->(a:Answer) WITH u, count(a) AS n WHERE n > 1 RETURN u.display_name AS user, n ORDER BY n DESC LIMIT 10
+----
+
+
+Grows r0.top-tags with the round's capability (aggregating-functions). 10 rows, 1.543 ms.
+
+[source,cypher,id="r2.tag-stats",round="2",kind="read",tier="mid",area="aggregating-functions",extends="r0.top-tags"]
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) RETURN t.name AS tag, count(q) AS questions, avg(q.score) AS avg_score, max(q.score) AS max_score, collect(q.title)[..2] AS examples ORDER BY questions DESC LIMIT 10
+----
+
+
+== Round 3 — questions about absence — optional matches, predicates, subqueries
+
+Questions without an *accepted* answer (pattern predicate), per-question answer counts with null handling, the EXISTS and COUNT subquery forms of the same questions, a correlated CALL subquery for per-tag stats, and users who only ever ask.
+
+Introduces the round's capability (optional-match). 10 rows, 2.377 ms.
+
+[source,cypher,id="r3.answer-counts",round="3",kind="read",tier="mid",area="optional-match"]
+----
+MATCH (q:Question) OPTIONAL MATCH (q)<-[:ANSWERED]-(a:Answer) RETURN q.title AS title, count(a) AS answers ORDER BY answers DESC LIMIT 10
+----
+
+
+Introduces the round's capability (subqueries-collect-count-exists). 10 rows, 1.938 ms.
+
+[source,cypher,id="r3.multi-answered",round="3",kind="read",tier="mid",area="subqueries-collect-count-exists",params='{"min": 1}']
+----
+MATCH (q:Question) WHERE COUNT { (q)<-[:ANSWERED]-() } > $min RETURN q.title AS title ORDER BY title LIMIT 10
+----
+
+
+Introduces the round's capability (path-pattern-expressions). 1 rows, 0.638 ms.
+
+[source,cypher,id="r3.never-answered-users",round="3",kind="read",tier="mid",area="path-pattern-expressions"]
+----
+MATCH (u:User) WHERE NOT EXISTS { (u)-[:PROVIDED]->() } RETURN count(u) AS askers_only
+----
+
+
+Grows r0.unanswered-tags with the round's capability (path-pattern-expressions). 10 rows, 2.192 ms.
+
+[source,cypher,id="r3.unaccepted-answers",round="3",kind="read",tier="mid",area="path-pattern-expressions",params='{"tag": "neo4j"}',extends="r0.unanswered-tags"]
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) WHERE NOT t.name IN [$tag] AND NOT (q)<-[:ANSWERED]-(:Answer {is_accepted: true}) RETURN t.name AS tag, count(q) AS questions ORDER BY questions DESC LIMIT 10
+----
+
+
+Grows r3.unaccepted-answers with the round's capability (subqueries-collect-count-exists). 1 rows, 1.79 ms.
+
+[source,cypher,id="r3.exists-form",round="3",kind="read",tier="mid",area="subqueries-collect-count-exists",extends="r3.unaccepted-answers"]
+----
+MATCH (q:Question) WHERE EXISTS { (q)<-[:ANSWERED]-(:Answer {is_accepted: true}) } RETURN count(*) AS accepted_questions
+----
+
+
+Grows r2.tag-stats with the round's capability (subqueries-call). 10 rows, 66.585 ms.
+
+[source,cypher,id="r3.per-tag-above-site-avg",round="3",kind="read",tier="complex",area="subqueries-call",extends="r2.tag-stats"]
+----
+MATCH (t:Tag) CALL { WITH t MATCH (q:Question)-[:TAGGED]->(t) RETURN count(q) AS qs, avg(q.score) AS avg_score } WITH t, qs, avg_score WHERE qs > 2 RETURN t.name AS tag, qs, avg_score ORDER BY qs DESC LIMIT 10
+----
+
+
+== Round 4 — who knows whom — multi-hop and paths
+
+Question pairs sharing multiple tags, asker/answerer chains, a user's two-hop neighborhood, co-answerer pairs, and the shortest path between two community members.
+
+Introduces the round's capability (match). 1 rows, 0.574 ms.
+
+[source,cypher,id="r4.asker-answerer-pairs",round="4",kind="read",tier="mid",area="match"]
+----
+MATCH (asker:User)-[:ASKED]->(:Question)<-[:ANSWERED]-(:Answer)<-[:PROVIDED]-(answerer:User) WHERE asker <> answerer RETURN count(*) AS pairs
+----
+
+
+Introduces the round's capability (match). 1 rows, 0.734 ms.
+
+[source,cypher,id="r4.co-answerers",round="4",kind="read",tier="complex",area="match"]
+----
+MATCH (u1:User)-[:PROVIDED]->(a1:Answer)-[:ANSWERED]->(q)<-[:ANSWERED]-(a2:Answer)<-[:PROVIDED]-(u2:User) WHERE id(u1) < id(u2) RETURN count(DISTINCT [u1.display_name, u2.display_name]) AS co_answerer_pairs
+----
+
+
+Introduces the round's capability (shortest-paths). 1 rows, 0.283 ms.
+
+[source,cypher,id="r4.shortest-between-users",round="4",kind="read",tier="complex",area="shortest-paths",params='{"a": "cybersam", "b": "Finbar Good"}']
+----
+MATCH (a:User), (b:User) WHERE a.display_name = $a AND b.display_name = $b MATCH p=SHORTEST 1 (a)-[:ASKED|PROVIDED|ANSWERED|TAGGED*..4]-(b) RETURN length(p) AS hops
+----
+
+
+Introduces the round's capability (variable-length-paths). 1 rows, 0.234 ms.
+
+[source,cypher,id="r4.user-neighborhood",round="4",kind="read",tier="complex",area="variable-length-paths",params='{"name": "cybersam"}']
+----
+MATCH p=(u:User)-[:ASKED|PROVIDED*1..2]->(x) WHERE u.display_name = $name RETURN length(p) AS hops, count(*) AS nodes ORDER BY hops
+----
+
+
+Grows r0.cooccurring with the round's capability (match). 1 rows, 24.453 ms.
+
+[source,cypher,id="r4.shared-tag-pairs",round="4",kind="read",tier="mid",area="match",extends="r0.cooccurring"]
+----
+MATCH (a:Question)-[:TAGGED]->(t)<-[:TAGGED]-(b:Question) WHERE id(a) < id(b) WITH a, b, count(t) AS shared WHERE shared >= 2 RETURN count(*) AS pairs
+----
+
+
+== Round 5 — moderation tooling — the app writes now
+
+Self-cleaning writes only: pin a note and remove it, upsert a synthetic tag and delete it, a SET/REMOVE round trip, a FOREACH-seeded batch with its cleanup, and the deliberate negative — MERGE with a null key must be rejected.
+
+Introduces the round's capability (create). 0 rows, 0.553 ms.
+
+[source,cypher,id="r5.foreach-seed",round="5",kind="write",tier="mid",area="create"]
+----
+FOREACH (i IN [1, 2, 3] | CREATE (:__WlDel {k: i}))
+----
+
+
+Introduces the round's capability (merge). 1 rows, 0.795 ms.
+
+[source,cypher,id="r5.merge-props-list",round="5",kind="write",tier="mid",area="merge",params='{"k": "w5", "tags": ["merge", "probe"]}']
+----
+MERGE (n:__Wl {k: $k}) ON CREATE SET n.tags = $tags, n.created = true ON MATCH SET n.seen = true WITH n DELETE n RETURN 1 AS done
+----
+
+
+Introduces the round's capability (delete). 1 rows, 1.951 ms.
+
+[source,cypher,id="r5.pin-note",round="5",kind="write",tier="mid",area="delete",params='{"k": "w1"}']
+----
+MATCH (q:Question) WITH q ORDER BY q.score DESC LIMIT 1 CREATE (n:__WlNote {k: $k, text: 'pinned'})-[:PINNED]->(q) WITH n DETACH DELETE n RETURN 1 AS done
+----
+
+
+Introduces the round's capability (remove). 1 rows, 0.553 ms.
+
+[source,cypher,id="r5.set-remove-roundtrip",round="5",kind="write",tier="mid",area="remove",params='{"k": "w3"}']
+----
+CREATE (n:__Wl {k: $k}) SET n.temp = 1 WITH n REMOVE n.temp WITH n DELETE n RETURN 1 AS done
+----
+
+
+Introduces the round's capability (merge). 1 rows, 0.583 ms.
+
+[source,cypher,id="r5.tag-upsert",round="5",kind="write",tier="mid",area="merge",params='{"name": "wl-probe"}']
+----
+MERGE (t:__WlTag {name: $name}) ON CREATE SET t.created = true ON MATCH SET t.seen = true WITH t DELETE t RETURN 1 AS done
+----
+
+
+Grows r5.foreach-seed with the round's capability (delete). 0 rows, 0.42 ms.
+
+[source,cypher,id="r5.foreach-cleanup",round="5",kind="write",tier="simple",area="delete",extends="r5.foreach-seed"]
+----
+MATCH (n:__WlDel) DELETE n
+----
+
+
+== Round 6 — Cypher 25 constructs
+
+LET + FILTER, a WHEN/ELSE conditional, label alternation — plus two documented engine-gap probes (FOR loops and the COLLECT subquery form), annotated as expected failures so they turn into regression signals the day the engine grows them.
+
+Introduces the round's capability (label-expressions). 2 rows, 0.728 ms.
+
+[source,cypher,id="r6.label-alternation",round="6",kind="read",tier="mid",area="label-expressions"]
+----
+MATCH (n:Question|Tag) WITH labels(n)[0] AS l RETURN l, count(*) AS n
+----
+
+
+Introduces the round's capability (conditional-queries). 1 rows, 0.144 ms.
+
+[source,cypher,id="r6.when-conditional",round="6",kind="read",tier="complex",area="conditional-queries"]
+----
+WHEN EXISTS { MATCH (:__WlNever) } THEN RETURN 0 AS n ELSE RETURN 1 AS n
+----
+
+
+Grows r1.scored-answered with the round's capability (let). 10 rows, 1.124 ms.
+
+[source,cypher,id="r6.let-filter",round="6",kind="read",tier="complex",area="let",params='{"min": 4}',extends="r1.scored-answered"]
+----
+MATCH (q:Question) LET s = q.score * 2 FILTER s > $min RETURN q.title AS title, s ORDER BY s DESC LIMIT 10
+----
+
+
+Grows r2.score-cleanup with the round's capability (list-expressions). 5 rows, 0.657 ms.
+
+[source,cypher,id="r6.pattern-comprehension",round="6",kind="read",tier="mid",area="list-expressions",extends="r2.score-cleanup"]
+----
+MATCH (q:Question) RETURN q.title AS title, [ (q)-[:TAGGED]->(t) | t.name ] AS tags LIMIT 5
+----
+
+
+Grows r6.when-conditional with the round's capability (conditional-queries). 1 rows, 0.14 ms.
+
+[source,cypher,id="r6.when-in-call",round="6",kind="read",tier="complex",area="conditional-queries",extends="r6.when-conditional"]
+----
+CALL { WHEN true THEN RETURN 1 AS n ELSE RETURN 0 AS n } RETURN n
+----
+
+
+== Round 7 — strings and math over real data
+
+Tag normalization, title cleanup, score shaping with the numeric functions, and a display-string concatenation.
+
+Introduces the round's capability (mathematical-functions-numeric). 1 rows, 1.113 ms.
+
+[source,cypher,id="r7.engagement-math",round="7",kind="read",tier="mid",area="mathematical-functions-numeric"]
+----
+MATCH (q:Question) WITH q, log(q.view_count + 1) AS lv RETURN floor(avg(lv)) AS log_reach, ceil(stdev(lv)) AS spread
+----
+
+
+Introduces the round's capability (mathematical-operators). 10 rows, 0.641 ms.
+
+[source,cypher,id="r7.score-shaping",round="7",kind="read",tier="simple",area="mathematical-operators"]
+----
+MATCH (q:Question) RETURN round(sqrt(q.view_count)) AS reach, sign(q.score) AS direction LIMIT 10
+----
+
+
+Introduces the round's capability (string-functions). 10 rows, 0.688 ms.
+
+[source,cypher,id="r7.title-cleanup",round="7",kind="read",tier="mid",area="string-functions",params='{"word": "cypher", "replacement": "relate"}']
+----
+MATCH (q:Question) RETURN replace(toLower(q.title), $word, $replacement) AS cleaned LIMIT 10
+----
+
+
+Grows r1.scored-answered with the round's capability (string-operators). 10 rows, 0.842 ms.
+
+[source,cypher,id="r7.concat-display",round="7",kind="read",tier="simple",area="string-operators",extends="r1.scored-answered"]
+----
+MATCH (q:Question) WHERE q.is_answered RETURN q.title + ' (+' + toString(q.score) + ')' AS display LIMIT 10
+----
+
+
+Grows r1.spring-tags with the round's capability (string-functions). 10 rows, 0.363 ms.
+
+[source,cypher,id="r7.tag-normalization",round="7",kind="read",tier="simple",area="string-functions",extends="r1.spring-tags"]
+----
+MATCH (t:Tag) WHERE size(t.name) > 5 RETURN toUpper(substring(t.name, 0, 6)) AS short, size(t.name) AS len ORDER BY len DESC LIMIT 10
+----
+
+
+== Round 8 — introspection and dynamic access
+
+keys()/properties()/type()/elementId() over real entities, dynamic property access via $key, and per-tag degree via the COUNT subquery.
+
+Introduces the round's capability (map-expressions). 3 rows, 0.746 ms.
+
+[source,cypher,id="r8.dynamic-property",round="8",kind="read",tier="simple",area="map-expressions",params='{"key": "is_answered"}']
+----
+MATCH (q:Question) RETURN q[$key] AS val, count(*) AS n GROUP BY val ORDER BY n DESC LIMIT 10
+----
+
+
+Introduces the round's capability (scalar-functions). 1 rows, 0.261 ms.
+
+[source,cypher,id="r8.element-ids",round="8",kind="read",tier="simple",area="scalar-functions",params='{"name": "neo4j"}']
+----
+MATCH (t:Tag {name: $name}) RETURN id(t) AS id, elementId(t) AS element_id
+----
+
+
+Introduces the round's capability (node-relationship-operators). 5 rows, 0.21 ms.
+
+[source,cypher,id="r8.entity-shape",round="8",kind="read",tier="simple",area="node-relationship-operators"]
+----
+MATCH (t:Tag) RETURN keys(t) AS keys, properties(t) AS props LIMIT 5
+----
+
+
+Grows r0.top-tags with the round's capability (subqueries-collect-count-exists). 10 rows, 0.547 ms.
+
+[source,cypher,id="r8.rel-degree",round="8",kind="read",tier="mid",area="subqueries-collect-count-exists",extends="r0.top-tags"]
+----
+MATCH (t:Tag) RETURN t.name AS tag, COUNT { (t)<-[:TAGGED]-() } AS questions ORDER BY questions DESC LIMIT 10
+----
+
+
+Grows r0.reltypes with the round's capability (node-relationship-operators). 7 rows, 1.681 ms.
+
+[source,cypher,id="r8.type-counts",round="8",kind="read",tier="simple",area="node-relationship-operators",extends="r0.reltypes"]
+----
+MATCH ()-[r]->() WITH type(r) AS t RETURN t, count(*) AS n ORDER BY n DESC
+----
+
+
+== Round 9 — list and predicate depth
+
+all/any/none/single quality gates over collected tags, a reduce fold, list indexing and slicing over rankings.
+
+Introduces the round's capability (list-functions). 1 rows, 0.158 ms.
+
+[source,cypher,id="r9.reversed-range",round="9",kind="read",tier="simple",area="list-functions"]
+----
+RETURN tail(reverse(range(1, 10))) AS descending_tail
+----
+
+
+Introduces the round's capability (list-operators). 10 rows, 1.131 ms.
+
+[source,cypher,id="r9.tag-list-ops",round="9",kind="read",tier="mid",area="list-operators"]
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) WITH q, collect(t.name) AS ts RETURN q.title AS title, ts[0] AS first_tag, ts[-1] AS last_tag, size(ts) AS n ORDER BY n DESC LIMIT 10
+----
+
+
+Introduces the round's capability (predicate-functions). 10 rows, 1.205 ms.
+
+[source,cypher,id="r9.tag-quality-gates",round="9",kind="read",tier="mid",area="predicate-functions",params='{"tag": "cypher", "never": "zzz-never", "seed": "neo4j"}']
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) WITH q, collect(t.name) AS ts RETURN q.title AS title, all(x IN ts WHERE size(x) > 2) AS all_long, any(x IN ts WHERE x = $tag) AS has_tag, none(x IN ts WHERE x = $never) AS no_never, single(x IN ts WHERE x = $seed) AS single_seed LIMIT 10
+----
+
+
+Grows r0.top-tags with the round's capability (list-functions). 1 rows, 1.093 ms.
+
+[source,cypher,id="r9.paging-with-collect",round="9",kind="read",tier="mid",area="list-functions",extends="r0.top-tags"]
+----
+MATCH (q:Question)-[:TAGGED]->(t:Tag) WITH t, count(q) AS n ORDER BY n DESC WITH collect(t.name) AS ranking RETURN ranking[2..5] AS middle
+----
+
+
+Grows r2.score-cleanup with the round's capability (list-functions). 1 rows, 0.771 ms.
+
+[source,cypher,id="r9.score-fold",round="9",kind="read",tier="mid",area="list-functions",extends="r2.score-cleanup"]
+----
+MATCH (q:Question) WITH collect(q.score) AS s RETURN reduce(total = 0, x IN s | total + x) AS total, size(s) AS n
+----
+
+
+== Round 10 — the model grows
+
+Real domain data arrives: comments embedded in the questions payload, and the related ring — each loaded question's related questions from the Stack Exchange API, then the top ring stubs one level deeper. 1081 nodes, 1347 relationships.
+
+Introduces the round's capability (aggregating-functions). 10 rows, 0.294 ms.
+
+[source,cypher,id="r10.comment-engagement",round="10",kind="read",tier="mid",area="aggregating-functions"]
+----
+MATCH (c:Comment)-[:COMMENTED_ON]->(q:Question) RETURN q.title AS title, count(c) AS comments ORDER BY comments DESC LIMIT 10
+----
+
+
+Introduces the round's capability (match). 1 rows, 0.985 ms.
+
+[source,cypher,id="r10.commenter-vs-answerer",round="10",kind="read",tier="mid",area="match"]
+----
+MATCH (u:User) RETURN count(u) AS users, size([(u)-[:PROVIDED]->() | 1]) AS answerers, size([(u)-[:COMMENTED]->() | 1]) AS commenters, size([(u)-[:ASKED]->() | 1]) AS askers LIMIT 1
+----
+
+
+Introduces the round's capability (aggregating-functions). 1 rows, 1.422 ms.
+
+[source,cypher,id="r10.related-coverage",round="10",kind="read",tier="mid",area="aggregating-functions"]
+----
+MATCH (q:Question) RETURN count(q) AS questions, count(q.depth) AS ring_stubs, sum(CASE WHEN EXISTS { (q)-[:RELATED]->() } THEN 1 ELSE 0 END) AS with_related
+----
+
+
+Introduces the round's capability (match). 10 rows, 0.633 ms.
+
+[source,cypher,id="r10.ring-content",round="10",kind="read",tier="simple",area="match"]
+----
+MATCH (r:Question) WHERE r.depth = 1 RETURN r.title AS ring_title, r.score AS score ORDER BY score DESC LIMIT 10
+----
+
+
+Grows r0.reltypes with the round's capability (node-relationship-operators). 7 rows, 1.129 ms.
+
+[source,cypher,id="r10.edges-now",round="10",kind="read",tier="simple",area="node-relationship-operators",extends="r0.reltypes"]
+----
+MATCH ()-[r]->() RETURN type(r) AS type, count(*) AS freq ORDER BY freq DESC
+----
+
+
+Grows r0.labels with the round's capability (node-relationship-operators). 5 rows, 0.71 ms.
+
+[source,cypher,id="r10.shape-now",round="10",kind="read",tier="simple",area="node-relationship-operators",extends="r0.labels"]
+----
+MATCH (n) RETURN labels(n)[0] AS label, count(*) AS freq ORDER BY freq DESC
+----
+
+
+== Round 11 — entry points — derive the anchor, then expand
+
+No hardcoded values: anchors are derived from the data itself (top-scored question, top-3 answerers, the most-linked question), then the walk expands from them. A range index lands first, and one query carries a USING hint — parsed, never plan-changing.
+
+Introduces the round's capability (match). 0 rows, 1.118 ms.
+
+[source,cypher,id="r11.anchor-derived-top",round="11",kind="read",tier="mid",area="match"]
+----
+MATCH (q:Question) WITH q ORDER BY q.score DESC LIMIT 1 WITH q.uuid AS anchor MATCH (a:Question {uuid: anchor})-[:TAGGED]->(t:Tag)<-[:TAGGED]-(r:Question) WHERE r.uuid <> anchor RETURN t.name AS tag, count(r) AS co_tagged ORDER BY co_tagged DESC LIMIT 5
+----
+
+
+Introduces the round's capability (match). 0 rows, 1.054 ms.
+
+[source,cypher,id="r11.anchor-into-ring",round="11",kind="read",tier="mid",area="match"]
+----
+MATCH (q:Question) WHERE q.depth IS NULL WITH q ORDER BY q.view_count DESC LIMIT 1 WITH q.uuid AS anchor, q.title AS source MATCH (a:Question {uuid: anchor})-[:RELATED]->(r:Question) RETURN source, r.title AS related_title, r.score AS score ORDER BY score DESC LIMIT 10
+----
+
+
+Introduces the round's capability (performance-indexes). 0 rows, 1.246 ms.
+
+[source,cypher,id="r11.score-range-index",round="11",kind="write",tier="simple",area="performance-indexes"]
+----
+CREATE INDEX wl_q_score FOR (q:Question) ON (q.score)
+----
+
+
+Grows r0.top-answerers with the round's capability (match). 10 rows, 0.989 ms.
+
+[source,cypher,id="r11.anchor-set-expand",round="11",kind="read",tier="complex",area="match",extends="r0.top-answerers"]
+----
+MATCH (u:User)-[:PROVIDED]->() WITH u, count(*) AS n ORDER BY n DESC LIMIT 3 WITH collect(u.display_name) AS anchors MATCH (u:User)-[:PROVIDED]->(a:Answer)-[:ANSWERED]->(q:Question)-[:TAGGED]->(t:Tag) WHERE u.display_name IN anchors RETURN t.name AS tag, count(DISTINCT q) AS questions, count(DISTINCT u) AS anchor_users ORDER BY questions DESC LIMIT 10
+----
+
+
+Grows r11.score-range-index with the round's capability (performance-indexes). 1 rows, 0.835 ms.
+
+[source,cypher,id="r11.using-index-hint",round="11",kind="read",tier="simple",area="performance-indexes",params='{"min": 5}',extends="r11.score-range-index"]
+----
+MATCH (q:Question) USING INDEX q:Question(score) WHERE q.score > $min RETURN count(*) AS well_scored
+----
+
+
+== Round 12 — quantified paths over the real ring
+
+The ring has real cycles now: quantified two-hop and 1-to-3-hop chains, type-alternating undirected walks, reach from the best-connected question, and the shortest path between the ends of a real chain.
+
+Introduces the round's capability (non-linear-paths). 1 rows, 4.945 ms.
+
+[source,cypher,id="r12.related-qpp-fixed",round="12",kind="read",tier="complex",area="non-linear-paths"]
+----
+MATCH p = ((q:Question)-[:RELATED]->(:Question)){2} WHERE nodes(p)[0].depth IS NULL RETURN count(*) AS two_hop_chains
+----
+
+
+Grows r12.related-qpp-fixed with the round's capability (non-linear-paths). 1 rows, 56.21 ms.
+
+[source,cypher,id="r12.qpp-alternation",round="12",kind="read",tier="complex",area="non-linear-paths",extends="r12.related-qpp-fixed"]
+----
+MATCH p = ((q:Question)-[:RELATED|TAGGED]-(x)){2} WHERE nodes(p)[0].depth IS NULL RETURN count(*) AS mixed_walks
+----
+
+
+Grows r11.anchor-into-ring with the round's capability (non-linear-paths). 1 rows, 6.566 ms.
+
+[source,cypher,id="r12.qpp-to-ring",round="12",kind="read",tier="complex",area="non-linear-paths",extends="r11.anchor-into-ring"]
+----
+MATCH p0 = ((s:Question)-[:RELATED]->(:Question)){2} WITH nodes(p0)[0] AS best, count(*) AS chains ORDER BY chains DESC LIMIT 1 WITH best.uuid AS anchor MATCH p = ((a:Question {uuid: anchor})-[:RELATED]->(:Question)){1,3} RETURN length(p) AS hops, count(*) AS reach ORDER BY hops
+----
+
+
+Grows r12.related-qpp-fixed with the round's capability (non-linear-paths). 3 rows, 7.791 ms.
+
+[source,cypher,id="r12.related-qpp-range",round="12",kind="read",tier="complex",area="non-linear-paths",extends="r12.related-qpp-fixed"]
+----
+MATCH p = ((q:Question)-[:RELATED]->(:Question)){1,3} WHERE nodes(p)[0].depth IS NULL RETURN length(p) AS hops, count(*) AS chains ORDER BY hops
+----
+
+
+Grows r12.qpp-to-ring with the round's capability (shortest-paths). 1 rows, 5.636 ms.
+
+[source,cypher,id="r12.shortest-in-ring",round="12",kind="read",tier="complex",area="shortest-paths",extends="r12.qpp-to-ring"]
+----
+MATCH p0 = ((a:Question)-[:RELATED]->(:Question)){2} WITH nodes(p0) AS ns ORDER BY length(p0) DESC LIMIT 1 WITH ns[0] AS from_q, ns[-1] AS to_q MATCH p = SHORTEST 1 (from_q)-[:RELATED*..6]-(to_q) RETURN from_q.title AS from_title, to_q.title AS to_title, length(p) AS hops
+----

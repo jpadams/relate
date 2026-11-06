@@ -1,0 +1,43 @@
+{
+ "_source": {
+  "what": "Oracle answers for the in-house fraud QPP suite. The generator is deterministic per seed, so the planted rings are known before the query runs — an engine-independent oracle, stronger than engine-self-reporting.",
+  "checks": {
+   "planted-ring": "the generator's planted directed cycle (cycle-0, cycle-1, ...) must appear among the returned rings, starting at its first account and closed; accidental noise rings may appear beside it, the planted one may not be missing. Runs over the graph generated with the datasets crate's fraud generator.",
+   "rows": "exact rows, compared with the graph-benchmark-ldbc lane's no-coercion rules (answers::compare). Runs over the workload's sample fixture (fixture-f06.cypher).",
+   "none": "no answer check; a kept entry whose oracle is the prose notes recorded here."
+  },
+  "generator": "the existing relate-datasets fraud generator (monopartite Account/TRANSFER, planted 'fanout'/'cycle'), driven at its CI scale (FraudConfig::ci(): scale 0.05, seed 42, fanout_k 12, cycle_len 4). The bipartite (FROM/TO) and needle generators the f03-f05 drafts target are follow-up work; those entries stay kept until they exist.",
+  "spike_reference_points": "2026-10-31 spike against the (unlicensed, never-to-be-committed) external dataset: 8 rings on the bipartite 20%-rule bounded {1,6} (5.9 s, 617 MB, matches the stated blog oracle); the 1000->900->810->729 sample ring; 5 date-ordered cycles hand-enumerated. The in-house generator must reproduce comparable shapes and counts at its default scale. These are facts, not expression (license-notes.md §4)."
+ },
+ "f01-monopartite-cycle": {
+  "check": "planted-ring",
+  "note": "the planted cycle account ids, stable per generator seed (the generator prints them and the runner reads them from its output)"
+ },
+ "f02-simple-cycle": {
+  "check": "planted-ring",
+  "note": "the same planted cycle as f01 — SIMPLE never removes a planted simple ring"
+ },
+ "f03-bipartite-bounded-ring": {
+  "check": "none",
+  "note": "kept: the bipartite generator is follow-up work; the oracle will be its planted ring ids (8 rings at the default scale)"
+ },
+ "f04-bipartite-unbounded": {
+  "check": "none",
+  "note": "kept: the unbounded + form does not terminate today (no walk budget, no frontier kernel); frontier-NFA acceptance case (LABS-644) and the walk-budget case (LABS-660 item 3)"
+ },
+ "f05-needle": {
+  "check": "none",
+  "note": "kept: the needle generator is follow-up work; the oracle will be exactly the planted ring, ids needle-0..needle-(N-1) in order"
+ },
+ "f06-sample-ring": {
+  "check": "rows",
+  "order_sensitive": false,
+  "rows": [
+   {
+    "ring": [1, 2, 3, 4, 1],
+    "amounts": [1000, 900, 810, 729]
+   }
+  ],
+  "note": "exactly one ring; nodes(p) lists the closed endpoint twice, so the ring column is 1-2-3-4-1"
+ }
+}

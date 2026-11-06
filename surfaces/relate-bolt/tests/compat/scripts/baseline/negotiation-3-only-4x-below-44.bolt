@@ -1,0 +1,7 @@
+# Baseline B-03 (negotiation-3; also pins F-02): boltkit's default
+# proposal [4.3, 4.2, 4.1, 4.0] covers no 4.4, so the server answers
+# 00 00 00 00 and closes the connection, never 00 00 04 04, which the
+# client did not propose (ADR-0303).
+C: <RAW> 60 60 B0 17 00 00 03 04 00 00 02 04 00 00 01 04 00 00 00 04
+S: <RAW> 00 00 00 00
+S: <EXIT>

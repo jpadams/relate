@@ -1,0 +1,18 @@
+# Jepsen run output: histories, fressian test files, plots. The
+# committed evidence is the named green/found logs under runs/
+# (first-green, second-consecutive, http-first/second, the widened
+# schedules, the elle lanes, the relaxed lane matrix, compare-657,
+# poweroff, bolt-post-refactor); per-run timestamped logs stay local.
+# Any committed evidence log over 1,000 lines rides gzipped
+# (<name>.log.gz, gzip -9 — no raw .log over the 1k-line file rule);
+# read them with `gunzip -c <name>.log.gz`. Evidence artifacts are the
+# explicit exception to the 1k-line rule by decision: committed run
+# evidence is the certification record (docs/testing/jepsen.md), and
+# bulk transcripts ride gzipped.
+store/
+runs/2*.log
+runs/http-2*.log
+.cpcache/
+.nrepl-port
+# The control container's Clojure compile residue (bind-mounted repo).
+classes/

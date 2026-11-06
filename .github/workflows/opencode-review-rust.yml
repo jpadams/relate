@@ -1,0 +1,51 @@
+name: OpenCode Review — Rust
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# CI is not a user session: the CLI's anonymous usage metrics
+# (ADR-0079) are opted out on every relate spawn a lane of this
+# workflow can reach — including any the review agents run on the
+# runner while reading the diff. The reusable workflow carries its own
+# block: a called workflow does not inherit the caller's env.
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  rust-review:
+    # Reviews run on drafts too — they are the draft fast gate's
+    # feedback loop (agents iterate on them before ready-for-review).
+    # Require the PR head to live in this repository. The
+    # previous author_association gate (MEMBER/OWNER/COLLABORATOR) was
+    # dropped: the pull_request payload value proved unreliable on this
+    # internal repo (six systematic zero-step skips on PR #53 despite a
+    # MEMBER author), and it is moot here — forking is disabled, so every
+    # PR author is necessarily an org member. The same-repo check keeps a
+    # token-spend guard that still skips fork PRs (without consuming
+    # Actions minutes or model tokens) if the repo ever goes public.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      # Inline review comments on the PR diff.
+      pull-requests: write
+      # Create/PATCH the PR summary comment as github-actions[bot] (PR
+      # conversation comments live on the issues API).
+      issues: write
+    # Every push re-triggers; cancel stale runs to save tokens.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/opencode-review-reusable.yml
+    with:
+      review_kind: Rust review
+      prompt_header: opencode-review-rust.md
+      job_name: rust
+    secrets:
+      FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+      # Model overrides (ADR-0302) forwarded to the reusable workflow.
+      OPENCODE_REVIEW_MODEL: ${{ secrets.OPENCODE_REVIEW_MODEL }}
+      STELLAR_MODEL_STRUCTURE: ${{ secrets.STELLAR_MODEL_STRUCTURE }}
+      STELLAR_MODEL_BRANCHING: ${{ secrets.STELLAR_MODEL_BRANCHING }}
+      STELLAR_MODEL_BOUNDARIES: ${{ secrets.STELLAR_MODEL_BOUNDARIES }}
+      STELLAR_MODEL_COMPARISON: ${{ secrets.STELLAR_MODEL_COMPARISON }}

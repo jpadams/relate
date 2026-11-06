@@ -1,0 +1,23 @@
+# Baseline B-11 (F-16): auto-commit RUN + PULL {n: -1} streams every
+# record, then a SUCCESS, and the session takes the next auto-commit query
+# at once. What this adds over boltkit/v4.0/return_1.bolt (an unaliased
+# column) and return_1_as_x.bolt (a parameter): the probe's aliased
+# column, then a multi-row, multi-column record shape on the same
+# connection. Only fields and the records are pinned; no summary key.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS x" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["x"]}
+   RECORD [1]
+   SUCCESS {}
+
+C: RUN "UNWIND [1, 2, 3] AS x RETURN x, x * 10 AS tenfold, 'r' + toString(x) AS tag" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["x", "tenfold", "tag"]}
+   RECORD [1, 10, "r1"]
+   RECORD [2, 20, "r2"]
+   RECORD [3, 30, "r3"]
+   SUCCESS {}

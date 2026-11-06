@@ -1,0 +1,74 @@
+[package]
+name = "relate-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "WAL plus pluggable snapshot codecs (Relate JSON, Parquet behind the default-on parquet feature)"
+license.workspace = true
+
+[features]
+default = ["parquet"]
+# Parquet snapshot codec (ADR-0105). Without it, new stores use the JSON codec
+# and Parquet stores fail closed at open.
+parquet = ["dep:arrow", "dep:parquet", "dep:bytes"]
+
+[dependencies]
+relate-catalog = { workspace = true }
+relate-core = { workspace = true }
+relate-executor = { workspace = true }
+relate-markdown = { workspace = true }
+relate-model = { workspace = true }
+relate-ontology = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true, optional = true }
+crc32fast = { workspace = true }
+web-time = { workspace = true }
+
+# Parquet/Arrow are native-only (and behind `parquet`); wasm ships MemoryVfs +
+# JSON codec only.
+# fs4 file locking and the host durability barrier are native-only too.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# No arrow features: the former `json` feature was dead config (nothing uses
+# arrow-json; the dylib is byte-identical without it).
+arrow = { version = "54", default-features = false, optional = true }
+parquet = { version = "54", default-features = false, features = ["arrow", "snap"], optional = true }
+getrandom = "0.2"
+fs4 = { workspace = true }
+
+# relate-executor pulls `rand 0.9` which pulls `getrandom 0.3`. On
+# wasm32 every getrandom major in the tree needs a backend feature to route
+# to `crypto.getRandomValues`: 0.2 takes `js`, 0.3 takes `wasm_js`. As of
+# getrandom 0.3.4 the Cargo `wasm_js` feature alone selects the backend on
+# wasm32-unknown-unknown; `--cfg getrandom_backend="wasm_js"` is unnecessary
+# and would override the feature if set, so it must not be. Pinned to 0.3.4
+# because earlier 0.3 releases needed that cfg in addition to the feature.
+# Declared here so any wasm consumer of storage inherits the fix (ADR-0085).
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+getrandom03 = { package = "getrandom", version = "0.3.4", features = ["wasm_js"] }
+
+# Durability barrier per platform (ADR-0077) and the no-replace rename
+# syscalls in reset (ADR-0097). No-follow opens use the shared
+# relate_core::file_identity::nofollow helper instead.
+# `cfg(unix)` supersedes the narrower linux/macos gate: every Unix host needs
+# libc for the barrier syscalls, not just the two with a native fdatasync barrier.
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+# The graph-type mirror's re-parse assert (ADR-0481 §1): the vault's
+# `graph-type.cypher` must parse through the parser's own
+# `parse_graph_type_body` entry point. Dev-only, R2-legal engine dep.
+relate-parser = { workspace = true }
+# The one recursive VFS walk the markdown-vault integration suites
+# share with the golden-store suite (`vfs_walk` feature; test-only).
+relate-test-support = { workspace = true, features = ["vfs_walk"] }
+# Property-testing harness for WAL/checkpoint invariants (ADR-0268).
+# Dev-only: never compiled into the library or the released artifact. This was
+# the first crate to adopt proptest; `relate-executor` also does now, for
+# the ADR-0439 admission property, under the same pin. Its rand 0.9
+# requirement unifies with the workspace's rand 0.9 (ADR-0268).
+proptest = { workspace = true }
+proptest-state-machine = "0.8"

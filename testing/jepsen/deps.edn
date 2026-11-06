@@ -1,0 +1,53 @@
+{:paths ["src"]
+ :deps  {;; Jepsen pinned at 0.3.15, the grepkill! floor: jepsen
+         ;; 0.3.12-0.3.14's control.util/grepkill! silently did nothing,
+         ;; so kill/pause nemeses built on it were no-ops for three
+         ;; releases (jepsen CHANGELOG). This harness verifies every
+         ;; fault fired from the client side (nemesis.clj) regardless,
+         ;; but it never runs on a version with that bug class baked in.
+         jepsen/jepsen {:mvn/version "0.3.15"}
+
+         ;; Elle, for the transactional lanes (LABS-652: counter as
+         ;; list-append, bank as rw-registers, both gated on the
+         ;; curated anomaly set — SI/strong-session models as the G2
+         ;; whitelist, serializable as the workload-shape gate,
+         ;; strict-serializable as discovery).
+         elle/elle {:mvn/version "0.2.8"}
+
+         ;; The official Java driver, pinned to the LABS-649 smoke's
+         ;; version (surfaces/relate-bolt/tests/java_driver_smoke):
+         ;; 5.28.5 negotiates Bolt 4.4 and passes the identity gate
+         ;; behind `serve --bolt-identity Neo4j/5.26.0`. Plain interop,
+         ;; no wrapper library.
+         org.neo4j.driver/neo4j-java-driver {:mvn/version "5.28.5"}
+
+         ;; JSON codec for the HTTP lane (LABS-655). The official Java
+         ;; driver is Bolt-only — 5.28.5, the latest version on Maven
+         ;; Central at 2026-11-01, enumerates exactly bolt/bolt+s/
+         ;; bolt+ssc/neo4j+s/neo4j+ssc in
+         ;; org.neo4j.driver.internal.Scheme, and nothing in the
+         ;; org.neo4j.driver group ships a Query API HTTP transport — so
+         ;; the HTTP lane speaks the Query API v2 wire itself
+         ;; (http_client.clj) over the JDK's java.net.http. data.json is
+         ;; the JSON half: zero transitive dependencies, no native code.
+         org.clojure/data.json {:mvn/version "2.5.1"}}
+ :aliases
+ {;; -Djava.awt.headless=true: requiring elle.list-append loads elle.viz →
+  ;; rhizome.viz, whose top-level AWT shortcut-mask def is guarded by
+  ;; exactly this property (rhizome skips it when headless). Without the
+  ;; opt, the guard's negation runs Toolkit/getMenuShortcutKeyMask and
+  ;; dies with HeadlessException in the display-less control container —
+  ;; before any test code runs.
+  :run {:jvm-opts ["-Djava.awt.headless=true"]
+        :main-opts ["-m" "jepsen.relate"]}
+  ;; The checker-contract suite (clojure -M:test): synthetic histories
+  ;; pin the lane checkers' semantics — the relaxed bounds, the
+  ;; negative control's inversion, and v1's full-mode invariants —
+  ;; without a docker roundtrip. No extra deps: clojure.test only.
+  :test {:extra-paths ["test"]
+         :jvm-opts ["-Djava.awt.headless=true"]
+         :main-opts ["-m" "jepsen.relate.checker-test"]}
+  ;; The conflict-granularity measurement (LABS-652): two concurrent
+  ;; explicit txns SETting different properties of the same node.
+  :granularity {:jvm-opts ["-Djava.awt.headless=true"]
+                :main-opts ["-m" "jepsen.relate.granularity"]}}}

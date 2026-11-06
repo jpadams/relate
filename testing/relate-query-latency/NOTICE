@@ -1,0 +1,88 @@
+relate-query-latency: the graph-benchmark-ldbc workload (ADR-0243) and the QPP/LDBC corpus (ADR-0479)
+===========================================================================================================
+
+This crate's `graph-benchmark-ldbc` workload derives its queries and expected answers from prrao87/graph-benchmark-ldbc
+(https://github.com/prrao87/graph-benchmark-ldbc) at commit c8eb87f6fba78aa8658036df2e1ca42377e254ac (2026-09-30):
+
+  - workloads/graph-benchmark-ldbc/queries/q01.cypher ... q30.cypher: the 30 Cypher queries of neo4j/query.py, verbatim (dedented,
+    trailing `;` dropped), each headed by a comment holding the function's docstring.
+  - workloads/graph-benchmark-ldbc/expected-sf1.json: the 30 expected answers of neo4j/benchmark_query.py and which are
+    order-sensitive.
+  - src/schema.rs: the schema of neo4j/build_graph.py (labels, relationship types, the `ID` property, the CSV
+    columns as properties); workloads/graph-benchmark-ldbc/indexes.cypher: the secondary indexes of ladybugdb/build_graph.py, plus
+    two.
+
+workloads/graph-benchmark-ldbc/expected-sf0.1.json is not from upstream (upstream publishes answers for SF1 only): it is the answers
+a reference Neo4j run gave on the SF0.1 data set, recorded with the upstream
+benchmark harness; its `_source` key holds the provenance.
+
+Modification: at SF0.1 only, 14 of the queries run with literal values replaced (names, tags, places, IDs and one
+threshold), as workloads/graph-benchmark-ldbc/literals-sf0.1.json lists with a reason for each (ADR-0247). The query files
+themselves are upstream's text; SF1 runs them verbatim.
+
+The queries and the SF1 expected results are used under upstream's MIT licence:
+
+----------------------------------------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2026 Prashanth Rao
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----------------------------------------------------------------------------------------------------------------
+
+LDBC SNB data
+-------------
+
+The data set (social_network-sf1-CsvBasic-StringDateFormatter and its SF0.1 counterpart, downloaded by
+`query-latency fetch` from https://datasets.ldbcouncil.org/snb-interactive-v1/ and not redistributed here) and the
+SNB data model are the work of the Linked Data Benchmark Council (LDBC), now the Graph Data Council (GDC), and are
+used under the Creative Commons Attribution 4.0 International licence (CC BY 4.0,
+https://creativecommons.org/licenses/by/4.0/). Credit: LDBC/GDC, LDBC Social Network Benchmark. This work is not an
+LDBC Benchmark and its results are not LDBC Benchmark Results
+(https://ldbcouncil.org/benchmarks/fair-use-policies/).
+
+LDBC's materials keep their own licences and are not relicensed under MIT or Apache-2.0.
+
+PathDB RPQ corpus
+------------------
+
+The `pathdb` workload (ADR-0479, LABS-646) derives its 26 abstract regular-path patterns / 142 concrete queries from
+dbgutalca/pathdb-eval1 (https://github.com/dbgutalca/pathdb-eval1) at commit
+e62e33c2a40aee3cecca35961dd6da94a575c4f1 (2026-03-31), extracted from its `Queries.xlsx`:
+
+  - workloads/pathdb/queries/p001.cypher ... p142.cypher: OUR Cypher quantified-path translations of the 142
+    queries (the label map and translation rules are recorded in workloads/pathdb/README.md), each file's header
+    naming the upstream repo and pin.
+  - workloads/pathdb/restrictors/r001.cypher ... r065.cypher: our path-mode re-spellings of the 13 templates
+    across five path modes.
+
+Not taken: upstream's Google Drive data link, jars or evaluation machinery — the corpus runs over the same pinned
+LDBC SNB data set as the `graph-benchmark-ldbc` workload above, and its seed substitutions (the degree-median policy of
+workloads/pathdb/seed-keys.json and params-sf<SF>.json) are ours.
+
+The translated queries are used under upstream's Apache-2.0 licence (the full text is the repository root
+LICENSE); the translations themselves are this repository's work under Apache-2.0.
+
+Fraud QPP suite
+---------------
+
+The `fraud-qpp` workload (ADR-0479) is IN-HOUSE: its queries, its sample fixture and its oracle are this
+repository's work. The unlicensed external repos and the ©-Neo4j training material that inspired the suite were
+never copied (verified 2026-10-31); the only facts carried over from the external spike run are performance and
+oracle reference points, recorded in workloads/fraud-qpp/oracle.json's `_source`.

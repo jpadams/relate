@@ -1,0 +1,48 @@
+[package]
+name = "relate-bolt"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Bolt protocol server for Relate"
+license.workspace = true
+
+# Scratch-image entrypoint (ADR-0128): seed-once-then-exec in one binary —
+# the FROM scratch runtime has no shell to run entrypoint.sh. The crate's
+# other historical binary (`relate-bolt`) is retired: `relate serve`
+# is the one product binary (LABS-381, ADR-0368).
+[[bin]]
+name = "entrypoint"
+path = "src/bin/entrypoint/main.rs"
+
+[dependencies]
+# ADR-0359: the boundary's plan text rendering.
+relate-formatter = { workspace = true }
+relate = { workspace = true, features = ["parquet"] }
+relate-auth = { workspace = true }
+relate-serve = { workspace = true }
+relate-core = { workspace = true }
+# ADR-0502 §2: the engine's one error classification (`error_info`) and
+# the Neo4j status-code constants this boundary renders under.
+relate-error = { workspace = true }
+# The one bundle-path predicate and its extension constants (ADR-0517 §5):
+# the entrypoint's per-instance URI derivation must recognise both.
+relate-storage = { workspace = true }
+# ADR-0309: the canonical stats counter list (`wire::STAT_COUNTERS`).
+relate-model = { workspace = true }
+# ADR-0177: decode Bolt temporal parameter structs.
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# ADR-0233: thread-per-connection — sync TLS (rustls ServerConnection +
+# StreamOwned over the peeked TcpStream), sync WebSocket framing, and
+# signal-hook instead of the tokio runtime stack.
+rustls = { workspace = true }
+tungstenite = { workspace = true }
+signal-hook = { workspace = true }
+rustls-pemfile = { workspace = true }
+clap = { workspace = true }
+
+[dev-dependencies]
+relate-test-support = { workspace = true, features = ["bolt", "durability"] }
+rcgen = "0.14"
+tempfile = { workspace = true }

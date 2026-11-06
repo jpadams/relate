@@ -1,0 +1,6 @@
+# Baseline B-05 (negotiation-5; also pins F-05): a proposal of Bolt 3
+# only covers no 4.4, so the server answers 00 00 00 00 and closes the
+# connection, as latest Neo4j does (ADR-0303).
+C: <RAW> 60 60 B0 17 00 00 00 03 00 00 00 00 00 00 00 00 00 00 00 00
+S: <RAW> 00 00 00 00
+S: <EXIT>

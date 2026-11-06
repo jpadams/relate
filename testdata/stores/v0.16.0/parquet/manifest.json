@@ -1,0 +1,192 @@
+{
+  "format_version": 3,
+  "next_node_id": 2,
+  "next_rel_id": 1,
+  "checkpoint_lsn": 8,
+  "commit_ts": 8,
+  "node_parts": [
+    {
+      "path": "nodes/0-262144-a40e6cacdd9427cad2d22b88956981a8.parquet",
+      "id_lo": 0,
+      "id_hi": 262144,
+      "rows": 2,
+      "bytes": 1496
+    }
+  ],
+  "rel_parts": [
+    {
+      "path": "relationships/0-262144-9ab995ea2a6da9099d2f7bb94d490b70.parquet",
+      "id_lo": 0,
+      "id_hi": 262144,
+      "rows": 1,
+      "bytes": 1209
+    }
+  ],
+  "bytes_per_node": 748.0,
+  "bytes_per_rel": 1209.0,
+  "codec": "parquet",
+  "indexes": [
+    {
+      "name": "person_bio",
+      "label": "Person",
+      "property": "bio#FULLTEXT#person_bio"
+    },
+    {
+      "name": "person_email_unique",
+      "label": "Person",
+      "property": "email#RANGE#person_email_unique"
+    },
+    {
+      "name": "person_embedding",
+      "label": "Person",
+      "property": "embedding#VECTOR#person_embedding"
+    },
+    {
+      "name": "person_name",
+      "label": "Person",
+      "property": "name"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "person_email_unique",
+      "relationship": false,
+      "label": "Person",
+      "properties": [
+        "email"
+      ],
+      "kind": "unique",
+      "property_type": null
+    },
+    {
+      "name": "person_name_exists",
+      "relationship": false,
+      "label": "Person",
+      "properties": [
+        "name"
+      ],
+      "kind": "exists",
+      "property_type": null
+    }
+  ],
+  "theater": {
+    "databases": {
+      "neo4j": [
+        25,
+        false
+      ],
+      "system": [
+        25,
+        false
+      ],
+      "system_ontologies": [
+        25,
+        false
+      ]
+    },
+    "index_details": {
+      "person_bio": {
+        "kind": "Fulltext",
+        "relationship": false,
+        "labels": [
+          "Person"
+        ],
+        "properties": [
+          "bio"
+        ],
+        "with_properties": []
+      },
+      "person_email_unique": {
+        "kind": "Range",
+        "relationship": false,
+        "labels": [
+          "Person"
+        ],
+        "properties": [
+          "email"
+        ],
+        "with_properties": []
+      },
+      "person_embedding": {
+        "kind": "Vector",
+        "relationship": false,
+        "labels": [
+          "Person"
+        ],
+        "properties": [
+          "embedding"
+        ],
+        "with_properties": []
+      },
+      "person_name": {
+        "kind": "Range",
+        "relationship": false,
+        "labels": [
+          "Person"
+        ],
+        "properties": [
+          "name"
+        ],
+        "with_properties": []
+      }
+    },
+    "index_options": {
+      "person_bio": {
+        "indexConfig": {
+          "t": "map",
+          "v": {
+            "fulltext.analyzer": {
+              "t": "string",
+              "v": "standard-no-stop-words"
+            },
+            "fulltext.eventually_consistent": {
+              "t": "bool",
+              "v": false
+            }
+          }
+        }
+      },
+      "person_email_unique": {},
+      "person_embedding": {
+        "indexConfig": {
+          "t": "map",
+          "v": {
+            "vector.default_search_expansion_factor": {
+              "t": "float",
+              "v": 3.0
+            },
+            "vector.dimensions": {
+              "t": "int",
+              "v": 3
+            },
+            "vector.hnsw.ef_construction": {
+              "t": "int",
+              "v": 100
+            },
+            "vector.hnsw.m": {
+              "t": "int",
+              "v": 16
+            },
+            "vector.quantization.type": {
+              "t": "string",
+              "v": "BINARY"
+            },
+            "vector.similarity_function": {
+              "t": "string",
+              "v": "COSINE"
+            }
+          }
+        }
+      },
+      "person_name": {}
+    },
+    "graph_types": {},
+    "current_graph_type": {
+      "node_types": [],
+      "edge_types": [],
+      "constraints": [],
+      "drop_constraint_names": []
+    },
+    "derived_constraints": {}
+  }
+}

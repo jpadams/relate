@@ -1,0 +1,304 @@
+{
+ "_source": {
+  "file": "prrao87/graph-benchmark-ldbc@c8eb87f6fba78aa8658036df2e1ca42377e254ac neo4j/benchmark_query.py",
+  "license": "MIT, Copyright (c) 2026 Prashanth Rao (see ../NOTICE)",
+  "order_sensitive": "true: list equality (upstream's order_sensitive=True, and every _assert_single_value, which asserts rows == [{key: value}]); false: multiset equality on tuple(sorted(row.items()))",
+  "assert": "the upstream helper each test calls"
+ },
+ "q1": {
+  "rows": [
+   {
+    "p.firstName": "Thomas",
+    "p.lastName": "Brown"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows"
+ },
+ "q2": {
+  "rows": [
+   {
+    "post.ID": 2061586474857
+   },
+   {
+    "post.ID": 2061586474860
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows"
+ },
+ "q3": {
+  "rows": [
+   {
+    "person.firstName": "Mads",
+    "person.lastName": "Haugland",
+    "org.name": "Norwegian_School_of_Sport_Sciences"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows"
+ },
+ "q4": {
+  "rows": [
+   {
+    "c.ID": 1924145496676
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows"
+ },
+ "q5": {
+  "rows": [
+   {
+    "p.firstName": "Akihiko",
+    "p.lastName": "Choi"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows"
+ },
+ "q6": {
+  "rows": [
+   {
+    "p.ID": 28587302332692
+   },
+   {
+    "p.ID": 17592186046501
+   },
+   {
+    "p.ID": 19791209310595
+   },
+   {
+    "p.ID": 15393162799645
+   },
+   {
+    "p.ID": 15393162791641
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows"
+ },
+ "q7": {
+  "rows": [],
+  "order_sensitive": false,
+  "assert": "_assert_rows"
+ },
+ "q8": {
+  "rows": [
+   {
+    "p.ID": 13194139534410
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows"
+ },
+ "q9": {
+  "rows": [
+   {
+    "p.ID": 1242,
+    "p.firstName": "Hans",
+    "p.lastName": "Johansson"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows"
+ },
+ "q10": {
+  "rows": [
+   {
+    "p.ID": 6597069775789
+   },
+   {
+    "p.ID": 8796093029267
+   },
+   {
+    "p.ID": 24189255819727
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows"
+ },
+ "q11": {
+  "rows": [
+   {
+    "num_e": 190,
+    "o.name": "MDLR_Airlines"
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows"
+ },
+ "q12": {
+  "rows": [
+   {
+    "num_comments": 3229
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q13": {
+  "rows": [
+   {
+    "num_persons": 2293
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q14": {
+  "rows": [
+   {
+    "num_forums": 37
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q15": {
+  "rows": [
+   {
+    "num_forums": 278
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q16": {
+  "rows": [
+   {
+    "num_posts": 3
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q17": {
+  "rows": [
+   {
+    "t.name": "Hamid_Karzai",
+    "tag_count": 32
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows"
+ },
+ "q18": {
+  "rows": [
+   {
+    "num_p": 20
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q19": {
+  "rows": [
+   {
+    "l.name": "India",
+    "comment_count": 242
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows"
+ },
+ "q20": {
+  "rows": [
+   {
+    "long_comment_count": 3
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q21": {
+  "rows": [
+   {
+    "liked": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q22": {
+  "rows": [
+   {
+    "has_reply_comment": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q23": {
+  "rows": [
+   {
+    "has_moderator": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q24": {
+  "rows": [
+   {
+    "has_person": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q25": {
+  "rows": [
+   {
+    "knows_someone": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q26": {
+  "rows": [
+   {
+    "has_forum": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q27": {
+  "rows": [
+   {
+    "has_comment": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q28": {
+  "rows": [
+   {
+    "has_people": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q29": {
+  "rows": [
+   {
+    "has_written_post_with_safari": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ },
+ "q30": {
+  "rows": [
+   {
+    "has_self_reply": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value"
+ }
+}

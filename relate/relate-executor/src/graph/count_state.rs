@@ -1,0 +1,543 @@
+//! LABS-851 (the structure round): the graph's exact count state —
+//! the one bundle behind the Graph's `count_stats` mutex (the
+//! `indexes: Indexes` precedent) — and its whole policy family: the
+//! delta vocabulary, the bundle type, the counting operator's probes,
+//! the bump/rebuild seams every mutation path rides, the public
+//! readers, and the windowed consistency read (ADR-0387's Decision 1
+//! put the count family in one module; the degree histograms stay in
+//! `degree_stats.rs` — estimate state the counting operator never
+//! reads, charged and rebuilt on its own seams).
+
+use std::collections::{HashMap, HashSet};
+
+use relate_core::NodeId;
+
+use super::{Graph, LabelCache};
+
+/// One count-map mutation's direction: every caller
+/// mutates one entry at a time, so the delta is ±1 by construction — the
+/// open-ended `i64` delta let an out-of-contract arm hide (a negative
+/// delta on a vacant entry returned 0 as a no-op); the enum makes the
+/// direction the only contract, and each arm is total on its own side.
+#[derive(Clone, Copy)]
+pub(super) enum CountDelta {
+    Add,
+    Remove,
+}
+
+/// LABS-851 (the structure round): the counting operator's count state —
+/// one bundle behind the Graph's one `count_stats` mutex (the
+/// `indexes: Indexes` precedent), so the windowed-consistency invariant
+/// is structural: the count-only reader holds the single guard across
+/// its exactness check and its reads, every bump takes the same guard,
+/// and a future arm's state (the deferred (label, type) side counts)
+/// lands inside the bundle instead of as another sibling lock. The
+/// degree histograms stay beside it, not inside it — estimate state the
+/// counting operator never reads, charged and rebuilt on its own seams.
+#[derive(Debug, Default)]
+pub(super) struct CountStats {
+    /// Live relationships per interned relationship type, maintained
+    /// beside install and delete and rebuilt with adjacency after abort
+    /// or restore. Planning uses it as the numerator of average degree;
+    /// the counting operator's `RelType`/`AllRels` arms read it. It
+    /// rides no `used_bytes` charge — bounded by the type vocabulary,
+    /// not the data (nothing a query can grow without bound).
+    pub(super) rel_type_counts: HashMap<u32, u64>,
+    /// LABS-370: exact (start-label, rel-type, end-label) rel counts —
+    /// the directional pair the counting operator answers from, and the
+    /// estimate the ADR-0218 ladder and the LABS-348 gate can consult.
+    /// Charged to `used_bytes` on entry creation (the LABS-351 security
+    /// discipline: an uncharged query-controlled map is a memory-limit
+    /// bypass).
+    pub(super) pair_counts: HashMap<(u32, u32, u32), u64>,
+    /// LABS-370 (v1 follow-up): the exact per-label live node counts —
+    /// the counting operator's single-node answer. Unlike the label
+    /// index (an upper bound that keeps deleted ids until checkpoint
+    /// GC), this map is bumped at every label-set mutation seam and
+    /// drained on zero, charged to `used_bytes` per entry like the pair
+    /// counts.
+    pub(super) label_counts: HashMap<u32, u64>,
+    /// LABS-851: the exact total live node count — the counting
+    /// operator's unlabeled single-node answer (`MATCH (n) RETURN
+    /// count(n)`), which the per-label map cannot answer (a label-less
+    /// node counts nowhere in it). Bumped at the same create/delete
+    /// seams as the label counts; label mutations never touch it (the
+    /// node stays live). A single counter, not a query-controlled map —
+    /// it rides no `used_bytes` charge (the `rel_type_counts`
+    /// precedent).
+    pub(super) node_total: u64,
+}
+
+/// The count probe the counting operator answers from: the exact per-label
+/// live count, the exact (start-label, type, end-label) pair count, or one
+/// of the LABS-851 whole-population arms — the total live node count, the
+/// per-type live rel count over unlabeled endpoints, and the total live rel
+/// count over unlabeled endpoints — read under the stats locks by
+/// [`Graph::windowed_stats_count`].
+pub(crate) enum CountProbe {
+    Label(String),
+    Pair(String, String, String),
+    /// The unlabeled single node (`MATCH (n) RETURN count(n)`): the total
+    /// live node count, which the per-label map cannot answer — a node
+    /// with no label counts nowhere in it.
+    AllNodes,
+    /// One rel type over unlabeled endpoints (`MATCH ()-[r:T]->()`): the
+    /// per-type live count (`rel_type_counts`).
+    RelType(String),
+    /// Every rel type over unlabeled endpoints, directed
+    /// (`MATCH ()-->() RETURN count(*)`): the sum of the per-type counts.
+    /// Undirected declines at the recognizer (each rel matches twice minus
+    /// self-loops, which no maintained count expresses).
+    AllRels,
+}
+
+impl Graph {
+    /// One pair-count entry's charge (the LABS-351 discipline, same
+    /// floor-estimate style).
+    pub(super) const PAIR_COUNT_ENTRY_BYTES: u64 =
+        (std::mem::size_of::<(u32, u32, u32)>() + std::mem::size_of::<u64>() + 48 + 64) as u64;
+    /// One exact label-count entry's charge (the LABS-351 discipline, same
+    /// floor-estimate style): charged to `used_bytes` on entry creation,
+    /// refunded when a delete or label removal drains the count to zero
+    /// and removes the entry.
+    pub(super) const LABEL_COUNT_ENTRY_BYTES: u64 =
+        (std::mem::size_of::<u32>() + std::mem::size_of::<u64>() + 48 + 64) as u64;
+
+    /// The committed label-count map's keys — the admission estimate's
+    /// charged-tier seed (the family owns every lock-and-read site for
+    /// its maps, the LABS-515 reader: the estimate file
+    /// took the locks directly before). Each reader holds its stats
+    /// lock only for its own read — serial holds, matching
+    /// `degree_stats_structure_bytes`' shape.
+    pub(super) fn label_count_keys(&self) -> HashSet<u32> {
+        self.count_stats
+            .lock()
+            .unwrap()
+            .label_counts
+            .keys()
+            .copied()
+            .collect()
+    }
+
+    /// The committed pair-count map's keys — the estimate's seed.
+    pub(super) fn pair_count_keys(&self) -> HashSet<(u32, u32, u32)> {
+        self.count_stats
+            .lock()
+            .unwrap()
+            .pair_counts
+            .keys()
+            .copied()
+            .collect()
+    }
+
+    /// The endpoint cross-product charge loop the pair-count family
+    /// shares: one start-set × end-set walk over the
+    /// pair map, `count_entry` per triple, the charge batched for the
+    /// caller's [`Graph::charge`] — the create path's whole-endpoint
+    /// cross product and the label mutation's per-incident-rel cross
+    /// product are the same loop with different sets, hand-rolled twice
+    /// before.
+    pub(super) fn charge_pair_cross(
+        pairs: &mut HashMap<(u32, u32, u32), u64>,
+        start_set: &[u32],
+        type_id: u32,
+        end_set: &[u32],
+        delta: CountDelta,
+    ) -> i64 {
+        let mut charge = 0i64;
+        for s in start_set {
+            for e in end_set {
+                charge += Self::count_entry(
+                    pairs,
+                    (*s, type_id, *e),
+                    delta,
+                    Self::PAIR_COUNT_ENTRY_BYTES,
+                );
+            }
+        }
+        charge
+    }
+
+    /// One count-map entry mutation with its entry-creation charge — the
+    /// one policy every exact count map rides (the pair counts, the label
+    /// counts): the delta is +1/-1 (saturating in its direction); the
+    /// return is the charge to apply (`entry_bytes` on creation, the
+    /// refund when a negative delta drains an entry to zero and removes
+    /// it, 0 otherwise) — the caller batches the `used_bytes` application
+    /// outside the lock through [`Graph::charge`] so no
+    /// caller can forget the refund (a label-churn delete that drains
+    /// an entry must give its creation bytes back or `used_bytes`
+    /// drifts upward while the recount stays true).
+    fn count_entry<K>(
+        counts: &mut HashMap<K, u64>,
+        key: K,
+        delta: CountDelta,
+        entry_bytes: u64,
+    ) -> i64
+    where
+        K: std::hash::Hash + Eq,
+    {
+        // The pairing invariant is loud in both directions, matching
+        // `bump_node_population_stats`: an Add past u64 or a Remove
+        // without its paired Add is a broken store, not a state to clip
+        // silently (LABS-311: no fabricated defaults over
+        // invariant-bound values).
+        match delta {
+            CountDelta::Add => match counts.entry(key) {
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(1);
+                    entry_bytes as i64
+                }
+                std::collections::hash_map::Entry::Occupied(mut o) => {
+                    *o.get_mut() = o
+                        .get()
+                        .checked_add(1)
+                        .expect("count overflow: an Add past u64 is a broken store");
+                    0
+                }
+            },
+            // Every Remove is paired with the Add that created its entry
+            // (the create/delete and label-mutation seams pair 1:1; the
+            // wholesale rebuild folds live rels only), so a vacant key on
+            // the Remove side is unrepresentable in the paired contract —
+            // a broken pairing seam fails here, at the seam that broke
+            // it, not as a silently drifting count map.
+            CountDelta::Remove => {
+                let count = counts
+                    .get_mut(&key)
+                    .expect("count Remove without its paired Add");
+                if *count > 1 {
+                    *count -= 1;
+                    0
+                } else {
+                    // A drained entry leaves the map — label churn must
+                    // not leak zero-count entries — and refunds its
+                    // creation charge (the accounting oracle tracks both
+                    // directions).
+                    counts.remove(&key);
+                    -(entry_bytes as i64)
+                }
+            }
+        }
+    }
+
+    /// LABS-851 (the round-6 seam merge): the rel-liveness seam's one
+    /// call — the per-type count and the endpoint-label pair counts
+    /// fold together at create and delete under the bundle's one
+    /// guard (the pairing is structure, mirroring
+    /// `bump_node_population_stats`); the endpoints' live labels are
+    /// read outside the lock. The type map rides no entry charge
+    /// (vocabulary-bounded), the pair map's cross product carries the
+    /// LABS-351 charge — both flow the one charge path.
+    pub(super) fn bump_rel_stats(
+        &self,
+        start: NodeId,
+        type_id: u32,
+        end: NodeId,
+        delta: CountDelta,
+    ) {
+        let start_labels = self.live_label_ids(start);
+        let end_labels = self.live_label_ids(end);
+        self.bump_counts(|stats| {
+            Self::fold_rel_stats(stats, &start_labels, type_id, &end_labels, delta)
+        });
+    }
+
+    /// The bump seams' one scaffold — every incremental count-bundle
+    /// mutation rides it (the three seams here and the incident walk's
+    /// `apply_incident_pair_counts`): the fold runs under the bundle's
+    /// one guard and its charge applies after the guard drops — so
+    /// the fold/charge pairing is structure for both halves (a seam
+    /// cannot run a fold and drop its `used_bytes` charge).
+    pub(super) fn bump_counts(&self, fold: impl FnOnce(&mut CountStats) -> i64) {
+        let charge = fold(&mut self.count_stats.lock().unwrap());
+        self.charge(charge);
+    }
+
+    /// One label-set's charge over the count bundle's label map — the
+    /// one fold every label-count bump rides (the `count_entry` walk
+    /// with the entry-charge constant), so the label-mutation seam and
+    /// the node-liveness seam share the policy, never a second copy.
+    fn fold_label_counts(stats: &mut CountStats, labels: &[u32], delta: CountDelta) -> i64 {
+        let mut charge = 0i64;
+        for &label in labels {
+            charge += Self::count_entry(
+                &mut stats.label_counts,
+                label,
+                delta,
+                Self::LABEL_COUNT_ENTRY_BYTES,
+            );
+        }
+        charge
+    }
+
+    /// The node total's one loud fold — the pairing invariant stated
+    /// once for the bump seam and the wholesale rebuild: an Add past
+    /// u64 or a Remove without its paired Add is a broken store, not
+    /// a state to clip silently.
+    fn fold_node_total(stats: &mut CountStats, delta: CountDelta) {
+        stats.node_total = match delta {
+            CountDelta::Add => stats
+                .node_total
+                .checked_add(1)
+                .expect("node_total overflow: an Add past u64 is a broken store"),
+            CountDelta::Remove => stats
+                .node_total
+                .checked_sub(1)
+                .expect("node_total underflow: a Remove without its paired Add"),
+        };
+    }
+
+    /// The node side's one fold — the label counts and the node total
+    /// together (the pairing the node-liveness seam and the wholesale
+    /// rebuild both ride, mirroring `fold_rel_stats`). Returns the
+    /// label map's entry charge.
+    fn fold_node_stats(stats: &mut CountStats, labels: &[u32], delta: CountDelta) -> i64 {
+        let charge = Self::fold_label_counts(stats, labels, delta);
+        Self::fold_node_total(stats, delta);
+        charge
+    }
+
+    /// The rel side's one fold — the per-type count and the
+    /// endpoint-label cross product together (the pairing the
+    /// rel-liveness seam and the wholesale rebuild both ride, like
+    /// `fold_node_stats` on the node side). The
+    /// type map rides no entry charge (vocabulary-bounded); the pair
+    /// map's cross product carries the LABS-351 charge.
+    fn fold_rel_stats(
+        stats: &mut CountStats,
+        start_labels: &[u32],
+        type_id: u32,
+        end_labels: &[u32],
+        delta: CountDelta,
+    ) -> i64 {
+        let type_charge = Self::count_entry(&mut stats.rel_type_counts, type_id, delta, 0);
+        let pair_charge = Self::charge_pair_cross(
+            &mut stats.pair_counts,
+            start_labels,
+            type_id,
+            end_labels,
+            delta,
+        );
+        type_charge + pair_charge
+    }
+
+    /// LABS-370 (v1 follow-up): the label-mutation seam's label half —
+    /// `apply_label_delta_stats` is the only caller (liveness is
+    /// unchanged there, so the node total does not move; create and
+    /// delete ride `bump_node_population_stats`; the wholesale rebuild
+    /// is `rebuild_count_stats`).
+    pub(super) fn bump_label_counts(&self, labels: &[u32], delta: CountDelta) {
+        self.bump_counts(|stats| Self::fold_label_counts(stats, labels, delta));
+    }
+
+    /// LABS-851: the node-liveness seam's one call — the label counts
+    /// and the total node count bump together at create and delete
+    /// under the bundle's one guard (the pairing is structure, not a
+    /// comment: a future seam cannot apply one half of it). The
+    /// pairing invariant is loud in both directions: an Add overflow
+    /// or a Remove underflow is a broken pairing, not a state to clip
+    /// silently (the `count_entry` contract).
+    pub(super) fn bump_node_population_stats(&self, labels: &[u32], delta: CountDelta) {
+        self.bump_counts(|stats| Self::fold_node_stats(stats, labels, delta));
+    }
+
+    /// The count bundle's share of the retained-structure recount (the
+    /// `structure_bytes` oracle): the charged maps' entry counts at
+    /// the same constants the incremental bumps charge (the #398
+    /// lesson — the recount and the charge must read one constant).
+    /// The histograms' share stays in `degree_stats_structure_bytes`
+    /// beside the histogram family.
+    pub(super) fn count_state_structure_bytes(&self) -> u64 {
+        let stats = self.count_stats.lock().unwrap();
+        (stats.pair_counts.len() as u64)
+            .saturating_mul(Self::PAIR_COUNT_ENTRY_BYTES)
+            .saturating_add(
+                (stats.label_counts.len() as u64).saturating_mul(Self::LABEL_COUNT_ENTRY_BYTES),
+            )
+    }
+
+    /// Rebuild the exact count state wholesale from the live graph —
+    /// abort and restore recompute it (the abort's install-time bumps
+    /// die with the reverted versions). The count state's one rebuild
+    /// home: `rebuild_adj` feeds it its projection of the live rels
+    /// beside the histogram fold (both paired rebuild sites run the
+    /// two together). The node fold reads only liveness and the live
+    /// versions' already-interned label ids — never `node_at`'s full
+    /// property materialization — and every live node counts toward
+    /// the total, the label-less ones included. Both sides ride the
+    /// bump seams' own folds with their charges discarded — the
+    /// wholesale rebuild's one exception to the no-discarded-return
+    /// rule: its caller runs `recompute_used`, which re-tallies
+    /// wholesale.
+    pub(super) fn rebuild_count_stats(&self, rows: impl Iterator<Item = (NodeId, u32, NodeId)>) {
+        // Built whole outside the guard, published in one store: the
+        // bundle's wholesale rebuild owns all four fields — one
+        // bundle, one guard, one publish, so a reader can never see
+        // one rebuild's fields mixed with the previous rebuild's (the
+        // structural claim the bundle exists for). One liveness
+        // convention through the whole fold: `live_version`, the seam
+        // the bump paths ride — never a snapshot-ts probe beside it.
+        let mut stats = CountStats::default();
+        for entry in self.nodes.iter() {
+            let Some(v) = super::live_version(entry.value().as_slice()) else {
+                continue;
+            };
+            // Charge discarded — see the doc's rebuild note.
+            let _ = Self::fold_node_stats(&mut stats, &v.live.labels, CountDelta::Add);
+        }
+        // The rel side rides `rebuild_adj`'s projection of the live
+        // rels (both paired rebuild sites materialize the rows once);
+        // charges discarded — see the doc's rebuild note.
+        let mut label_cache = LabelCache::default();
+        for (start, type_id, end) in rows {
+            label_cache.ensure(self, start);
+            label_cache.ensure(self, end);
+            let _ = Self::fold_rel_stats(
+                &mut stats,
+                label_cache.get(start),
+                type_id,
+                label_cache.get(end),
+                CountDelta::Add,
+            );
+        }
+        *self.count_stats.lock().unwrap() = stats;
+    }
+
+    /// LABS-370: the exact count of rels between a (start-label,
+    /// rel-type, end-label) triple — the counting operator's O(1)
+    /// answer. `None` when nothing of that triple was ever written.
+    /// The pair triple's one resolution: the three names through the
+    /// interner, then the one map read — [`Self::pattern_pair_rows`]'s
+    /// Option contract (an unknown name or never-written pair is
+    /// `None`) and the probe's Pair arm (the same facts as a hard 0)
+    /// both consume this spelling, never a second copy.
+    fn pair_rows_under(
+        &self,
+        stats: &CountStats,
+        start_label: &str,
+        rel_type: &str,
+        end_label: &str,
+    ) -> Option<u64> {
+        let s = self.interner.get_id(start_label)?;
+        let t = self.interner.get_id(rel_type)?;
+        let e = self.interner.get_id(end_label)?;
+        stats.pair_counts.get(&(s, t, e)).copied()
+    }
+
+    /// Test-seam reader (the production count path is
+    /// [`Graph::windowed_stats_count`]; the pair triple's resolution
+    /// lives in [`Self::pair_rows_under`], shared with the probe).
+    #[cfg(test)]
+    pub(crate) fn pattern_pair_rows(
+        &self,
+        start_label: &str,
+        rel_type: &str,
+        end_label: &str,
+    ) -> Option<u64> {
+        self.pair_rows_under(
+            &self.count_stats.lock().unwrap(),
+            start_label,
+            rel_type,
+            end_label,
+        )
+    }
+
+    /// Live relationships of `rel_type` — the one read path
+    /// [`probe_count_under`](Self::probe_count_under)'s `RelType` arm
+    /// owns (through [`Self::interned_count`]), consulted under the
+    /// bundle's guard; the planner's `PatternStats` adapter and the
+    /// constraint-key estimate read this boundary.
+    pub(crate) fn pattern_rel_type_rows(&self, rel_type: &str) -> u64 {
+        let stats = self.count_stats.lock().unwrap();
+        self.probe_count_under(CountProbe::RelType(rel_type.to_string()), &stats)
+    }
+
+    /// LABS-370 (v1 follow-up): the exact count of live nodes carrying
+    /// `label` — the one read path [`probe_count_under`](Self::
+    /// probe_count_under)'s `Label` arm owns, consulted under the
+    /// bundle's guard. Unlike the label index (an upper bound that
+    /// keeps deleted ids until checkpoint GC), the count state follows
+    /// every label-set mutation seam exactly.
+    pub(crate) fn pattern_label_count_exact(&self, label: &str) -> u64 {
+        let stats = self.count_stats.lock().unwrap();
+        self.probe_count_under(CountProbe::Label(label.to_string()), &stats)
+    }
+
+    /// LABS-370: the count-only reader's consistency
+    /// window. A plain exactness check followed by unlocked count reads
+    /// is a check-then-read a concurrent `apply_redo` can interleave
+    /// between — leaking out-of-snapshot writes into the count. Here
+    /// the reader holds the count bundle's ONE guard across the
+    /// exactness check and the reads (LABS-851's bundle made the
+    /// invariant structural: every stats mutation path —
+    /// `bump_rel_stats`, `bump_label_counts`, the incident walk,
+    /// `bump_node_population_stats`, the rebuilds — takes the same
+    /// guard, so a writer cannot mutate any count state while it is
+    /// held), and `apply_redo_inner` opens `in_write` BEFORE its first
+    /// mutation and bumps `commit_ts` AFTER its last, so the under-lock
+    /// check reads a window the mutation discipline already covers. A
+    /// failed check declines (`None` — the scan answers). The degree
+    /// histograms need no lock here: the count-only shapes never read
+    /// them. The `exact` closure runs UNDER the bundle's one guard —
+    /// it must not take `count_stats` again and must not call the
+    /// `pattern_*` readers (they lock); the one caller passes
+    /// lock-free atomic reads (`sees_exact_base_stats`), and this
+    /// seam is where that obligation is stated.
+    pub(crate) fn windowed_stats_count(
+        &self,
+        exact: impl FnOnce() -> bool,
+        probe: CountProbe,
+    ) -> Option<u64> {
+        let stats = self.count_stats.lock().unwrap();
+        if !exact() {
+            return None;
+        }
+        Some(self.probe_count_under(probe, &stats))
+    }
+
+    /// One name→count resolution the single-name probe arms share —
+    /// intern the name, a missing name or a drained entry is a hard 0
+    /// (exactness makes them equivalent), the one spelling of the
+    /// family's unknown-name policy.
+    fn interned_count(&self, counts: &HashMap<u32, u64>, name: &str) -> u64 {
+        self.interner
+            .get_id(name)
+            .and_then(|id| counts.get(&id).copied())
+            .unwrap_or(0)
+    }
+
+    /// The probe read under the held bundle guard — no re-locking: the
+    /// public `pattern_*` readers lock again and must not be called
+    /// from inside the window.
+    fn probe_count_under(&self, probe: CountProbe, stats: &CountStats) -> u64 {
+        match probe {
+            CountProbe::Label(label) => self.interned_count(&stats.label_counts, label.as_str()),
+            CountProbe::Pair(s, t, e) => {
+                // None ≡ 0 by exactness (a drained entry leaves the
+                // map); an unknown name is a hard 0 the same way —
+                // `pair_rows_under` is the one resolution spelling.
+                self.pair_rows_under(stats, s.as_str(), t.as_str(), e.as_str())
+                    .unwrap_or(0)
+            }
+            // LABS-851: the whole-population arms. The total node count
+            // is a maintained counter (label-less nodes included); the
+            // rel-type arms read the same exactness-drained map the
+            // planner's `pattern_rel_type_rows` reads — a missing
+            // (or unknown-name) type is a hard 0, and every type summed
+            // is the directed total.
+            CountProbe::AllNodes => stats.node_total,
+            CountProbe::RelType(t) => self.interned_count(&stats.rel_type_counts, t.as_str()),
+            CountProbe::AllRels => stats
+                .rel_type_counts
+                .values()
+                .copied()
+                // The read-side total rides the family's loudness
+                // contract: a sum past u64 is a broken store.
+                .fold(0u64, |acc, n| {
+                    acc.checked_add(n)
+                        .expect("rel-type total overflow: a sum past u64 is a broken store")
+                }),
+        }
+    }
+}

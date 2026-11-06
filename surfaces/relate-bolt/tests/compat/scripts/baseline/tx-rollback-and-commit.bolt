@@ -1,0 +1,34 @@
+# Baseline B-13 (F-22): in an explicit transaction, ROLLBACK discards a
+# write (a later count reads 0) and COMMIT keeps it (a later count reads
+# 1). Pinned: BEGIN, ROLLBACK and COMMIT answer SUCCESS, the RUN fields,
+# and the count records. qid and bookmark are not pinned.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: BEGIN {}
+   RUN "CREATE (n:BaseTx {k: 1}) RETURN n.k AS k" {} {}
+   ROLLBACK
+S: SUCCESS {}
+   SUCCESS {"fields": ["k"]}
+   SUCCESS {}
+C: RUN "MATCH (n:BaseTx) RETURN count(n) AS c" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["c"]}
+   RECORD [0]
+   SUCCESS {}
+
+C: BEGIN {}
+   RUN "CREATE (n:BaseTx {k: 1}) RETURN n.k AS k" {} {}
+   PULL {"n": -1}
+   COMMIT
+S: SUCCESS {}
+   SUCCESS {"fields": ["k"]}
+   RECORD [1]
+   SUCCESS {}
+   SUCCESS {}
+C: RUN "MATCH (n:BaseTx) RETURN count(n) AS c" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["c"]}
+   RECORD [1]
+   SUCCESS {}

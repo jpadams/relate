@@ -1,0 +1,23 @@
+# Provenance: relate_result from target/debug/relate (:memory:, no EXPLAIN) built
+# from this checkout; neo4j_result from the --image default (neo4j:2026.09-community).
+# Regenerate the full fixture (both columns): python3 scripts/keyword_symbolic_name_probe.py --write
+# (--write rewrites this file including this preamble; nothing is re-added by hand).
+id	query	neo4j_result	relate_result
+res-null-ref	WITH 1 AS `null` RETURN null AS r	"ok: [{""r"": null}]"	"ok: {""r"":null}"
+res-true-ref	WITH 1 AS `true` RETURN true AS r	"ok: [{""r"": true}]"	"ok: {""r"":true}"
+res-false-ref	WITH 1 AS `false` RETURN false AS r	"ok: [{""r"": false}]"	"ok: {""r"":false}"
+res-inf-ref	WITH 1 AS `inf` RETURN inf AS r	"ok: [{""r"": Infinity}]"	"ok: {""r"":""Inf""}"
+res-nan-ref	WITH 1 AS `nan` RETURN nan AS r	"ok: [{""r"": NaN}]"	"ok: {""r"":""NaN""}"
+res-return-distinct	RETURN distinct	err: {neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Variable `distinct` not defined (line 1, column 8 (offset: 7))	"err: syntax error: parse error: unexpected token """" (EOF) at line 0, col 0 at line 0, col 0"
+res-with-distinct	WITH distinct RETURN 1	err: {neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Variable `distinct` not defined (line 1, column 6 (offset: 5))	"err: syntax error: parse error: unexpected token ""1""   WITH distinct RETURN 1                        ^"
+res-count-distinct	RETURN count(distinct)	err: {neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Insufficient parameters for function 'count' (line 1, column 8 (offset: 7))	"err: syntax error: parse error: unexpected token "")"" (RightParen) at line 1, col 22   RETURN count(distinct)                        ^"
+res-return-not	RETURN not	err: {neo4j_code: Neo.ClientError.Statement.SyntaxError} {message: Variable `not` not defined (line 1, column 8 (offset: 7))	"err: syntax error: parse error: unexpected token """" (EOF) at line 0, col 0 at line 0, col 0"
+res-all-ref	WITH 1 AS `all` RETURN all AS r	"ok: [{""r"": 1}]"	"err: syntax error: parse error: unexpected token ""r""   WITH 1 AS `all` RETURN all AS r                                 ^"
+res-case-ref	WITH 1 AS `case` RETURN case AS r	"ok: [{""r"": 1}]"	"ok: {""r"":1}"
+res-count-ref	WITH 1 AS `count` RETURN count AS r	"ok: [{""r"": 1}]"	"ok: {""r"":1}"
+res-exists-ref	WITH 1 AS `exists` RETURN exists AS r	"ok: [{""r"": 1}]"	"ok: {""r"":1}"
+res-collect-ref	WITH 1 AS `collect` RETURN collect AS r	"ok: [{""r"": 1}]"	"ok: {""r"":1}"
+res-node-where-anon	MATCH (WHERE 1 = 1) RETURN 1 AS r	ok: []	ok: []
+res-node-where-kwvar	MATCH (where WHERE true) RETURN `where` AS r	ok: []	ok: []
+res-rel-where-anon	MATCH ()-[WHERE true]->() RETURN 1 AS r	ok: []	ok: []
+res-rel-where-kwvar	MATCH ()-[where WHERE true]->() RETURN `where` AS r	ok: []	ok: []

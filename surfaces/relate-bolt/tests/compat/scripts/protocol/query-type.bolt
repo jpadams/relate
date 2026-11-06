@@ -1,0 +1,49 @@
+# ADR-0332 (D-53, D-54): the SUCCESS that ends a result carries the
+# statement's query type, and a write splits on its returned columns —
+# "w" with no returned columns (MATCH ... SET, DETACH DELETE without
+# RETURN, where latest Neo4j 2026.09.0 also answers "w"), "rw" with
+# returned columns (CREATE ... RETURN), "r" for a read and "s" for
+# schema DDL. EXPLAIN reports the wrapped statement's type.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+# A read: r.
+C: RUN "MATCH (n) RETURN n" {} {}
+S: SUCCESS {"fields": ["n"]}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "r"}
+
+# A write with returned columns: rw.
+C: RUN "CREATE (a:QT {k: 1}) RETURN a" {} {}
+S: SUCCESS {"fields": ["a"]}
+C: PULL {"n": -1}
+S: RECORD [{"#4E": [0, ["QT"], {"k": 1}]}]
+S: SUCCESS {"type": "rw"}
+
+# A write with no returned columns — SET without RETURN (D-53): w.
+C: RUN "MATCH (a:QT) SET a.k = 2" {} {}
+S: SUCCESS {"fields": []}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "w"}
+
+# A write with no returned columns — DETACH DELETE without RETURN
+# (D-54): w.
+C: RUN "MATCH (a:QT) DETACH DELETE a" {} {}
+S: SUCCESS {"fields": []}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "w"}
+
+# Schema DDL: s.
+C: RUN "CREATE INDEX qt_k FOR (n:QT) ON (n.k)" {} {}
+S: SUCCESS {"fields": []}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "s"}
+
+# EXPLAIN reports the wrapped write's type — a write with no returned
+# columns — without executing anything. ADR-0359: EXPLAIN carries the plan
+# tree on the summary's `plan` key with no data columns and no records.
+C: RUN "EXPLAIN CREATE (b:QT)" {} {}
+S: SUCCESS {"fields": []}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "w"}

@@ -1,0 +1,8 @@
+# ADR-0318 (F-36, F-37): a ROUTE that names no database answers the home
+# database neo4j, with the roles in Neo4j's WRITE, READ, ROUTE order.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: ROUTE {"address": "localhost:7687"} [] {}
+S: SUCCESS {"rt": {"servers": [{"addresses": ["localhost:7687"], "role": "WRITE"}, {"addresses": ["localhost:7687"], "role": "READ"}, {"addresses": ["localhost:7687"], "role": "ROUTE"}], "ttl": 300, "db": "neo4j"}}

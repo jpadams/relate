@@ -1,0 +1,12 @@
+# Baseline B-10 (F-15): the SUCCESS that ends a fully pulled auto-commit
+# result carries t_last and db "neo4j". Only that ending SUCCESS's t_last
+# (presence) and db are pinned; type, bookmark and stats are not.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS x" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["x"]}
+   RECORD [1]
+   SUCCESS {"t_last": "*", "db": "neo4j"}

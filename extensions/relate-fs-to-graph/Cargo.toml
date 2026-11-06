@@ -1,0 +1,36 @@
+[package]
+name = "relate-fs-to-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The `fs-to-graph` importer as a first-party extension crate (ADR-0431
+# §11): the directory-tree walker as an MCP stdio child the `relate run`
+# host drives (ADR-0442, ADR-0447). The lib is the importer — the walk and
+# the row generation, moved from the CLI's `lab` tree, carrying no
+# `Database` and never touching a store (ADR-0447 §4: the child's only power
+# is the calls it makes); the bin is the child: one request envelope on
+# stdin, then the MCP session whose `write_cypher`, `update_schema` and
+# `report_output` calls are the import.
+#
+# `package/extension.json` is the package the release channel ships: the
+# committed manifest beside the executable's source, the one manifest the
+# e2e installs and the pipeline tarballs.
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The wire kit: the capped content read, the record writer, the shared
+# stored-path rendering.
+relate-wire = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# The shared envelope-keys pin and fixture helpers (ADR-0430 §6): a
+# test-support dev dependency, the testing group's one sanctioned reach
+# (ADR-0103's dev-dep rule, extended to this group).
+relate-test-support = { workspace = true, features = ["envelope"] }
+
+[[bin]]
+name = "fs-to-graph"
+path = "src/main.rs"

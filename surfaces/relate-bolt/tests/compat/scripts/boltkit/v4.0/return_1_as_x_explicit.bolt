@@ -1,0 +1,20 @@
+# Ported from boltkit test/scripts/v4.0/return_1_as_x_explicit.bolt
+# (neo4j-drivers/boltkit, branch 4.3 at 687a479).
+# Adapted to Bolt 4.4: the version is 4.4, `!: AUTO RESET` is dropped (it
+# tells boltkit's stub server to answer RESET; this harness is the client),
+# and the RUN SUCCESS asserts only `fields`, as `$x`: a server names an
+# unaliased column by its expression text, as Neo4j does (boltkit's stub
+# answered `x`, and its `"qid": 789` was an invented value).
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: BEGIN {}
+   RUN "RETURN $x" {"x": 1} {}
+   PULL {"n": -1}
+   COMMIT
+S: SUCCESS {}
+   SUCCESS {"fields": ["$x"]}
+   RECORD [1]
+   SUCCESS {}
+   SUCCESS {}

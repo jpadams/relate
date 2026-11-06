@@ -1,0 +1,16 @@
+{
+  "kind": "command",
+  "name": "fs-to-graph",
+  "version": "0.13.0",
+  "protocol": "2025-06-18",
+  "flags": [
+    {"kind": "integer", "name": "max-content-bytes", "default": 65536},
+    {"kind": "boolean", "name": "include-hidden", "default": false},
+    {"kind": "repeatable", "name": "ignore-patterns", "default": []}
+  ],
+  "positional": {"name": "DIR"},
+  "requires-fresh-store": false,
+  "commit": "whole-import",
+  "executable": "fs-to-graph",
+  "hidden": false
+}

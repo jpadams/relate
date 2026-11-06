@@ -1,0 +1,16 @@
+# ADR-0319 (D-49): a failure raised while executing a planned statement is
+# reported at the first PULL: RUN answers SUCCESS with the planned columns,
+# PULL answers FAILURE with no RECORDs, and RESET recovers. The code comes
+# from the failure-code mapping, so it is not pinned here.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "UNWIND [1, 0] AS x RETURN 10 / x AS v" {} {}
+S: SUCCESS {"fields": ["v"], "columnTypes": ["ANY"]}
+C: PULL {"n": -1}
+S: FAILURE {"code": "*", "message": "type error: / by zero"}
+C: RUN "RETURN 1 AS x" {} {}
+S: IGNORED
+C: RESET
+S: SUCCESS {}

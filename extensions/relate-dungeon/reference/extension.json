@@ -1,0 +1,15 @@
+{
+  "kind": "command",
+  "name": "dungeon",
+  "version": "0.1.0",
+  "protocol": "2025-06-18",
+  "flags": [
+    {
+      "kind": "string",
+      "name": "command",
+      "default": "status"
+    }
+  ],
+  "commit": "per-batch",
+  "executable": "dungeon.py"
+}

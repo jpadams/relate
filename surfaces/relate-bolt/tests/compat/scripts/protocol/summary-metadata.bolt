@@ -1,0 +1,32 @@
+# ADR-0309 (F-11, F-13, F-18, F-19, F-20, F-40, D-52 to D-56), ADR-0357:
+# RUN SUCCESS carries t_first and no type; a page that leaves records is
+# exactly {has_more: true}; the SUCCESS that ends a result (PULL or DISCARD)
+# carries type, t_first, t_last, db and the non-zero Neo4j counters.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "UNWIND [1, 2] AS x RETURN x" {} {}
+S: SUCCESS {"fields": ["x"], "t_first": "*"}
+C: PULL {"n": 1}
+S: RECORD [1]
+# The has_more-only SUCCESS, byte for byte: no t_last, db, type or stats.
+S: <RAW> 00 0D B1 70 A1 88 68 61 73 5F 6D 6F 72 65 C3 00 00
+C: PULL {"n": -1}
+S: RECORD [2]
+   SUCCESS {"type": "r", "t_first": "*", "t_last": "*", "db": "neo4j"}
+
+C: RUN "CREATE (a:P {k: 1})-[:R]->(b:P) SET b.k = 2" {} {}
+S: SUCCESS {"fields": []}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "w", "t_first": "*", "t_last": "*", "db": "neo4j", "stats": {"nodes-created": 2, "relationships-created": 1, "properties-set": 2, "labels-added": 2, "contains-updates": true}}
+
+C: RUN "UNWIND [1, 2] AS x RETURN x" {} {}
+S: SUCCESS {"fields": ["x"]}
+C: DISCARD {"n": -1}
+S: SUCCESS {"type": "r", "t_first": "*", "t_last": "*", "db": "neo4j"}
+
+C: RUN "CREATE INDEX i FOR (n:P) ON (n.k)" {} {}
+S: SUCCESS {}
+C: PULL {"n": -1}
+S: SUCCESS {"type": "s", "t_first": "*", "stats": {"indexes-added": 1, "contains-updates": true}}

@@ -1,0 +1,15 @@
+# Ported from boltkit test/scripts/v4.0/return_1.bolt
+# (neo4j-drivers/boltkit, branch 4.3 at 687a479).
+# Adapted to Bolt 4.4: the version is 4.4, `!: AUTO RESET` is dropped (it
+# tells boltkit's stub server to answer RESET; this harness is the client),
+# and the RUN SUCCESS asserts only `fields` (boltkit's `"qid": 789` was the
+# stub's invented value).
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["1"]}
+   RECORD [1]
+   SUCCESS {}

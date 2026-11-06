@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30T11:00:00Z",
+  "latest": {
+    "tag": "not-a-version-triple",
+    "published_at": "2026-10-30T10:00:00Z",
+    "prerelease": false,
+    "notes": "A site whose latest tag does not parse as vX.Y.Z: unreadable currency, never a skip — the smoke must fall through and judge the upgrade itself.",
+    "assets": [
+      "relate-linux-amd64",
+      "relate-darwin-arm64",
+      "SHA256SUMS",
+      "SHA256SUMS.sig"
+    ]
+  },
+  "latest_prerelease": null,
+  "releases": []
+}

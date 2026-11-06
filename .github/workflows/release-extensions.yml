@@ -1,0 +1,437 @@
+name: Release extension package
+
+# Manual dispatch only (the release.yml rule): the tag is created
+# mid-run, AFTER green builds, so a failed build never publishes a tag
+# or a release. Cuts ONE first-party extension package release
+# (ADR-0431): the tag `relate-extensions-<name>-<X.Y.Z>` whose
+# per-platform tarball assets the signed channel index
+# (publish-extensions-json.yml) lists — a package release bumps only
+# its index row; the CLI release need not move (ADR-0431 §8).
+#
+# The package must be listed in distribution/extension-packages.json —
+# the one table the release pipeline reads: each row names the package,
+# the crate directory that builds its executable, and the crate's
+# `extension.json` (the manifest the tarball carries and the version
+# source). The manifest's `executable` is the crate's binary name and
+# the tarball member (one convention, three uses). The channel's
+# platform scope is ADR-0068's: macOS and Linux, amd64 and arm64 —
+# four build legs, no Windows.
+#
+# Flow: resolve the package row and its version (refuse an already
+# published tag) → run the three first-party child crates' suites on the
+# resolved commit (a failed test stops the run before any tag) → build
+# the executable per platform (the darwin legs
+# sign + notarize, the CLI binary's own machinery) → pack the
+# ADR-0431 §2 tarballs (extension.json + the executable, ustar+gzip,
+# exactly the accounted set — the CLI's unpacker refuses anything
+# else) → tag → release with the tarballs as assets → publish the
+# signed index → deploy the website. The table lists the first-party
+# importer children `fs-to-graph` and `git-to-graph` (ADR-0431 §11) —
+# the extraction's own rows, wired here as the channel's release
+# artifacts; a dispatch naming anything else is refused. The index
+# snapshots the live release list, so it lists each importer only
+# after that package's first dispatch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package name to release (a row of distribution/extension-packages.json)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Two dispatches must not race the tag creation.
+concurrency:
+  group: release-extensions
+  cancel-in-progress: false
+
+jobs:
+  release-owner:
+    name: Canonical release owner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - name: Reject releases outside the canonical repository
+        if: github.repository != 'relatedb/relate'
+        run: |
+          echo "Official Relate tags and releases are owned by relatedb/relate; refusing ${GITHUB_REPOSITORY}." >&2
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+  resolve:
+    name: Resolve package
+    needs: release-owner
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+      version: ${{ steps.package.outputs.version }}
+      executable: ${{ steps.package.outputs.executable }}
+      crate_dir: ${{ steps.package.outputs.crate_dir }}
+      manifest: ${{ steps.package.outputs.manifest }}
+      tag: ${{ steps.package.outputs.tag }}
+      sha: ${{ steps.package.outputs.sha }}
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # The release channel publishes from main: the version the table's
+      # manifest carries on main is the version this run releases.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # Resolve the package row, read its manifest, refuse anything that
+      # does not agree — exactly one row for the name, the row's paths
+      # exist, the table's row and the manifest name the same package,
+      # the manifest carries a strict X.Y.Z version and a non-empty
+      # executable, and the tag is not already published.
+      - name: Resolve the package row and its version
+        id: package
+        env:
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          set -euo pipefail
+          table="distribution/extension-packages.json"
+          matches="$(jq -r --arg name "${PACKAGE}" \
+            '[.packages[] | select(.name == $name)] | length' "${table}")"
+          if [ "${matches}" != "1" ]; then
+            echo "::error::${matches} rows for '${PACKAGE}' in ${table} (the table lists each package exactly once)" >&2
+            exit 1
+          fi
+          row="$(jq -c --arg name "${PACKAGE}" \
+            '.packages[] | select(.name == $name)' "${table}")"
+          crate_dir="$(jq -r '.crate_dir' <<<"${row}")"
+          manifest="$(jq -r '.manifest' <<<"${row}")"
+          test -d "${crate_dir}" || {
+            echo "::error::crate directory '${crate_dir}' does not exist" >&2
+            exit 1
+          }
+          test -f "${manifest}" || {
+            echo "::error::manifest '${manifest}' does not exist" >&2
+            exit 1
+          }
+          for field in name version executable; do
+            if ! jq -e --arg f "${field}" 'has($f)' "${manifest}" > /dev/null; then
+              echo "::error::${manifest} carries no '${field}'" >&2
+              exit 1
+            fi
+          done
+          name="$(jq -r '.name' "${manifest}")"
+          version="$(jq -r '.version' "${manifest}")"
+          executable="$(jq -r '.executable' "${manifest}")"
+          if [ "${name}" != "${PACKAGE}" ]; then
+            echo "::error::${manifest} names '${name}' but the dispatch named '${PACKAGE}'" >&2
+            exit 1
+          fi
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::${manifest} carries version '${version}', not the X.Y.Z the channel tags" >&2
+            exit 1
+          fi
+          if [ -z "${executable}" ] || [ "${executable}" = "null" ]; then
+            echo "::error::${manifest} carries no executable" >&2
+            exit 1
+          fi
+          tag="relate-extensions-${name}-${version}"
+          if [ -n "$(git ls-remote --tags origin "refs/tags/${tag}")" ]; then
+            echo "::error::tag ${tag} is already published; bump the package version in ${manifest} first" >&2
+            exit 1
+          fi
+          echo "name=${name}"           >> "$GITHUB_OUTPUT"
+          echo "version=${version}"     >> "$GITHUB_OUTPUT"
+          echo "executable=${executable}" >> "$GITHUB_OUTPUT"
+          echo "crate_dir=${crate_dir}" >> "$GITHUB_OUTPUT"
+          echo "manifest=${manifest}"   >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}"             >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "releasing ${name} ${version} as ${tag} from ${crate_dir}"
+
+  # The publish boundary's test gate: the three first-party child crates'
+  # suites must pass on the resolved commit — the exact tree the tarballs
+  # carry — before any tag exists. `tag` needs this job, so a failed gate
+  # leaves no tag, no release, and no index change (the PR boundary runs
+  # the same suites in the ci.yml test lane's planner shard).
+  test:
+    name: Test first-party child crates
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # The gate tests the resolved commit — the version source the build
+      # and pack legs already use — never whatever main has moved to
+      # while the run is in flight.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0") —
+      # the release.yml note: the action installs the toolchain named by
+      # @rev, including any components/targets.
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      # Any test failure in the wire kit or either importer child fails
+      # the run here, before the tag.
+      - name: Run the first-party child suites
+        run: cargo test -p relate-wire -p relate-git-to-graph -p relate-fs-to-graph
+
+  build:
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    needs: resolve
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # The channel's platform scope (ADR-0068 via ADR-0431 §1):
+      # macOS and Linux, amd64 and arm64 — no Windows row to build.
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu,  runner: ubuntu-latest,  os: linux,  arch: amd64 }
+          - { target: aarch64-unknown-linux-gnu,  runner: ubuntu-latest,  os: linux,  arch: arm64 }
+          - { target: x86_64-apple-darwin,        runner: macos-15-intel, os: darwin, arch: amd64 }
+          - { target: aarch64-apple-darwin,       runner: macos-latest,   os: darwin, arch: arm64 }
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # Build from the resolved commit so artifacts carry the manifest's
+      # version (the version source is the tree the dispatch resolved).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0") —
+      # the release.yml note: the action installs the toolchain named by
+      # @rev, including any components/targets.
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release --manifest-path \
+            "${{ needs.resolve.outputs.crate_dir }}/Cargo.toml" \
+            --target ${{ matrix.target }}
+
+      # Sign and notarize the darwin executables with the shared composite
+      # action (ADR-0123), the CLI binary's own machinery, so Gatekeeper
+      # accepts the tarball's executable after download.
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/macos-notarize
+        with:
+          binary: target/${{ matrix.target }}/release/${{ needs.resolve.outputs.executable }}
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.arch }}-bin
+          path: target/${{ matrix.target }}/release/${{ needs.resolve.outputs.executable }}
+
+  # Pack the ADR-0431 §2 tarballs on one linux leg (GNU tar — uniform
+  # bytes for every platform): each tarball is the gzip'd ustar archive
+  # of exactly the package directory — extension.json and the
+  # executable, the manifest's own accounted set, the executable with
+  # its exec bit. The CLI's unpacker refuses any other member shape, so
+  # the pack names the two members explicitly, never a directory.
+  pack:
+    name: Pack tarballs
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: bins
+
+      - name: Pack the platform tarballs
+        env:
+          NAME: ${{ needs.resolve.outputs.name }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          EXECUTABLE: ${{ needs.resolve.outputs.executable }}
+          MANIFEST: ${{ needs.resolve.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # The build matrix's own legs, read back from the downloaded
+          # artifacts (bins/<os>-<arch>-bin) — no second platform table.
+          for bin_dir in bins/*-bin; do
+            [ -d "${bin_dir}" ] || continue
+            os_arch="$(basename "${bin_dir}" '-bin')"
+            os="${os_arch%-*}"
+            arch="${os_arch##*-}"
+            bin="${bin_dir}/${EXECUTABLE}"
+            test -s "${bin}" || { echo "::error::missing ${bin}" >&2; exit 1; }
+            stage="$(mktemp -d)"
+            cp "${MANIFEST}" "${stage}/extension.json"
+            cp "${bin}" "${stage}/${EXECUTABLE}"
+            chmod +x "${stage}/${EXECUTABLE}"
+            tarball="dist/${NAME}-${VERSION}-${os}-${arch}.tar.gz"
+            tar --format=ustar -czf "${tarball}" -C "${stage}" extension.json "${EXECUTABLE}"
+            rm -rf "${stage}"
+            echo "packed ${tarball}"
+          done
+          count="$(ls dist/*.tar.gz | wc -l | tr -d ' ')"
+          if [ "${count}" != "4" ]; then
+            echo "::error::packed ${count} tarballs, expected the four platform legs" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-tarballs
+          path: dist/*.tar.gz
+
+  # Tag only after the builds, packs, and first-party child suites are
+  # green, the release.yml rule: a failed build or test never leaves a
+  # published tag. The tag is the channel's
+  # package-release tag the index lists (ADR-0431 §1, §8).
+  tag:
+    name: Tag release
+    needs: [resolve, build, pack, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Create and push annotated tag
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          git config user.name "release-bot"
+          git config user.email "actions@github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "${TAG}"
+
+  # The GitHub release carrying the platform tarballs as assets — the
+  # assets the channel index lists. tag_name is explicit (the release.yml
+  # note: on workflow_dispatch there is no tag context to infer).
+  create-release:
+    name: Create Release
+    needs: [resolve, tag]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-tarballs
+          path: release
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.name }} ${{ needs.resolve.outputs.version }}
+          files: release/*.tar.gz
+
+  # Chained explicitly (ADR-0265: a `release: published` event fired by
+  # action-gh-release's GITHUB_TOKEN never triggers downstream workflows)
+  # — the index is regenerated and re-signed from the complete asset
+  # list. `secrets: inherit` carries RELEASE_SIGNING_PRIVATE_KEY through
+  # to the signing step.
+  publish-extensions-json:
+    name: Publish extensions.json to gh-pages
+    needs: [resolve, create-release]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-extensions-json.yml
+    with:
+      tag: ${{ needs.resolve.outputs.tag }}
+    secrets: inherit
+
+  # Pages deploys are paused (2026-11-05, maintainer direction):
+  # deploy-pages.yml runs on manual dispatch only, so this release no
+  # longer deploys the website — ADR-0330's chain is suspended, not
+  # replaced. extensions.json still lands on gh-pages from the publisher
+  # above and goes live only on a manual deploy-pages.yml dispatch.
+  # Un-pause by restoring the job exactly as ADR-0330 wrote it — needs
+  # [create-release, publish-extensions-json], if
+  # ${{ !cancelled() && needs.create-release.result == 'success' }},
+  # permissions contents: read / pages: write / id-token: write, uses
+  # ./.github/workflows/deploy-pages.yml — together with the
+  # workflow_call trigger in deploy-pages.yml and the release.yml
+  # caller.

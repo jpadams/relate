@@ -1,0 +1,10 @@
+# Baseline B-01 (negotiation-1; also pins F-01): a handshake that proposes
+# only Bolt 4.4 is answered 00 00 04 04, and the connection then serves a
+# session: HELLO succeeds (ADR-0303). The leading C: <RAW> is the script's
+# own handshake, so there is no automatic one and no !: AUTO HELLO.
+!: AUTO GOODBYE
+
+C: <RAW> 60 60 B0 17 00 00 04 04 00 00 00 00 00 00 00 00 00 00 00 00
+S: <RAW> 00 00 04 04
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "scheme": "none"}
+S: SUCCESS {}

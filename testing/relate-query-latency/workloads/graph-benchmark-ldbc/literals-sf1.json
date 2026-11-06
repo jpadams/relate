@@ -1,0 +1,5 @@
+{
+ "_source": {
+  "what": "SF1 runs upstream's query text verbatim, so this table lists no substitutions (ADR-0247); literals-sf0.1.json lists SF0.1's."
+ }
+}

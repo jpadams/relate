@@ -1,0 +1,11 @@
+# Baseline B-25 (F-62): a list result of mixed element types, with a
+# nested list, encodes as a PackStream List. Only the record is pinned.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN [1, 2.5, 'three', true, null, [4]] AS l" {} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   RECORD [[1, 2.5, "three", true, null, [4]]]
+   SUCCESS {}

@@ -1,0 +1,50 @@
+[
+  {
+    "tagName": "relate-extensions-fs-to-graph-0.13.0",
+    "publishedAt": "2026-10-31T09:22:00Z",
+    "isDraft": false,
+    "isPrerelease": false
+  },
+  {
+    "tagName": "relate-extensions-git-to-graph-0.13.0",
+    "publishedAt": "2026-10-31T09:06:00Z",
+    "isDraft": false,
+    "isPrerelease": false
+  },
+  {
+    "tagName": "v9.9.9",
+    "publishedAt": "2026-10-30T10:00:00Z",
+    "isDraft": false,
+    "isPrerelease": false
+  },
+  {
+    "tagName": "v9.9.9-rc.1",
+    "publishedAt": "2026-10-29T09:00:00Z",
+    "isDraft": false,
+    "isPrerelease": true
+  },
+  {
+    "tagName": "v0.13.0-draft",
+    "publishedAt": "2026-10-28T09:00:00Z",
+    "isDraft": true,
+    "isPrerelease": false
+  },
+  {
+    "tagName": "v0.13.1",
+    "publishedAt": "2026-10-20T10:00:00Z",
+    "isDraft": false,
+    "isPrerelease": false
+  },
+  {
+    "tagName": "v0.12.6",
+    "publishedAt": "2026-10-10T10:00:00Z",
+    "isDraft": false,
+    "isPrerelease": false
+  },
+  {
+    "tagName": "v0.12.5",
+    "publishedAt": "2026-10-01T10:00:00Z",
+    "isDraft": false,
+    "isPrerelease": false
+  }
+]

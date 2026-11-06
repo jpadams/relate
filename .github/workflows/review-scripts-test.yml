@@ -1,0 +1,102 @@
+name: review-scripts-test
+
+on:
+  pull_request:
+    paths:
+      - ".github/scripts/**"
+      - "scripts/**"
+      - "Makefile"
+      - "surfaces/relate-cli/tests/fixtures/releases.json"
+      - "surfaces/relate-cli/tests/fixtures/extension/extensions.json"
+      - "distribution/extension-packages.json"
+      - "extensions/*/Cargo.toml"
+      - "extensions/*/package/extension.json"
+      - ".agents/skills/stellar-review/tools/**"
+      - ".agents/skills/stellar-review/passes/**"
+      - ".agents/skills/stellar-review/SKILL.md"
+      - ".opencode/agents/**"
+      - ".claude/agents/**"
+      - ".github/workflows/opencode-review-*.yml"
+      - ".github/workflows/stellar-nightshift.yml"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/release-notes.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      - name: Install bats
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats
+
+      - name: Run script tests
+        run: bats .github/scripts/tests/
+
+      - name: Run the PR review digest suite
+        run: python3 scripts/tests/test_pr_review_digest.py
+
+      - name: Check releases.json skeleton contract
+        run: python3 scripts/compare-releases-json-skeletons.py
+
+      # The same contract for the extension channel index (ADR-0431 §1):
+      # the publisher's expected output and the CLI's fixture must
+      # describe the same document skeleton — the skeleton checker is
+      # fixture-pair-parameterized, so the one script serves both.
+      - name: Check extensions.json skeleton contract
+        run: |
+          python3 scripts/compare-releases-json-skeletons.py \
+            .github/scripts/tests/fixtures/publish-extensions-json-expected.json \
+            surfaces/relate-cli/tests/fixtures/extension/extensions.json
+
+      - name: Run the spec-harness coverage suite (ADR-0482)
+        run: python3 scripts/tests/test_spec_harness_coverage.py
+
+      - name: Run the scripts/tests suites (one owner, the aggregate)
+        run: make test-scripts
+
+  stellar-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      - name: Run stellar-review tool tests (facts, ledger, poster, agent sync)
+        run: python3 -m unittest discover -s .agents/skills/stellar-review/tools/tests -v

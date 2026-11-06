@@ -1,0 +1,24 @@
+# The embedded agent-skill bundle is baked into the binary via `include_str!`,
+# which reads these files verbatim from disk at compile time. Force LF so a
+# Windows checkout (core.autocrlf) cannot convert them to CRLF and shift the
+# bytes the version-stamper matches against.
+surfaces/relate-cli/src/skill/bundle/** text eol=lf
+
+# The generated Unicode identifier tables are hashed byte-for-byte by the
+# `test_generated_unicode_identifier_table_matches_the_generator` drift guard
+# via `include_bytes!`, which reads the checked-out bytes at compile time.
+# Force LF so a Windows checkout (core.autocrlf) cannot convert them to CRLF
+# and shift the digest.
+relate/relate-parser/src/unicode_identifier/tables.rs text eol=lf
+
+# Golden-store fixtures (ADR-0114 §3) are binary on-disk stores; never
+# normalize their line endings.
+testdata/stores/** -text
+
+# The release manifest fixture and its SSHSIG are byte-exact release
+# artifacts: the signature covers the manifest bytes and the upgrade e2e
+# tests verify it from the checked-out files via `include_str!`, so a
+# Windows checkout (core.autocrlf) must not convert them to CRLF.
+surfaces/relate-cli/tests/fixtures/release/** -text
+
+

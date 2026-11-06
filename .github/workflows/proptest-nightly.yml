@@ -1,0 +1,139 @@
+name: proptest nightly
+
+# Elevated-case property-test run (ADR-0268).
+#
+# The PR-level `test` job in ci.yml compiles and runs the relate-storage
+# property suites at proptest's default case count (256, see
+# tests/proptest_support/mod.rs `DEFAULT_CASES`) through
+# `cargo test -p relate-storage`. This workflow is the heavier scheduled
+# lane: it scales the case count through `PROPTEST_CASES` so the large input
+# space is sampled far more broadly on a cadence rather than on every PR.
+#
+# The in-memory suites (`wal_proptest`, `wal_state_machine_proptest`) are cheap
+# per case and get 10000 cases. The recovery suite (`recovery_proptest`) runs
+# against a NativeVfs store whose crash points are real fsync/commit barriers,
+# so it is fsync-bound and gets a lower 1024 cases.
+#
+# Regression policy (ADR-0268 §3): `.proptest-regressions` files are committed
+# and replayed first on later runs; they are never deleted, nor their entries
+# removed, without a tracked reason (an issue or a later ADR), and
+# `PROPTEST_DISABLE_FAILURE_PERSISTENCE` is never set. The in-memory job runs
+# its suites unmodified, so a newly-found counterexample is written to the
+# runner's checkout (uploaded as an artifact for triage) and the job fails
+# loudly — no `continue-on-error`. The recovery job is live: the three
+# properties in `recovery_proptest` run for real, so a newly-found
+# counterexample there also fails the lane and is uploaded for triage.
+
+on:
+  schedule:
+    # 03:00 UTC daily.
+    - cron: "0 3 * * *"
+  # The scheduled trigger only fires on the default branch; a manual run lets a
+  # feature branch exercise the elevated counts before merge.
+  workflow_dispatch:
+
+# CI is not a user session: the CLI's anonymous usage metrics
+# (ADR-0079) are opted out on every relate spawn a lane of this
+# workflow can reach. Workflow-level — the ADR-0255 single-source
+# placement, so every lane inherits the identical value — and
+# DO_NOT_TRACK is not a CARGO* var, so the Swatinem/rust-cache
+# environment hash is untouched.
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  in-memory:
+    name: proptest in-memory (PROPTEST_CASES=10000)
+    runs-on: ubuntu-latest
+    env:
+      PROPTEST_CASES: "10000"
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0"):
+      # the action installs the toolchain named by @rev, including any
+      # components/targets; @stable would put them on a toolchain nothing
+      # uses because cargo resolves rust-toolchain.toml instead.
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: wal_proptest (PROPTEST_CASES=10000)
+        run: cargo test -p relate-storage --test wal_proptest -- --nocapture
+
+      - name: wal_state_machine_proptest (PROPTEST_CASES=10000)
+        run: cargo test -p relate-storage --test wal_state_machine_proptest -- --nocapture
+
+      # ADR-0268 §3: fresh counterexamples must be visible for triage.
+      - name: Upload proptest regression files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proptest-regressions-in-memory
+          path: relate/relate-storage/tests/**/*.proptest-regressions
+          if-no-files-found: ignore
+
+  recovery:
+    name: proptest recovery, fsync-bound (PROPTEST_CASES=1024)
+    runs-on: ubuntu-latest
+    env:
+      PROPTEST_CASES: "1024"
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0").
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Live: all three properties in `recovery_proptest` run for real, so
+      # this step is a genuine crash-recovery gate at the fsync-bound
+      # 1024-case count (ADR-0268). It is deliberately NOT run with
+      # `-- --include-ignored`: `cargo test` skips ignored tests by default,
+      # and sweeping ignored tests into the lane would turn it red on
+      # already-tracked issues, destroying the new-counterexample signal this
+      # lane exists to provide.
+      # NativeVfs crash-recovery draws a real tempdir-backed store and cuts the
+      # WAL at fsync/commit barriers, so the case count stays low (ADR-0268).
+      - name: recovery_proptest (PROPTEST_CASES=1024)
+        run: cargo test -p relate-storage --test recovery_proptest -- --nocapture
+
+      - name: Upload proptest regression files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proptest-regressions-recovery
+          path: relate/relate-storage/tests/**/*.proptest-regressions
+          if-no-files-found: ignore

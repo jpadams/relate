@@ -1,0 +1,29 @@
+# ADR-0342: a PULL whose n or qid is present but not an Int fails with
+# Request.Invalid and the failed state, like an unknown qid; the -1
+# defaults apply only when the key is absent.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "UNWIND [1, 2] AS x RETURN x" {} {}
+S: SUCCESS {"fields": ["x"]}
+C: PULL {"n": "2"}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "unsupported extra value for n: String (must be an Int)"}
+C: RESET
+S: SUCCESS {}
+
+C: RUN "UNWIND [1, 2] AS x RETURN x" {} {}
+S: SUCCESS {"fields": ["x"]}
+C: PULL {"qid": 2.5}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "unsupported extra value for qid: Float (must be an Int)"}
+C: RESET
+S: SUCCESS {}
+
+# A present n outside -1 and the non-negative Ints is malformed too: it
+# must fail, not drain the result as the old -1 fallback did.
+C: RUN "UNWIND [1, 2] AS x RETURN x" {} {}
+S: SUCCESS {"fields": ["x"]}
+C: PULL {"n": -5}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "unsupported extra value for n: -5 (must be -1 or a non-negative Int)"}
+C: RESET
+S: SUCCESS {}

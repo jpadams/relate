@@ -1,0 +1,17 @@
+[package]
+name = "relate-ontology"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+# ADR-0509 §4: the converter builds SmallName graph-type AST fields.
+relate-names = { workspace = true }
+relate-core = { workspace = true }
+relate-parser = { workspace = true }
+indexmap = { workspace = true }
+saphyr = { workspace = true }
+saphyr-parser = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

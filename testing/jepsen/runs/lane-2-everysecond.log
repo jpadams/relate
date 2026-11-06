@@ -1,0 +1,860 @@
+time="2026-11-01T04:38:45+01:00" level=warning msg="volume \"relate-jepsen-m2\" already exists but was not created by Docker Compose. Use `external: true` to use an existing volume"
+ Container relate-jepsen-db-relaxed-lanes Running 
+ Container relate-jepsen-relaxed-lanes-control-run-416c66111f6b Creating 
+ Container relate-jepsen-relaxed-lanes-control-run-416c66111f6b Created 
+03:38:47.508 [main] INFO jepsen.cli -- Test options:
+ {:auth-password "jepsen",
+ :data-volume "relate-jepsen-data-relaxed-lanes",
+ :concurrency 5,
+ :leave-db-running? false,
+ :bolt-uri "bolt://db:7687",
+ :logging-json? false,
+ :nemesis-interval 5,
+ :lane "everysecond",
+ :ssh
+ {:dummy? false,
+  :username "root",
+  :password "root",
+  :strict-host-key-checking false,
+  :private-key-path nil},
+ :db-host "db",
+ :argv
+ ("test"
+  "--concurrency"
+  "5"
+  "--time-limit"
+  "70"
+  "--nemesis-interval"
+  "5"
+  "--lane"
+  "everysecond"
+  "--checkpoint-interval-secs"
+  "300"
+  "--db-container"
+  "relate-jepsen-db-relaxed-lanes"
+  "--data-volume"
+  "relate-jepsen-data-relaxed-lanes"),
+ :nodes ["n1" "n2" "n3" "n4" "n5"],
+ :test-count 1,
+ :auth-user "jepsen",
+ :checkpoint-interval-secs 300,
+ :time-limit 70,
+ :db-container "relate-jepsen-db-relaxed-lanes"}
+
+INFO [2026-11-01 03:38:47,560] jepsen test runner - jepsen.core Running test:
+{:remote
+ #jepsen.control.retry.Remote{:remote #jepsen.control.scp.Remote{:cmd-remote #jepsen.control.sshj.SSHJRemote{:concurrency-limit 6,
+                                                                                                             :conn-spec nil,
+                                                                                                             :client nil,
+                                                                                                             :semaphore nil},
+                                                                 :conn-spec nil},
+                              :conn nil}
+ :concurrency 5
+ :db
+ #object[jepsen.relate.db$docker_db$reify__418
+         "0x67683210"
+         "jepsen.relate.db$docker_db$reify__418@67683210"]
+ :name "relate-set-kill9-everysecond"
+ :start-time
+ #object[java.time.OffsetDateTime "0x594fcb22" "2026-11-01T03:38:47.512265418Z"]
+ :net
+ #object[jepsen.net$iptables_with_dev$reify__15624
+         "0x1399ad68"
+         "jepsen.net$iptables_with_dev$reify__15624@1399ad68"]
+ :client
+ #jepsen.relate.client.BoltClient{:driver nil,
+                                      :uri "bolt://db:7687",
+                                      :user "jepsen",
+                                      :password "jepsen"}
+ :barrier
+ #object[java.util.concurrent.CyclicBarrier
+         "0x41c83af0"
+         "java.util.concurrent.CyclicBarrier@41c83af0"]
+ :ssh {:dummy? true}
+ :checker
+ #jepsen.checker.Compose{:checkers {:stats #jepsen.checker.Stats{},
+                                    :set #object[jepsen.relate.checker$durability_bound$reify__251
+                                                 "0x47d4468a"
+                                                 "jepsen.relate.checker$durability_bound$reify__251@47d4468a"],
+                                    :fault-evidence #object[jepsen.relate.checker$fault_evidence$reify__274
+                                                            "0x60658389"
+                                                            "jepsen.relate.checker$fault_evidence$reify__274@60658389"]}}
+ :nemesis
+ #unprintable "jepsen.relate.nemesis$kill_nemesis$reify__449@3ec98000"
+ :nodes ["db"]
+ :generator
+ #object[jepsen.util.Forgettable
+         "0xb0d4873"
+         ((jepsen.generator.Synchronize
+           {:gen (jepsen.generator.TimeLimit
+                  {:limit 70000000000,
+                   :cutoff nil,
+                   :gen (jepsen.generator.Any
+                         {:gens [(jepsen.generator.OnThreads
+                                  {:f #{:nemesis},
+                                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                                           "0x17873842"
+                                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@17873842"],
+                                   :gen ({:type :sleep, :value 5}
+                                         {:type :info, :f :start}
+                                         {:type :sleep, :value 5}
+                                         {:type :info, :f :stop}
+                                         {:type :sleep, :value 5}
+                                         {:type :info, :f :start}
+                                         {:type :sleep, :value 5}
+                                         {:type :info, :f :stop}
+                                         ...)})
+                                 (jepsen.generator.OnThreads
+                                  {:f #jepsen.generator.context.AllBut{:element :nemesis},
+                                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                                           "0x68838767"
+                                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@68838767"],
+                                   :gen (jepsen.generator.Stagger
+                                         {:dt-fn #object[jepsen.generator$stagger_exp$dt_fn__6800
+                                                         "0x315365ef"
+                                                         "jepsen.generator$stagger_exp$dt_fn__6800@315365ef"],
+                                          :next-time nil,
+                                          :gen ({:type :invoke,
+                                                 :f :add,
+                                                 :value 1}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 2}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 3}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 4}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 5}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 6}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 7}
+                                                {:type :invoke,
+                                                 :f :add,
+                                                 :value 8}
+                                                ...)})})]})})})
+          (jepsen.generator.Synchronize
+           {:gen (jepsen.generator.OnThreads
+                  {:f #{:nemesis},
+                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                           "0x1f381eaf"
+                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@1f381eaf"],
+                   :gen (jepsen.generator.Limit
+                         {:remaining 1, :gen {:type :info, :f :stop}})})})
+          (jepsen.generator.Synchronize
+           {:gen (jepsen.generator.OnThreads
+                  {:f #jepsen.generator.context.AllBut{:element :nemesis},
+                   :context-filter #object[jepsen.generator.context$make_thread_filter$lazy_filter__5865
+                                           "0x5df7ae0a"
+                                           "jepsen.generator.context$make_thread_filter$lazy_filter__5865@5df7ae0a"],
+                   :gen (jepsen.generator.Limit
+                         {:remaining 1, :gen {:type :invoke, :f :read}})})}))]
+ :os
+ #object[jepsen.os$reify__16046 "0x293ba26c" "jepsen.os$reify__16046@293ba26c"]}
+
+INFO [2026-11-01 03:38:48,106] jepsen test runner - jepsen.db Tearing down DB
+INFO [2026-11-01 03:38:48,225] jepsen test runner - jepsen.db Setting up DB
+INFO [2026-11-01 03:38:50,090] jepsen node db - jepsen.relate.db db up: relate-jepsen-db-relaxed-lanes identity: Neo4j/5.26.0 lane: everysecond
+INFO [2026-11-01 03:38:50,091] jepsen test runner - jepsen.core Relative time begins now
+INFO [2026-11-01 03:38:50,357] jepsen worker 1 - jepsen.print 1	:invoke	:add	1
+INFO [2026-11-01 03:38:50,415] jepsen worker 2 - jepsen.print 2	:invoke	:add	2
+INFO [2026-11-01 03:38:50,445] jepsen worker 3 - jepsen.print 3	:invoke	:add	3
+INFO [2026-11-01 03:38:50,456] jepsen worker 1 - jepsen.print 1	:ok	:add	1
+INFO [2026-11-01 03:38:50,509] jepsen worker 2 - jepsen.print 2	:ok	:add	2
+INFO [2026-11-01 03:38:50,532] jepsen worker 3 - jepsen.print 3	:ok	:add	3
+INFO [2026-11-01 03:38:50,544] jepsen worker 4 - jepsen.print 4	:invoke	:add	4
+INFO [2026-11-01 03:38:50,633] jepsen worker 4 - jepsen.print 4	:ok	:add	4
+INFO [2026-11-01 03:38:50,642] jepsen worker 0 - jepsen.print 0	:invoke	:add	5
+INFO [2026-11-01 03:38:50,742] jepsen worker 0 - jepsen.print 0	:ok	:add	5
+INFO [2026-11-01 03:38:50,787] jepsen worker 0 - jepsen.print 0	:invoke	:add	6
+INFO [2026-11-01 03:38:50,791] jepsen worker 1 - jepsen.print 1	:invoke	:add	7
+INFO [2026-11-01 03:38:50,835] jepsen worker 0 - jepsen.print 0	:ok	:add	6
+INFO [2026-11-01 03:38:50,839] jepsen worker 1 - jepsen.print 1	:ok	:add	7
+INFO [2026-11-01 03:38:50,851] jepsen worker 2 - jepsen.print 2	:invoke	:add	8
+INFO [2026-11-01 03:38:50,900] jepsen worker 2 - jepsen.print 2	:ok	:add	8
+INFO [2026-11-01 03:38:51,143] jepsen worker 3 - jepsen.print 3	:invoke	:add	9
+INFO [2026-11-01 03:38:51,165] jepsen worker 4 - jepsen.print 4	:invoke	:add	10
+INFO [2026-11-01 03:38:51,169] jepsen worker 0 - jepsen.print 0	:invoke	:add	11
+INFO [2026-11-01 03:38:51,193] jepsen worker 3 - jepsen.print 3	:ok	:add	9
+INFO [2026-11-01 03:38:51,214] jepsen worker 4 - jepsen.print 4	:ok	:add	10
+INFO [2026-11-01 03:38:51,214] jepsen worker 0 - jepsen.print 0	:ok	:add	11
+INFO [2026-11-01 03:38:51,258] jepsen worker 0 - jepsen.print 0	:invoke	:add	12
+INFO [2026-11-01 03:38:51,291] jepsen worker 1 - jepsen.print 1	:invoke	:add	13
+INFO [2026-11-01 03:38:51,306] jepsen worker 0 - jepsen.print 0	:ok	:add	12
+INFO [2026-11-01 03:38:51,308] jepsen worker 2 - jepsen.print 2	:invoke	:add	14
+INFO [2026-11-01 03:38:51,312] jepsen worker 3 - jepsen.print 3	:invoke	:add	15
+INFO [2026-11-01 03:38:51,313] jepsen worker 4 - jepsen.print 4	:invoke	:add	16
+INFO [2026-11-01 03:38:51,339] jepsen worker 1 - jepsen.print 1	:ok	:add	13
+INFO [2026-11-01 03:38:51,354] jepsen worker 2 - jepsen.print 2	:ok	:add	14
+INFO [2026-11-01 03:38:51,355] jepsen worker 3 - jepsen.print 3	:ok	:add	15
+INFO [2026-11-01 03:38:51,358] jepsen worker 4 - jepsen.print 4	:ok	:add	16
+INFO [2026-11-01 03:38:51,368] jepsen worker 0 - jepsen.print 0	:invoke	:add	17
+INFO [2026-11-01 03:38:51,415] jepsen worker 0 - jepsen.print 0	:ok	:add	17
+INFO [2026-11-01 03:38:51,421] jepsen worker 0 - jepsen.print 0	:invoke	:add	18
+INFO [2026-11-01 03:38:51,468] jepsen worker 0 - jepsen.print 0	:ok	:add	18
+INFO [2026-11-01 03:38:51,484] jepsen worker 1 - jepsen.print 1	:invoke	:add	19
+INFO [2026-11-01 03:38:51,535] jepsen worker 1 - jepsen.print 1	:ok	:add	19
+INFO [2026-11-01 03:38:51,714] jepsen worker 2 - jepsen.print 2	:invoke	:add	20
+INFO [2026-11-01 03:38:51,763] jepsen worker 2 - jepsen.print 2	:ok	:add	20
+INFO [2026-11-01 03:38:51,763] jepsen worker 3 - jepsen.print 3	:invoke	:add	21
+INFO [2026-11-01 03:38:51,810] jepsen worker 3 - jepsen.print 3	:ok	:add	21
+INFO [2026-11-01 03:38:51,841] jepsen worker 4 - jepsen.print 4	:invoke	:add	22
+INFO [2026-11-01 03:38:51,890] jepsen worker 4 - jepsen.print 4	:ok	:add	22
+INFO [2026-11-01 03:38:51,890] jepsen worker 0 - jepsen.print 0	:invoke	:add	23
+INFO [2026-11-01 03:38:51,901] jepsen worker 1 - jepsen.print 1	:invoke	:add	24
+INFO [2026-11-01 03:38:51,924] jepsen worker 2 - jepsen.print 2	:invoke	:add	25
+INFO [2026-11-01 03:38:51,936] jepsen worker 0 - jepsen.print 0	:ok	:add	23
+INFO [2026-11-01 03:38:51,943] jepsen worker 1 - jepsen.print 1	:ok	:add	24
+INFO [2026-11-01 03:38:51,972] jepsen worker 2 - jepsen.print 2	:ok	:add	25
+INFO [2026-11-01 03:38:52,131] jepsen worker 2 - jepsen.print 2	:invoke	:add	26
+INFO [2026-11-01 03:38:52,179] jepsen worker 2 - jepsen.print 2	:ok	:add	26
+INFO [2026-11-01 03:38:52,293] jepsen worker 3 - jepsen.print 3	:invoke	:add	27
+INFO [2026-11-01 03:38:52,337] jepsen worker 4 - jepsen.print 4	:invoke	:add	28
+INFO [2026-11-01 03:38:52,340] jepsen worker 3 - jepsen.print 3	:ok	:add	27
+INFO [2026-11-01 03:38:52,385] jepsen worker 4 - jepsen.print 4	:ok	:add	28
+INFO [2026-11-01 03:38:52,615] jepsen worker 0 - jepsen.print 0	:invoke	:add	29
+INFO [2026-11-01 03:38:52,655] jepsen worker 1 - jepsen.print 1	:invoke	:add	30
+INFO [2026-11-01 03:38:52,665] jepsen worker 0 - jepsen.print 0	:ok	:add	29
+INFO [2026-11-01 03:38:52,687] jepsen worker 2 - jepsen.print 2	:invoke	:add	31
+INFO [2026-11-01 03:38:52,701] jepsen worker 1 - jepsen.print 1	:ok	:add	30
+INFO [2026-11-01 03:38:52,732] jepsen worker 3 - jepsen.print 3	:invoke	:add	32
+INFO [2026-11-01 03:38:52,735] jepsen worker 2 - jepsen.print 2	:ok	:add	31
+INFO [2026-11-01 03:38:52,743] jepsen worker 4 - jepsen.print 4	:invoke	:add	33
+INFO [2026-11-01 03:38:52,778] jepsen worker 0 - jepsen.print 0	:invoke	:add	34
+INFO [2026-11-01 03:38:52,780] jepsen worker 3 - jepsen.print 3	:ok	:add	32
+INFO [2026-11-01 03:38:52,787] jepsen worker 4 - jepsen.print 4	:ok	:add	33
+INFO [2026-11-01 03:38:52,821] jepsen worker 0 - jepsen.print 0	:ok	:add	34
+INFO [2026-11-01 03:38:52,852] jepsen worker 0 - jepsen.print 0	:invoke	:add	35
+INFO [2026-11-01 03:38:52,894] jepsen worker 0 - jepsen.print 0	:ok	:add	35
+INFO [2026-11-01 03:38:52,946] jepsen worker 0 - jepsen.print 0	:invoke	:add	36
+INFO [2026-11-01 03:38:52,959] jepsen worker 1 - jepsen.print 1	:invoke	:add	37
+INFO [2026-11-01 03:38:52,989] jepsen worker 0 - jepsen.print 0	:ok	:add	36
+INFO [2026-11-01 03:38:53,002] jepsen worker 1 - jepsen.print 1	:ok	:add	37
+INFO [2026-11-01 03:38:53,023] jepsen worker 2 - jepsen.print 2	:invoke	:add	38
+INFO [2026-11-01 03:38:53,070] jepsen worker 2 - jepsen.print 2	:ok	:add	38
+INFO [2026-11-01 03:38:53,252] jepsen worker 3 - jepsen.print 3	:invoke	:add	39
+INFO [2026-11-01 03:38:53,283] jepsen worker 4 - jepsen.print 4	:invoke	:add	40
+INFO [2026-11-01 03:38:53,285] jepsen worker 0 - jepsen.print 0	:invoke	:add	41
+INFO [2026-11-01 03:38:53,298] jepsen worker 3 - jepsen.print 3	:ok	:add	39
+INFO [2026-11-01 03:38:53,330] jepsen worker 4 - jepsen.print 4	:ok	:add	40
+INFO [2026-11-01 03:38:53,332] jepsen worker 0 - jepsen.print 0	:ok	:add	41
+INFO [2026-11-01 03:38:53,451] jepsen worker 0 - jepsen.print 0	:invoke	:add	42
+INFO [2026-11-01 03:38:53,494] jepsen worker 0 - jepsen.print 0	:ok	:add	42
+INFO [2026-11-01 03:38:53,533] jepsen worker 1 - jepsen.print 1	:invoke	:add	43
+INFO [2026-11-01 03:38:53,580] jepsen worker 1 - jepsen.print 1	:ok	:add	43
+INFO [2026-11-01 03:38:53,969] jepsen worker 2 - jepsen.print 2	:invoke	:add	44
+INFO [2026-11-01 03:38:54,021] jepsen worker 2 - jepsen.print 2	:ok	:add	44
+INFO [2026-11-01 03:38:54,146] jepsen worker 3 - jepsen.print 3	:invoke	:add	45
+INFO [2026-11-01 03:38:54,187] jepsen worker 4 - jepsen.print 4	:invoke	:add	46
+INFO [2026-11-01 03:38:54,190] jepsen worker 3 - jepsen.print 3	:ok	:add	45
+INFO [2026-11-01 03:38:54,234] jepsen worker 4 - jepsen.print 4	:ok	:add	46
+INFO [2026-11-01 03:38:54,330] jepsen worker 0 - jepsen.print 0	:invoke	:add	47
+INFO [2026-11-01 03:38:54,379] jepsen worker 0 - jepsen.print 0	:ok	:add	47
+INFO [2026-11-01 03:38:54,388] jepsen worker 0 - jepsen.print 0	:invoke	:add	48
+INFO [2026-11-01 03:38:54,436] jepsen worker 0 - jepsen.print 0	:ok	:add	48
+INFO [2026-11-01 03:38:54,514] jepsen worker 1 - jepsen.print 1	:invoke	:add	49
+INFO [2026-11-01 03:38:54,558] jepsen worker 1 - jepsen.print 1	:ok	:add	49
+INFO [2026-11-01 03:38:54,742] jepsen worker 2 - jepsen.print 2	:invoke	:add	50
+INFO [2026-11-01 03:38:54,765] jepsen worker 3 - jepsen.print 3	:invoke	:add	51
+INFO [2026-11-01 03:38:54,789] jepsen worker 2 - jepsen.print 2	:ok	:add	50
+INFO [2026-11-01 03:38:54,810] jepsen worker 3 - jepsen.print 3	:ok	:add	51
+INFO [2026-11-01 03:38:54,894] jepsen worker 4 - jepsen.print 4	:invoke	:add	52
+INFO [2026-11-01 03:38:54,942] jepsen worker 4 - jepsen.print 4	:ok	:add	52
+INFO [2026-11-01 03:38:55,104] jepsen worker 0 - jepsen.print 0	:invoke	:add	53
+INFO [2026-11-01 03:38:55,114] jepsen worker 1 - jepsen.print 1	:invoke	:add	54
+INFO [2026-11-01 03:38:55,150] jepsen worker 0 - jepsen.print 0	:ok	:add	53
+INFO [2026-11-01 03:38:55,160] jepsen worker 1 - jepsen.print 1	:ok	:add	54
+INFO [2026-11-01 03:38:55,186] jepsen worker 1 - jepsen.print 1	:invoke	:add	55
+INFO [2026-11-01 03:38:55,214] jepsen worker 2 - jepsen.print 2	:invoke	:add	56
+INFO [2026-11-01 03:38:55,234] jepsen worker 1 - jepsen.print 1	:ok	:add	55
+INFO [2026-11-01 03:38:55,262] jepsen worker 2 - jepsen.print 2	:ok	:add	56
+INFO [2026-11-01 03:38:55,358] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	nil
+INFO [2026-11-01 03:38:55,482] jepsen worker 4 - jepsen.print 4	:invoke	:add	57
+INFO [2026-11-01 03:38:55,623] jepsen worker 0 - jepsen.print 0	:invoke	:add	58
+INFO [2026-11-01 03:38:55,793] jepsen worker 1 - jepsen.print 1	:invoke	:add	59
+INFO [2026-11-01 03:38:55,804] jepsen worker 2 - jepsen.print 2	:invoke	:add	60
+INFO [2026-11-01 03:38:55,806] jepsen worker 3 - jepsen.print 3	:invoke	:add	61
+INFO [2026-11-01 03:39:00,490] jepsen worker 4 - jepsen.print 4	:info	:add	57	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:00,491] jepsen worker 4 - jepsen.print 9	:invoke	:add	62
+INFO [2026-11-01 03:39:00,634] jepsen worker 0 - jepsen.print 0	:info	:add	58	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:00,635] jepsen worker 0 - jepsen.print 5	:invoke	:add	63
+INFO [2026-11-01 03:39:00,703] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	{:fired? true, :running? false, :exit-code 137, :bolt-down? true, :killed-at 5269059711}
+INFO [2026-11-01 03:39:00,801] jepsen worker 1 - jepsen.print 1	:info	:add	59	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:00,804] jepsen worker 1 - jepsen.print 6	:invoke	:add	64
+INFO [2026-11-01 03:39:00,814] jepsen worker 2 - jepsen.print 2	:info	:add	60	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:00,814] jepsen worker 3 - jepsen.print 3	:info	:add	61	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:01,081] jepsen worker 2 - jepsen.print 7	:invoke	:add	65
+INFO [2026-11-01 03:39:01,148] jepsen worker 3 - jepsen.print 8	:invoke	:add	66
+INFO [2026-11-01 03:39:05,499] jepsen worker 4 - jepsen.print 9	:info	:add	62	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:05,500] jepsen worker 4 - jepsen.print 14	:invoke	:add	67
+INFO [2026-11-01 03:39:05,645] jepsen worker 0 - jepsen.print 5	:info	:add	63	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:05,709] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	nil
+INFO [2026-11-01 03:39:05,754] jepsen worker 0 - jepsen.print 10	:invoke	:add	68
+INFO [2026-11-01 03:39:05,813] jepsen worker 1 - jepsen.print 6	:info	:add	64	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:05,981] jepsen worker 1 - jepsen.print 11	:invoke	:add	69
+INFO [2026-11-01 03:39:06,031] jepsen worker 1 - jepsen.print 11	:ok	:add	69
+INFO [2026-11-01 03:39:06,031] jepsen worker 1 - jepsen.print 11	:invoke	:add	70
+INFO [2026-11-01 03:39:06,076] jepsen worker 1 - jepsen.print 11	:ok	:add	70
+INFO [2026-11-01 03:39:06,081] jepsen worker nemesis - jepsen.relate.nemesis db restarted in 255 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 03:39:06,082] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	{:restarted? true, :identity "Neo4j/5.26.0", :restart-ms 255}
+INFO [2026-11-01 03:39:06,092] jepsen worker 2 - jepsen.print 7	:info	:add	65	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:06,161] jepsen worker 3 - jepsen.print 8	:info	:add	66	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:06,426] jepsen worker 3 - jepsen.print 13	:invoke	:add	71
+INFO [2026-11-01 03:39:06,460] jepsen worker 1 - jepsen.print 11	:invoke	:add	72
+INFO [2026-11-01 03:39:06,474] jepsen worker 3 - jepsen.print 13	:ok	:add	71
+INFO [2026-11-01 03:39:06,507] jepsen worker 1 - jepsen.print 11	:ok	:add	72
+INFO [2026-11-01 03:39:06,592] jepsen worker 1 - jepsen.print 11	:invoke	:add	73
+INFO [2026-11-01 03:39:06,612] jepsen worker 4 - jepsen.print 14	:ok	:add	67
+INFO [2026-11-01 03:39:06,639] jepsen worker 1 - jepsen.print 11	:ok	:add	73
+INFO [2026-11-01 03:39:06,806] jepsen worker 0 - jepsen.print 10	:ok	:add	68
+INFO [2026-11-01 03:39:06,829] jepsen worker 0 - jepsen.print 10	:invoke	:add	74
+INFO [2026-11-01 03:39:06,874] jepsen worker 0 - jepsen.print 10	:ok	:add	74
+INFO [2026-11-01 03:39:06,878] jepsen worker 1 - jepsen.print 11	:invoke	:add	75
+INFO [2026-11-01 03:39:06,913] jepsen worker 2 - jepsen.print 12	:invoke	:add	76
+INFO [2026-11-01 03:39:06,923] jepsen worker 1 - jepsen.print 11	:ok	:add	75
+INFO [2026-11-01 03:39:06,962] jepsen worker 2 - jepsen.print 12	:ok	:add	76
+INFO [2026-11-01 03:39:07,148] jepsen worker 3 - jepsen.print 13	:invoke	:add	77
+INFO [2026-11-01 03:39:07,194] jepsen worker 3 - jepsen.print 13	:ok	:add	77
+INFO [2026-11-01 03:39:07,419] jepsen worker 4 - jepsen.print 14	:invoke	:add	78
+INFO [2026-11-01 03:39:07,466] jepsen worker 4 - jepsen.print 14	:ok	:add	78
+INFO [2026-11-01 03:39:07,473] jepsen worker 0 - jepsen.print 10	:invoke	:add	79
+INFO [2026-11-01 03:39:07,491] jepsen worker 1 - jepsen.print 11	:invoke	:add	80
+INFO [2026-11-01 03:39:07,518] jepsen worker 0 - jepsen.print 10	:ok	:add	79
+INFO [2026-11-01 03:39:07,542] jepsen worker 1 - jepsen.print 11	:ok	:add	80
+INFO [2026-11-01 03:39:07,565] jepsen worker 1 - jepsen.print 11	:invoke	:add	81
+INFO [2026-11-01 03:39:07,611] jepsen worker 1 - jepsen.print 11	:ok	:add	81
+INFO [2026-11-01 03:39:07,812] jepsen worker 2 - jepsen.print 12	:invoke	:add	82
+INFO [2026-11-01 03:39:07,813] jepsen worker 3 - jepsen.print 13	:invoke	:add	83
+INFO [2026-11-01 03:39:07,858] jepsen worker 3 - jepsen.print 13	:ok	:add	83
+INFO [2026-11-01 03:39:07,858] jepsen worker 2 - jepsen.print 12	:ok	:add	82
+INFO [2026-11-01 03:39:07,995] jepsen worker 4 - jepsen.print 14	:invoke	:add	84
+INFO [2026-11-01 03:39:08,041] jepsen worker 4 - jepsen.print 14	:ok	:add	84
+INFO [2026-11-01 03:39:08,071] jepsen worker 0 - jepsen.print 10	:invoke	:add	85
+INFO [2026-11-01 03:39:08,116] jepsen worker 0 - jepsen.print 10	:ok	:add	85
+INFO [2026-11-01 03:39:08,343] jepsen worker 0 - jepsen.print 10	:invoke	:add	86
+INFO [2026-11-01 03:39:08,389] jepsen worker 0 - jepsen.print 10	:ok	:add	86
+INFO [2026-11-01 03:39:08,590] jepsen worker 1 - jepsen.print 11	:invoke	:add	87
+INFO [2026-11-01 03:39:08,626] jepsen worker 2 - jepsen.print 12	:invoke	:add	88
+INFO [2026-11-01 03:39:08,636] jepsen worker 1 - jepsen.print 11	:ok	:add	87
+INFO [2026-11-01 03:39:08,676] jepsen worker 2 - jepsen.print 12	:ok	:add	88
+INFO [2026-11-01 03:39:08,886] jepsen worker 3 - jepsen.print 13	:invoke	:add	89
+INFO [2026-11-01 03:39:08,934] jepsen worker 3 - jepsen.print 13	:ok	:add	89
+INFO [2026-11-01 03:39:09,021] jepsen worker 4 - jepsen.print 14	:invoke	:add	90
+INFO [2026-11-01 03:39:09,068] jepsen worker 4 - jepsen.print 14	:ok	:add	90
+INFO [2026-11-01 03:39:09,106] jepsen worker 0 - jepsen.print 10	:invoke	:add	91
+INFO [2026-11-01 03:39:09,152] jepsen worker 0 - jepsen.print 10	:ok	:add	91
+INFO [2026-11-01 03:39:09,358] jepsen worker 0 - jepsen.print 10	:invoke	:add	92
+INFO [2026-11-01 03:39:09,403] jepsen worker 0 - jepsen.print 10	:ok	:add	92
+INFO [2026-11-01 03:39:09,416] jepsen worker 1 - jepsen.print 11	:invoke	:add	93
+INFO [2026-11-01 03:39:09,463] jepsen worker 1 - jepsen.print 11	:ok	:add	93
+INFO [2026-11-01 03:39:09,487] jepsen worker 2 - jepsen.print 12	:invoke	:add	94
+INFO [2026-11-01 03:39:09,488] jepsen worker 3 - jepsen.print 13	:invoke	:add	95
+INFO [2026-11-01 03:39:09,533] jepsen worker 2 - jepsen.print 12	:ok	:add	94
+INFO [2026-11-01 03:39:09,533] jepsen worker 3 - jepsen.print 13	:ok	:add	95
+INFO [2026-11-01 03:39:09,747] jepsen worker 4 - jepsen.print 14	:invoke	:add	96
+INFO [2026-11-01 03:39:09,793] jepsen worker 4 - jepsen.print 14	:ok	:add	96
+INFO [2026-11-01 03:39:09,994] jepsen worker 0 - jepsen.print 10	:invoke	:add	97
+INFO [2026-11-01 03:39:10,039] jepsen worker 0 - jepsen.print 10	:ok	:add	97
+INFO [2026-11-01 03:39:10,053] jepsen worker 0 - jepsen.print 10	:invoke	:add	98
+INFO [2026-11-01 03:39:10,098] jepsen worker 0 - jepsen.print 10	:ok	:add	98
+INFO [2026-11-01 03:39:10,121] jepsen worker 1 - jepsen.print 11	:invoke	:add	99
+INFO [2026-11-01 03:39:10,165] jepsen worker 1 - jepsen.print 11	:ok	:add	99
+INFO [2026-11-01 03:39:10,212] jepsen worker 2 - jepsen.print 12	:invoke	:add	100
+INFO [2026-11-01 03:39:10,258] jepsen worker 2 - jepsen.print 12	:ok	:add	100
+INFO [2026-11-01 03:39:10,299] jepsen worker 3 - jepsen.print 13	:invoke	:add	101
+INFO [2026-11-01 03:39:10,344] jepsen worker 3 - jepsen.print 13	:ok	:add	101
+INFO [2026-11-01 03:39:10,371] jepsen worker 4 - jepsen.print 14	:invoke	:add	102
+INFO [2026-11-01 03:39:10,417] jepsen worker 4 - jepsen.print 14	:ok	:add	102
+INFO [2026-11-01 03:39:10,579] jepsen worker 0 - jepsen.print 10	:invoke	:add	103
+INFO [2026-11-01 03:39:10,624] jepsen worker 0 - jepsen.print 10	:ok	:add	103
+INFO [2026-11-01 03:39:10,698] jepsen worker 0 - jepsen.print 10	:invoke	:add	104
+INFO [2026-11-01 03:39:10,737] jepsen worker 1 - jepsen.print 11	:invoke	:add	105
+INFO [2026-11-01 03:39:10,743] jepsen worker 0 - jepsen.print 10	:ok	:add	104
+INFO [2026-11-01 03:39:10,784] jepsen worker 1 - jepsen.print 11	:ok	:add	105
+INFO [2026-11-01 03:39:10,818] jepsen worker 2 - jepsen.print 12	:invoke	:add	106
+INFO [2026-11-01 03:39:10,863] jepsen worker 2 - jepsen.print 12	:ok	:add	106
+INFO [2026-11-01 03:39:11,085] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	nil
+INFO [2026-11-01 03:39:11,138] jepsen worker 4 - jepsen.print 14	:invoke	:add	107
+INFO [2026-11-01 03:39:11,141] jepsen worker 4 - jepsen.print 14	:info	:add	107	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:11,230] jepsen worker 0 - jepsen.print 10	:invoke	:add	108
+INFO [2026-11-01 03:39:11,268] jepsen worker 1 - jepsen.print 11	:invoke	:add	109
+INFO [2026-11-01 03:39:11,392] jepsen worker 2 - jepsen.print 12	:invoke	:add	110
+INFO [2026-11-01 03:39:11,547] jepsen worker 3 - jepsen.print 13	:invoke	:add	111
+INFO [2026-11-01 03:39:11,626] jepsen worker 4 - jepsen.print 19	:invoke	:add	112
+INFO [2026-11-01 03:39:16,236] jepsen worker 0 - jepsen.print 10	:info	:add	108	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:16,236] jepsen worker 0 - jepsen.print 15	:invoke	:add	113
+INFO [2026-11-01 03:39:16,273] jepsen worker 1 - jepsen.print 11	:info	:add	109	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:16,274] jepsen worker 1 - jepsen.print 16	:invoke	:add	114
+INFO [2026-11-01 03:39:16,403] jepsen worker 2 - jepsen.print 12	:info	:add	110	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:16,486] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	{:fired? true, :running? false, :exit-code 137, :bolt-down? true, :killed-at 20994947926}
+INFO [2026-11-01 03:39:16,557] jepsen worker 3 - jepsen.print 13	:info	:add	111	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:16,567] jepsen worker 2 - jepsen.print 17	:invoke	:add	115
+INFO [2026-11-01 03:39:16,630] jepsen worker 4 - jepsen.print 19	:info	:add	112	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:16,737] jepsen worker 3 - jepsen.print 18	:invoke	:add	116
+INFO [2026-11-01 03:39:16,825] jepsen worker 4 - jepsen.print 24	:invoke	:add	117
+INFO [2026-11-01 03:39:21,253] jepsen worker 0 - jepsen.print 15	:info	:add	113	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,256] jepsen worker 0 - jepsen.print 20	:invoke	:add	118
+INFO [2026-11-01 03:39:21,266] jepsen worker 0 - jepsen.print 20	:info	:add	118	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,283] jepsen worker 1 - jepsen.print 16	:info	:add	114	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,377] jepsen worker 0 - jepsen.print 25	:invoke	:add	119
+INFO [2026-11-01 03:39:21,379] jepsen worker 0 - jepsen.print 25	:info	:add	119	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,480] jepsen worker 0 - jepsen.print 30	:invoke	:add	120
+INFO [2026-11-01 03:39:21,482] jepsen worker 0 - jepsen.print 30	:info	:add	120	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,489] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	nil
+INFO [2026-11-01 03:39:21,576] jepsen worker 2 - jepsen.print 17	:info	:add	115	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,647] jepsen worker 2 - jepsen.print 22	:invoke	:add	121
+INFO [2026-11-01 03:39:21,652] jepsen worker 2 - jepsen.print 22	:info	:add	121	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,745] jepsen worker 3 - jepsen.print 18	:info	:add	116	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,765] jepsen worker 3 - jepsen.print 23	:invoke	:add	122
+INFO [2026-11-01 03:39:21,767] jepsen worker 3 - jepsen.print 23	:info	:add	122	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:21,832] jepsen worker 4 - jepsen.print 24	:info	:add	117	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:22,023] jepsen worker 4 - jepsen.print 29	:invoke	:add	123
+INFO [2026-11-01 03:39:22,026] jepsen worker 4 - jepsen.print 29	:info	:add	123	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:22,052] jepsen worker 0 - jepsen.print 35	:invoke	:add	124
+INFO [2026-11-01 03:39:22,054] jepsen worker 0 - jepsen.print 35	:info	:add	124	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:22,178] jepsen worker 0 - jepsen.print 40	:invoke	:add	125
+INFO [2026-11-01 03:39:22,182] jepsen worker 0 - jepsen.print 40	:info	:add	125	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:22,218] jepsen worker 1 - jepsen.print 21	:invoke	:add	126
+INFO [2026-11-01 03:39:22,220] jepsen worker 1 - jepsen.print 21	:info	:add	126	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:22,655] jepsen worker 2 - jepsen.print 27	:invoke	:add	127
+INFO [2026-11-01 03:39:22,657] jepsen worker 2 - jepsen.print 27	:info	:add	127	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:23,173] jepsen worker 3 - jepsen.print 28	:invoke	:add	128
+INFO [2026-11-01 03:39:23,177] jepsen worker 3 - jepsen.print 28	:info	:add	128	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:23,263] jepsen worker 4 - jepsen.print 34	:invoke	:add	129
+INFO [2026-11-01 03:39:23,268] jepsen worker 4 - jepsen.print 34	:info	:add	129	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:23,967] jepsen worker 0 - jepsen.print 45	:invoke	:add	130
+INFO [2026-11-01 03:39:23,969] jepsen worker 0 - jepsen.print 45	:info	:add	130	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:24,373] jepsen worker 0 - jepsen.print 50	:invoke	:add	131
+INFO [2026-11-01 03:39:24,377] jepsen worker 0 - jepsen.print 50	:info	:add	131	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:24,483] jepsen worker 1 - jepsen.print 26	:invoke	:add	132
+INFO [2026-11-01 03:39:24,486] jepsen worker 1 - jepsen.print 26	:info	:add	132	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:24,500] jepsen worker 2 - jepsen.print 32	:invoke	:add	133
+INFO [2026-11-01 03:39:24,501] jepsen worker 2 - jepsen.print 32	:info	:add	133	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:24,521] jepsen worker 3 - jepsen.print 33	:invoke	:add	134
+INFO [2026-11-01 03:39:24,523] jepsen worker 3 - jepsen.print 33	:info	:add	134	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:24,680] jepsen worker 4 - jepsen.print 39	:invoke	:add	135
+INFO [2026-11-01 03:39:24,683] jepsen worker 4 - jepsen.print 39	:info	:add	135	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:24,790] jepsen worker 0 - jepsen.print 55	:invoke	:add	136
+INFO [2026-11-01 03:39:24,793] jepsen worker 0 - jepsen.print 55	:info	:add	136	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:25,005] jepsen worker 0 - jepsen.print 60	:invoke	:add	137
+INFO [2026-11-01 03:39:25,008] jepsen worker 0 - jepsen.print 60	:info	:add	137	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:25,226] jepsen worker 1 - jepsen.print 31	:invoke	:add	138
+INFO [2026-11-01 03:39:25,228] jepsen worker 1 - jepsen.print 31	:info	:add	138	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:25,355] jepsen worker 2 - jepsen.print 37	:invoke	:add	139
+INFO [2026-11-01 03:39:25,358] jepsen worker 2 - jepsen.print 37	:info	:add	139	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:25,392] jepsen worker 3 - jepsen.print 38	:invoke	:add	140
+INFO [2026-11-01 03:39:25,396] jepsen worker 3 - jepsen.print 38	:info	:add	140	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:25,818] jepsen worker 4 - jepsen.print 44	:invoke	:add	141
+INFO [2026-11-01 03:39:25,820] jepsen worker 4 - jepsen.print 44	:info	:add	141	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:25,999] jepsen worker 0 - jepsen.print 65	:invoke	:add	142
+INFO [2026-11-01 03:39:26,001] jepsen worker 0 - jepsen.print 65	:info	:add	142	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,021] jepsen worker 0 - jepsen.print 70	:invoke	:add	143
+INFO [2026-11-01 03:39:26,023] jepsen worker 0 - jepsen.print 70	:info	:add	143	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,177] jepsen worker 1 - jepsen.print 36	:invoke	:add	144
+INFO [2026-11-01 03:39:26,179] jepsen worker 1 - jepsen.print 36	:info	:add	144	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,205] jepsen worker 2 - jepsen.print 42	:invoke	:add	145
+INFO [2026-11-01 03:39:26,207] jepsen worker 2 - jepsen.print 42	:info	:add	145	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,297] jepsen worker 3 - jepsen.print 43	:invoke	:add	146
+INFO [2026-11-01 03:39:26,299] jepsen worker 3 - jepsen.print 43	:info	:add	146	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,327] jepsen worker 4 - jepsen.print 49	:invoke	:add	147
+INFO [2026-11-01 03:39:26,329] jepsen worker 4 - jepsen.print 49	:info	:add	147	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,382] jepsen worker 0 - jepsen.print 75	:invoke	:add	148
+INFO [2026-11-01 03:39:26,384] jepsen worker 0 - jepsen.print 75	:info	:add	148	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,426] jepsen worker 0 - jepsen.print 80	:invoke	:add	149
+INFO [2026-11-01 03:39:26,428] jepsen worker 0 - jepsen.print 80	:info	:add	149	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,512] jepsen worker 1 - jepsen.print 41	:invoke	:add	150
+INFO [2026-11-01 03:39:26,512] jepsen worker 2 - jepsen.print 47	:invoke	:add	151
+INFO [2026-11-01 03:39:26,516] jepsen worker 1 - jepsen.print 41	:info	:add	150	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,516] jepsen worker 2 - jepsen.print 47	:info	:add	151	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,546] jepsen worker 3 - jepsen.print 48	:invoke	:add	152
+INFO [2026-11-01 03:39:26,549] jepsen worker 3 - jepsen.print 48	:info	:add	152	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,566] jepsen worker 4 - jepsen.print 54	:invoke	:add	153
+INFO [2026-11-01 03:39:26,570] jepsen worker 4 - jepsen.print 54	:info	:add	153	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,586] jepsen worker 0 - jepsen.print 85	:invoke	:add	154
+INFO [2026-11-01 03:39:26,589] jepsen worker 0 - jepsen.print 85	:info	:add	154	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,919] jepsen worker 0 - jepsen.print 90	:invoke	:add	155
+INFO [2026-11-01 03:39:26,922] jepsen worker 0 - jepsen.print 90	:info	:add	155	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,936] jepsen worker 1 - jepsen.print 46	:invoke	:add	156
+INFO [2026-11-01 03:39:26,938] jepsen worker 1 - jepsen.print 46	:info	:add	156	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:26,988] jepsen worker 2 - jepsen.print 52	:invoke	:add	157
+INFO [2026-11-01 03:39:26,990] jepsen worker 2 - jepsen.print 52	:info	:add	157	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:27,035] jepsen worker 3 - jepsen.print 53	:invoke	:add	158
+INFO [2026-11-01 03:39:27,037] jepsen worker 3 - jepsen.print 53	:info	:add	158	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:27,061] jepsen worker 4 - jepsen.print 59	:invoke	:add	159
+INFO [2026-11-01 03:39:27,063] jepsen worker 4 - jepsen.print 59	:info	:add	159	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:27,079] jepsen worker 0 - jepsen.print 95	:invoke	:add	160
+INFO [2026-11-01 03:39:27,081] jepsen worker 0 - jepsen.print 95	:info	:add	160	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:27,112] jepsen worker 0 - jepsen.print 100	:invoke	:add	161
+INFO [2026-11-01 03:39:27,114] jepsen worker 0 - jepsen.print 100	:info	:add	161	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,227] jepsen worker 1 - jepsen.print 51	:invoke	:add	162
+INFO [2026-11-01 03:39:28,229] jepsen worker 1 - jepsen.print 51	:info	:add	162	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,231] jepsen worker 2 - jepsen.print 57	:invoke	:add	163
+INFO [2026-11-01 03:39:28,233] jepsen worker 2 - jepsen.print 57	:info	:add	163	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,293] jepsen worker 3 - jepsen.print 58	:invoke	:add	164
+INFO [2026-11-01 03:39:28,296] jepsen worker 3 - jepsen.print 58	:info	:add	164	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,309] jepsen worker 4 - jepsen.print 64	:invoke	:add	165
+INFO [2026-11-01 03:39:28,311] jepsen worker 4 - jepsen.print 64	:info	:add	165	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,363] jepsen worker 0 - jepsen.print 105	:invoke	:add	166
+INFO [2026-11-01 03:39:28,366] jepsen worker 0 - jepsen.print 105	:info	:add	166	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,434] jepsen worker 0 - jepsen.print 110	:invoke	:add	167
+INFO [2026-11-01 03:39:28,435] jepsen worker 1 - jepsen.print 56	:invoke	:add	168
+INFO [2026-11-01 03:39:28,436] jepsen worker 0 - jepsen.print 110	:info	:add	167	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,436] jepsen worker 1 - jepsen.print 56	:info	:add	168	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,466] jepsen worker 2 - jepsen.print 62	:invoke	:add	169
+INFO [2026-11-01 03:39:28,468] jepsen worker 2 - jepsen.print 62	:info	:add	169	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,589] jepsen worker 3 - jepsen.print 63	:invoke	:add	170
+INFO [2026-11-01 03:39:28,592] jepsen worker 3 - jepsen.print 63	:info	:add	170	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,842] jepsen worker 4 - jepsen.print 69	:invoke	:add	171
+INFO [2026-11-01 03:39:28,844] jepsen worker 4 - jepsen.print 69	:info	:add	171	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,845] jepsen worker 0 - jepsen.print 115	:invoke	:add	172
+INFO [2026-11-01 03:39:28,849] jepsen worker 0 - jepsen.print 115	:info	:add	172	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,879] jepsen worker 0 - jepsen.print 120	:invoke	:add	173
+INFO [2026-11-01 03:39:28,881] jepsen worker 0 - jepsen.print 120	:info	:add	173	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:28,949] jepsen worker 1 - jepsen.print 61	:invoke	:add	174
+INFO [2026-11-01 03:39:28,951] jepsen worker 1 - jepsen.print 61	:info	:add	174	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,000] jepsen worker 2 - jepsen.print 67	:invoke	:add	175
+INFO [2026-11-01 03:39:29,003] jepsen worker 2 - jepsen.print 67	:info	:add	175	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,049] jepsen worker 3 - jepsen.print 68	:invoke	:add	176
+INFO [2026-11-01 03:39:29,052] jepsen worker 3 - jepsen.print 68	:info	:add	176	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,207] jepsen worker 4 - jepsen.print 74	:invoke	:add	177
+INFO [2026-11-01 03:39:29,209] jepsen worker 4 - jepsen.print 74	:info	:add	177	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,218] jepsen worker 0 - jepsen.print 125	:invoke	:add	178
+INFO [2026-11-01 03:39:29,220] jepsen worker 0 - jepsen.print 125	:info	:add	178	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,242] jepsen worker 0 - jepsen.print 130	:invoke	:add	179
+INFO [2026-11-01 03:39:29,245] jepsen worker 0 - jepsen.print 130	:info	:add	179	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,249] jepsen worker 1 - jepsen.print 66	:invoke	:add	180
+INFO [2026-11-01 03:39:29,251] jepsen worker 1 - jepsen.print 66	:info	:add	180	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,319] jepsen worker 2 - jepsen.print 72	:invoke	:add	181
+INFO [2026-11-01 03:39:29,321] jepsen worker 2 - jepsen.print 72	:info	:add	181	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,356] jepsen worker 3 - jepsen.print 73	:invoke	:add	182
+INFO [2026-11-01 03:39:29,358] jepsen worker 3 - jepsen.print 73	:info	:add	182	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,393] jepsen worker 4 - jepsen.print 79	:invoke	:add	183
+INFO [2026-11-01 03:39:29,395] jepsen worker 4 - jepsen.print 79	:info	:add	183	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,418] jepsen worker 0 - jepsen.print 135	:invoke	:add	184
+INFO [2026-11-01 03:39:29,420] jepsen worker 0 - jepsen.print 135	:info	:add	184	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,521] jepsen worker 0 - jepsen.print 140	:invoke	:add	185
+INFO [2026-11-01 03:39:29,523] jepsen worker 0 - jepsen.print 140	:info	:add	185	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,624] jepsen worker 1 - jepsen.print 71	:invoke	:add	186
+INFO [2026-11-01 03:39:29,627] jepsen worker 1 - jepsen.print 71	:info	:add	186	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,760] jepsen worker 2 - jepsen.print 77	:invoke	:add	187
+INFO [2026-11-01 03:39:29,764] jepsen worker 2 - jepsen.print 77	:info	:add	187	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:29,823] jepsen worker 3 - jepsen.print 78	:invoke	:add	188
+INFO [2026-11-01 03:39:29,825] jepsen worker 3 - jepsen.print 78	:info	:add	188	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,007] jepsen worker 4 - jepsen.print 84	:invoke	:add	189
+INFO [2026-11-01 03:39:30,011] jepsen worker 4 - jepsen.print 84	:info	:add	189	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,027] jepsen worker 0 - jepsen.print 145	:invoke	:add	190
+INFO [2026-11-01 03:39:30,029] jepsen worker 0 - jepsen.print 145	:info	:add	190	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,151] jepsen worker 0 - jepsen.print 150	:invoke	:add	191
+INFO [2026-11-01 03:39:30,153] jepsen worker 0 - jepsen.print 150	:info	:add	191	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,219] jepsen worker 1 - jepsen.print 76	:invoke	:add	192
+INFO [2026-11-01 03:39:30,221] jepsen worker 1 - jepsen.print 76	:info	:add	192	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,251] jepsen worker 2 - jepsen.print 82	:invoke	:add	193
+INFO [2026-11-01 03:39:30,253] jepsen worker 2 - jepsen.print 82	:info	:add	193	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,284] jepsen worker 3 - jepsen.print 83	:invoke	:add	194
+INFO [2026-11-01 03:39:30,286] jepsen worker 3 - jepsen.print 83	:info	:add	194	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,444] jepsen worker 4 - jepsen.print 89	:invoke	:add	195
+INFO [2026-11-01 03:39:30,446] jepsen worker 4 - jepsen.print 89	:info	:add	195	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,447] jepsen worker 0 - jepsen.print 155	:invoke	:add	196
+INFO [2026-11-01 03:39:30,450] jepsen worker 0 - jepsen.print 155	:info	:add	196	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,686] jepsen worker 0 - jepsen.print 160	:invoke	:add	197
+INFO [2026-11-01 03:39:30,688] jepsen worker 0 - jepsen.print 160	:info	:add	197	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,753] jepsen worker 1 - jepsen.print 81	:invoke	:add	198
+INFO [2026-11-01 03:39:30,755] jepsen worker 1 - jepsen.print 81	:info	:add	198	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:30,817] jepsen worker 2 - jepsen.print 87	:invoke	:add	199
+INFO [2026-11-01 03:39:30,819] jepsen worker 2 - jepsen.print 87	:info	:add	199	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:31,218] jepsen worker 3 - jepsen.print 88	:invoke	:add	200
+INFO [2026-11-01 03:39:31,220] jepsen worker 3 - jepsen.print 88	:info	:add	200	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:31,298] jepsen worker 4 - jepsen.print 94	:invoke	:add	201
+INFO [2026-11-01 03:39:31,346] jepsen worker 4 - jepsen.print 94	:ok	:add	201
+INFO [2026-11-01 03:39:31,729] jepsen worker 0 - jepsen.print 165	:invoke	:add	202
+INFO [2026-11-01 03:39:31,776] jepsen worker 0 - jepsen.print 165	:ok	:add	202
+INFO [2026-11-01 03:39:31,863] jepsen worker nemesis - jepsen.relate.nemesis db restarted in 10252 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 03:39:31,864] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	{:restarted? true, :identity "Neo4j/5.26.0", :restart-ms 10252}
+INFO [2026-11-01 03:39:31,946] jepsen worker 1 - jepsen.print 86	:invoke	:add	203
+INFO [2026-11-01 03:39:31,994] jepsen worker 1 - jepsen.print 86	:ok	:add	203
+INFO [2026-11-01 03:39:32,045] jepsen worker 2 - jepsen.print 92	:invoke	:add	204
+INFO [2026-11-01 03:39:32,097] jepsen worker 2 - jepsen.print 92	:ok	:add	204
+INFO [2026-11-01 03:39:32,108] jepsen worker 3 - jepsen.print 93	:invoke	:add	205
+INFO [2026-11-01 03:39:32,157] jepsen worker 3 - jepsen.print 93	:ok	:add	205
+INFO [2026-11-01 03:39:32,203] jepsen worker 4 - jepsen.print 94	:invoke	:add	206
+INFO [2026-11-01 03:39:32,250] jepsen worker 4 - jepsen.print 94	:ok	:add	206
+INFO [2026-11-01 03:39:32,251] jepsen worker 0 - jepsen.print 165	:invoke	:add	207
+INFO [2026-11-01 03:39:32,295] jepsen worker 0 - jepsen.print 165	:ok	:add	207
+INFO [2026-11-01 03:39:32,463] jepsen worker 0 - jepsen.print 165	:invoke	:add	208
+INFO [2026-11-01 03:39:32,507] jepsen worker 0 - jepsen.print 165	:ok	:add	208
+INFO [2026-11-01 03:39:32,623] jepsen worker 1 - jepsen.print 86	:invoke	:add	209
+INFO [2026-11-01 03:39:32,668] jepsen worker 1 - jepsen.print 86	:ok	:add	209
+INFO [2026-11-01 03:39:32,767] jepsen worker 2 - jepsen.print 92	:invoke	:add	210
+INFO [2026-11-01 03:39:32,783] jepsen worker 3 - jepsen.print 93	:invoke	:add	211
+INFO [2026-11-01 03:39:32,813] jepsen worker 2 - jepsen.print 92	:ok	:add	210
+INFO [2026-11-01 03:39:32,828] jepsen worker 3 - jepsen.print 93	:ok	:add	211
+INFO [2026-11-01 03:39:32,847] jepsen worker 4 - jepsen.print 94	:invoke	:add	212
+INFO [2026-11-01 03:39:32,893] jepsen worker 4 - jepsen.print 94	:ok	:add	212
+INFO [2026-11-01 03:39:32,986] jepsen worker 0 - jepsen.print 165	:invoke	:add	213
+INFO [2026-11-01 03:39:33,010] jepsen worker 1 - jepsen.print 86	:invoke	:add	214
+INFO [2026-11-01 03:39:33,030] jepsen worker 0 - jepsen.print 165	:ok	:add	213
+INFO [2026-11-01 03:39:33,054] jepsen worker 1 - jepsen.print 86	:ok	:add	214
+INFO [2026-11-01 03:39:33,119] jepsen worker 1 - jepsen.print 86	:invoke	:add	215
+INFO [2026-11-01 03:39:33,163] jepsen worker 1 - jepsen.print 86	:ok	:add	215
+INFO [2026-11-01 03:39:33,180] jepsen worker 2 - jepsen.print 92	:invoke	:add	216
+INFO [2026-11-01 03:39:33,226] jepsen worker 2 - jepsen.print 92	:ok	:add	216
+INFO [2026-11-01 03:39:33,386] jepsen worker 3 - jepsen.print 93	:invoke	:add	217
+INFO [2026-11-01 03:39:33,426] jepsen worker 4 - jepsen.print 94	:invoke	:add	218
+INFO [2026-11-01 03:39:33,432] jepsen worker 3 - jepsen.print 93	:ok	:add	217
+INFO [2026-11-01 03:39:33,475] jepsen worker 4 - jepsen.print 94	:ok	:add	218
+INFO [2026-11-01 03:39:33,475] jepsen worker 0 - jepsen.print 165	:invoke	:add	219
+INFO [2026-11-01 03:39:33,520] jepsen worker 0 - jepsen.print 165	:ok	:add	219
+INFO [2026-11-01 03:39:33,587] jepsen worker 0 - jepsen.print 165	:invoke	:add	220
+INFO [2026-11-01 03:39:33,587] jepsen worker 1 - jepsen.print 86	:invoke	:add	221
+INFO [2026-11-01 03:39:33,610] jepsen worker 2 - jepsen.print 92	:invoke	:add	222
+INFO [2026-11-01 03:39:33,632] jepsen worker 0 - jepsen.print 165	:ok	:add	220
+INFO [2026-11-01 03:39:33,632] jepsen worker 1 - jepsen.print 86	:ok	:add	221
+INFO [2026-11-01 03:39:33,655] jepsen worker 2 - jepsen.print 92	:ok	:add	222
+INFO [2026-11-01 03:39:33,701] jepsen worker 3 - jepsen.print 93	:invoke	:add	223
+INFO [2026-11-01 03:39:33,722] jepsen worker 4 - jepsen.print 94	:invoke	:add	224
+INFO [2026-11-01 03:39:33,747] jepsen worker 3 - jepsen.print 93	:ok	:add	223
+INFO [2026-11-01 03:39:33,758] jepsen worker 0 - jepsen.print 165	:invoke	:add	225
+INFO [2026-11-01 03:39:33,761] jepsen worker 1 - jepsen.print 86	:invoke	:add	226
+INFO [2026-11-01 03:39:33,767] jepsen worker 4 - jepsen.print 94	:ok	:add	224
+INFO [2026-11-01 03:39:33,802] jepsen worker 0 - jepsen.print 165	:ok	:add	225
+INFO [2026-11-01 03:39:33,805] jepsen worker 1 - jepsen.print 86	:ok	:add	226
+INFO [2026-11-01 03:39:33,806] jepsen worker 1 - jepsen.print 86	:invoke	:add	227
+INFO [2026-11-01 03:39:33,853] jepsen worker 1 - jepsen.print 86	:ok	:add	227
+INFO [2026-11-01 03:39:33,974] jepsen worker 2 - jepsen.print 92	:invoke	:add	228
+INFO [2026-11-01 03:39:34,019] jepsen worker 2 - jepsen.print 92	:ok	:add	228
+INFO [2026-11-01 03:39:34,065] jepsen worker 3 - jepsen.print 93	:invoke	:add	229
+INFO [2026-11-01 03:39:34,110] jepsen worker 3 - jepsen.print 93	:ok	:add	229
+INFO [2026-11-01 03:39:34,111] jepsen worker 4 - jepsen.print 94	:invoke	:add	230
+INFO [2026-11-01 03:39:34,157] jepsen worker 4 - jepsen.print 94	:ok	:add	230
+INFO [2026-11-01 03:39:34,230] jepsen worker 0 - jepsen.print 165	:invoke	:add	231
+INFO [2026-11-01 03:39:34,278] jepsen worker 0 - jepsen.print 165	:ok	:add	231
+INFO [2026-11-01 03:39:34,389] jepsen worker 0 - jepsen.print 165	:invoke	:add	232
+INFO [2026-11-01 03:39:34,410] jepsen worker 1 - jepsen.print 86	:invoke	:add	233
+INFO [2026-11-01 03:39:34,413] jepsen worker 2 - jepsen.print 92	:invoke	:add	234
+INFO [2026-11-01 03:39:34,435] jepsen worker 3 - jepsen.print 93	:invoke	:add	235
+INFO [2026-11-01 03:39:34,435] jepsen worker 0 - jepsen.print 165	:ok	:add	232
+INFO [2026-11-01 03:39:34,456] jepsen worker 4 - jepsen.print 94	:invoke	:add	236
+INFO [2026-11-01 03:39:34,456] jepsen worker 1 - jepsen.print 86	:ok	:add	233
+INFO [2026-11-01 03:39:34,458] jepsen worker 2 - jepsen.print 92	:ok	:add	234
+INFO [2026-11-01 03:39:34,480] jepsen worker 3 - jepsen.print 93	:ok	:add	235
+INFO [2026-11-01 03:39:34,488] jepsen worker 0 - jepsen.print 165	:invoke	:add	237
+INFO [2026-11-01 03:39:34,500] jepsen worker 4 - jepsen.print 94	:ok	:add	236
+INFO [2026-11-01 03:39:34,533] jepsen worker 0 - jepsen.print 165	:ok	:add	237
+INFO [2026-11-01 03:39:34,603] jepsen worker 0 - jepsen.print 165	:invoke	:add	238
+INFO [2026-11-01 03:39:34,646] jepsen worker 0 - jepsen.print 165	:ok	:add	238
+INFO [2026-11-01 03:39:34,753] jepsen worker 1 - jepsen.print 86	:invoke	:add	239
+INFO [2026-11-01 03:39:34,800] jepsen worker 1 - jepsen.print 86	:ok	:add	239
+INFO [2026-11-01 03:39:34,872] jepsen worker 2 - jepsen.print 92	:invoke	:add	240
+INFO [2026-11-01 03:39:34,880] jepsen worker 3 - jepsen.print 93	:invoke	:add	241
+INFO [2026-11-01 03:39:34,918] jepsen worker 2 - jepsen.print 92	:ok	:add	240
+INFO [2026-11-01 03:39:34,927] jepsen worker 3 - jepsen.print 93	:ok	:add	241
+INFO [2026-11-01 03:39:35,040] jepsen worker 4 - jepsen.print 94	:invoke	:add	242
+INFO [2026-11-01 03:39:35,085] jepsen worker 4 - jepsen.print 94	:ok	:add	242
+INFO [2026-11-01 03:39:35,195] jepsen worker 0 - jepsen.print 165	:invoke	:add	243
+INFO [2026-11-01 03:39:35,198] jepsen worker 1 - jepsen.print 86	:invoke	:add	244
+INFO [2026-11-01 03:39:35,241] jepsen worker 0 - jepsen.print 165	:ok	:add	243
+INFO [2026-11-01 03:39:35,242] jepsen worker 1 - jepsen.print 86	:ok	:add	244
+INFO [2026-11-01 03:39:35,366] jepsen worker 1 - jepsen.print 86	:invoke	:add	245
+INFO [2026-11-01 03:39:35,399] jepsen worker 2 - jepsen.print 92	:invoke	:add	246
+INFO [2026-11-01 03:39:35,411] jepsen worker 1 - jepsen.print 86	:ok	:add	245
+INFO [2026-11-01 03:39:35,443] jepsen worker 2 - jepsen.print 92	:ok	:add	246
+INFO [2026-11-01 03:39:35,589] jepsen worker 3 - jepsen.print 93	:invoke	:add	247
+INFO [2026-11-01 03:39:35,639] jepsen worker 3 - jepsen.print 93	:ok	:add	247
+INFO [2026-11-01 03:39:35,783] jepsen worker 4 - jepsen.print 94	:invoke	:add	248
+INFO [2026-11-01 03:39:35,830] jepsen worker 4 - jepsen.print 94	:ok	:add	248
+INFO [2026-11-01 03:39:35,960] jepsen worker 0 - jepsen.print 165	:invoke	:add	249
+INFO [2026-11-01 03:39:35,964] jepsen worker 1 - jepsen.print 86	:invoke	:add	250
+INFO [2026-11-01 03:39:36,007] jepsen worker 0 - jepsen.print 165	:ok	:add	249
+INFO [2026-11-01 03:39:36,009] jepsen worker 1 - jepsen.print 86	:ok	:add	250
+INFO [2026-11-01 03:39:36,222] jepsen worker 1 - jepsen.print 86	:invoke	:add	251
+INFO [2026-11-01 03:39:36,271] jepsen worker 1 - jepsen.print 86	:ok	:add	251
+INFO [2026-11-01 03:39:36,301] jepsen worker 2 - jepsen.print 92	:invoke	:add	252
+INFO [2026-11-01 03:39:36,345] jepsen worker 2 - jepsen.print 92	:ok	:add	252
+INFO [2026-11-01 03:39:36,418] jepsen worker 3 - jepsen.print 93	:invoke	:add	253
+INFO [2026-11-01 03:39:36,462] jepsen worker 3 - jepsen.print 93	:ok	:add	253
+INFO [2026-11-01 03:39:36,519] jepsen worker 4 - jepsen.print 94	:invoke	:add	254
+INFO [2026-11-01 03:39:36,567] jepsen worker 4 - jepsen.print 94	:ok	:add	254
+INFO [2026-11-01 03:39:36,623] jepsen worker 0 - jepsen.print 165	:invoke	:add	255
+INFO [2026-11-01 03:39:36,648] jepsen worker 1 - jepsen.print 86	:invoke	:add	256
+INFO [2026-11-01 03:39:36,668] jepsen worker 0 - jepsen.print 165	:ok	:add	255
+INFO [2026-11-01 03:39:36,682] jepsen worker 2 - jepsen.print 92	:invoke	:add	257
+INFO [2026-11-01 03:39:36,694] jepsen worker 1 - jepsen.print 86	:ok	:add	256
+INFO [2026-11-01 03:39:36,726] jepsen worker 2 - jepsen.print 92	:ok	:add	257
+INFO [2026-11-01 03:39:36,777] jepsen worker 2 - jepsen.print 92	:invoke	:add	258
+INFO [2026-11-01 03:39:36,813] jepsen worker 3 - jepsen.print 93	:invoke	:add	259
+INFO [2026-11-01 03:39:36,821] jepsen worker 2 - jepsen.print 92	:ok	:add	258
+INFO [2026-11-01 03:39:36,860] jepsen worker 3 - jepsen.print 93	:ok	:add	259
+INFO [2026-11-01 03:39:36,866] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	nil
+INFO [2026-11-01 03:39:36,881] jepsen worker 0 - jepsen.print 165	:invoke	:add	260
+INFO [2026-11-01 03:39:36,899] jepsen worker 0 - jepsen.print 165	:info	:add	260	Connection is closed
+INFO [2026-11-01 03:39:37,544] jepsen worker 0 - jepsen.print 170	:invoke	:add	261
+INFO [2026-11-01 03:39:37,594] jepsen worker 1 - jepsen.print 86	:invoke	:add	262
+INFO [2026-11-01 03:39:37,604] jepsen worker 2 - jepsen.print 92	:invoke	:add	263
+INFO [2026-11-01 03:39:37,739] jepsen worker 3 - jepsen.print 93	:invoke	:add	264
+INFO [2026-11-01 03:39:37,772] jepsen worker 4 - jepsen.print 94	:invoke	:add	265
+INFO [2026-11-01 03:39:42,215] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	{:fired? true, :running? false, :exit-code 137, :bolt-down? true, :killed-at 46779804271}
+INFO [2026-11-01 03:39:42,563] jepsen worker 0 - jepsen.print 170	:info	:add	261	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:42,563] jepsen worker 0 - jepsen.print 175	:invoke	:add	266
+INFO [2026-11-01 03:39:42,599] jepsen worker 1 - jepsen.print 86	:info	:add	262	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:42,604] jepsen worker 1 - jepsen.print 91	:invoke	:add	267
+INFO [2026-11-01 03:39:42,612] jepsen worker 2 - jepsen.print 92	:info	:add	263	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:42,739] jepsen worker 2 - jepsen.print 97	:invoke	:add	268
+INFO [2026-11-01 03:39:42,747] jepsen worker 3 - jepsen.print 93	:info	:add	264	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:42,780] jepsen worker 4 - jepsen.print 94	:info	:add	265	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:42,833] jepsen worker 3 - jepsen.print 98	:invoke	:add	269
+INFO [2026-11-01 03:39:43,110] jepsen worker 4 - jepsen.print 99	:invoke	:add	270
+INFO [2026-11-01 03:39:47,219] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	nil
+INFO [2026-11-01 03:39:47,538] jepsen worker nemesis - jepsen.relate.nemesis db restarted in 247 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 03:39:47,539] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	{:restarted? true, :identity "Neo4j/5.26.0", :restart-ms 247}
+INFO [2026-11-01 03:39:47,567] jepsen worker 0 - jepsen.print 175	:info	:add	266	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:47,567] jepsen worker 0 - jepsen.print 180	:invoke	:add	271
+INFO [2026-11-01 03:39:47,609] jepsen worker 1 - jepsen.print 91	:info	:add	267	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:47,610] jepsen worker 0 - jepsen.print 180	:ok	:add	271
+INFO [2026-11-01 03:39:47,694] jepsen worker 0 - jepsen.print 180	:invoke	:add	272
+INFO [2026-11-01 03:39:47,742] jepsen worker 0 - jepsen.print 180	:ok	:add	272
+INFO [2026-11-01 03:39:47,744] jepsen worker 2 - jepsen.print 97	:info	:add	268	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:47,751] jepsen worker 0 - jepsen.print 180	:invoke	:add	273
+INFO [2026-11-01 03:39:47,797] jepsen worker 0 - jepsen.print 180	:ok	:add	273
+INFO [2026-11-01 03:39:47,839] jepsen worker 3 - jepsen.print 98	:info	:add	269	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:47,925] jepsen worker 0 - jepsen.print 180	:invoke	:add	274
+INFO [2026-11-01 03:39:47,971] jepsen worker 0 - jepsen.print 180	:ok	:add	274
+INFO [2026-11-01 03:39:48,074] jepsen worker 0 - jepsen.print 180	:invoke	:add	275
+INFO [2026-11-01 03:39:48,116] jepsen worker 4 - jepsen.print 99	:info	:add	270	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:48,119] jepsen worker 0 - jepsen.print 180	:ok	:add	275
+INFO [2026-11-01 03:39:48,158] jepsen worker 0 - jepsen.print 180	:invoke	:add	276
+INFO [2026-11-01 03:39:48,194] jepsen worker 1 - jepsen.print 96	:invoke	:add	277
+INFO [2026-11-01 03:39:48,204] jepsen worker 0 - jepsen.print 180	:ok	:add	276
+INFO [2026-11-01 03:39:48,242] jepsen worker 1 - jepsen.print 96	:ok	:add	277
+INFO [2026-11-01 03:39:48,300] jepsen worker 2 - jepsen.print 102	:invoke	:add	278
+INFO [2026-11-01 03:39:48,312] jepsen worker 3 - jepsen.print 103	:invoke	:add	279
+INFO [2026-11-01 03:39:48,349] jepsen worker 4 - jepsen.print 104	:invoke	:add	280
+INFO [2026-11-01 03:39:48,350] jepsen worker 2 - jepsen.print 102	:ok	:add	278
+INFO [2026-11-01 03:39:48,352] jepsen worker 0 - jepsen.print 180	:invoke	:add	281
+INFO [2026-11-01 03:39:48,356] jepsen worker 3 - jepsen.print 103	:ok	:add	279
+INFO [2026-11-01 03:39:48,396] jepsen worker 0 - jepsen.print 180	:ok	:add	281
+INFO [2026-11-01 03:39:48,396] jepsen worker 4 - jepsen.print 104	:ok	:add	280
+INFO [2026-11-01 03:39:48,571] jepsen worker 0 - jepsen.print 180	:invoke	:add	282
+INFO [2026-11-01 03:39:48,618] jepsen worker 0 - jepsen.print 180	:ok	:add	282
+INFO [2026-11-01 03:39:48,687] jepsen worker 1 - jepsen.print 96	:invoke	:add	283
+INFO [2026-11-01 03:39:48,733] jepsen worker 1 - jepsen.print 96	:ok	:add	283
+INFO [2026-11-01 03:39:48,900] jepsen worker 2 - jepsen.print 102	:invoke	:add	284
+INFO [2026-11-01 03:39:48,911] jepsen worker 3 - jepsen.print 103	:invoke	:add	285
+INFO [2026-11-01 03:39:48,946] jepsen worker 2 - jepsen.print 102	:ok	:add	284
+INFO [2026-11-01 03:39:48,955] jepsen worker 3 - jepsen.print 103	:ok	:add	285
+INFO [2026-11-01 03:39:49,086] jepsen worker 4 - jepsen.print 104	:invoke	:add	286
+INFO [2026-11-01 03:39:49,127] jepsen worker 0 - jepsen.print 180	:invoke	:add	287
+INFO [2026-11-01 03:39:49,132] jepsen worker 1 - jepsen.print 96	:invoke	:add	288
+INFO [2026-11-01 03:39:49,132] jepsen worker 4 - jepsen.print 104	:ok	:add	286
+INFO [2026-11-01 03:39:49,172] jepsen worker 0 - jepsen.print 180	:ok	:add	287
+INFO [2026-11-01 03:39:49,176] jepsen worker 1 - jepsen.print 96	:ok	:add	288
+INFO [2026-11-01 03:39:49,266] jepsen worker 1 - jepsen.print 96	:invoke	:add	289
+INFO [2026-11-01 03:39:49,311] jepsen worker 1 - jepsen.print 96	:ok	:add	289
+INFO [2026-11-01 03:39:49,344] jepsen worker 2 - jepsen.print 102	:invoke	:add	290
+INFO [2026-11-01 03:39:49,390] jepsen worker 2 - jepsen.print 102	:ok	:add	290
+INFO [2026-11-01 03:39:50,103] jepsen worker 3 - jepsen.print 103	:invoke	:add	291
+INFO [2026-11-01 03:39:50,151] jepsen worker 3 - jepsen.print 103	:ok	:add	291
+INFO [2026-11-01 03:39:50,164] jepsen worker 4 - jepsen.print 104	:invoke	:add	292
+INFO [2026-11-01 03:39:50,209] jepsen worker 4 - jepsen.print 104	:ok	:add	292
+INFO [2026-11-01 03:39:50,532] jepsen worker 0 - jepsen.print 180	:invoke	:add	293
+INFO [2026-11-01 03:39:50,579] jepsen worker 0 - jepsen.print 180	:ok	:add	293
+INFO [2026-11-01 03:39:50,671] jepsen worker 0 - jepsen.print 180	:invoke	:add	294
+INFO [2026-11-01 03:39:50,718] jepsen worker 0 - jepsen.print 180	:ok	:add	294
+INFO [2026-11-01 03:39:50,965] jepsen worker 1 - jepsen.print 96	:invoke	:add	295
+INFO [2026-11-01 03:39:51,009] jepsen worker 1 - jepsen.print 96	:ok	:add	295
+INFO [2026-11-01 03:39:51,052] jepsen worker 2 - jepsen.print 102	:invoke	:add	296
+INFO [2026-11-01 03:39:51,073] jepsen worker 3 - jepsen.print 103	:invoke	:add	297
+INFO [2026-11-01 03:39:51,099] jepsen worker 2 - jepsen.print 102	:ok	:add	296
+INFO [2026-11-01 03:39:51,116] jepsen worker 3 - jepsen.print 103	:ok	:add	297
+INFO [2026-11-01 03:39:51,415] jepsen worker 4 - jepsen.print 104	:invoke	:add	298
+INFO [2026-11-01 03:39:51,458] jepsen worker 4 - jepsen.print 104	:ok	:add	298
+INFO [2026-11-01 03:39:51,681] jepsen worker 0 - jepsen.print 180	:invoke	:add	299
+INFO [2026-11-01 03:39:51,724] jepsen worker 0 - jepsen.print 180	:ok	:add	299
+INFO [2026-11-01 03:39:51,990] jepsen worker 0 - jepsen.print 180	:invoke	:add	300
+INFO [2026-11-01 03:39:52,033] jepsen worker 0 - jepsen.print 180	:ok	:add	300
+INFO [2026-11-01 03:39:52,049] jepsen worker 1 - jepsen.print 96	:invoke	:add	301
+INFO [2026-11-01 03:39:52,058] jepsen worker 2 - jepsen.print 102	:invoke	:add	302
+INFO [2026-11-01 03:39:52,093] jepsen worker 1 - jepsen.print 96	:ok	:add	301
+INFO [2026-11-01 03:39:52,100] jepsen worker 3 - jepsen.print 103	:invoke	:add	303
+INFO [2026-11-01 03:39:52,100] jepsen worker 2 - jepsen.print 102	:ok	:add	302
+INFO [2026-11-01 03:39:52,117] jepsen worker 4 - jepsen.print 104	:invoke	:add	304
+INFO [2026-11-01 03:39:52,143] jepsen worker 3 - jepsen.print 103	:ok	:add	303
+INFO [2026-11-01 03:39:52,159] jepsen worker 4 - jepsen.print 104	:ok	:add	304
+INFO [2026-11-01 03:39:52,162] jepsen worker 0 - jepsen.print 180	:invoke	:add	305
+INFO [2026-11-01 03:39:52,204] jepsen worker 0 - jepsen.print 180	:ok	:add	305
+INFO [2026-11-01 03:39:52,418] jepsen worker 0 - jepsen.print 180	:invoke	:add	306
+INFO [2026-11-01 03:39:52,461] jepsen worker 0 - jepsen.print 180	:ok	:add	306
+INFO [2026-11-01 03:39:52,474] jepsen worker 1 - jepsen.print 96	:invoke	:add	307
+INFO [2026-11-01 03:39:52,517] jepsen worker 1 - jepsen.print 96	:ok	:add	307
+INFO [2026-11-01 03:39:52,540] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	nil
+INFO [2026-11-01 03:39:52,596] jepsen worker 3 - jepsen.print 103	:invoke	:add	308
+INFO [2026-11-01 03:39:52,609] jepsen worker 4 - jepsen.print 104	:invoke	:add	309
+INFO [2026-11-01 03:39:52,625] jepsen worker 0 - jepsen.print 180	:invoke	:add	310
+INFO [2026-11-01 03:39:52,629] jepsen worker 1 - jepsen.print 96	:invoke	:add	311
+INFO [2026-11-01 03:39:52,859] jepsen worker 2 - jepsen.print 102	:invoke	:add	312
+INFO [2026-11-01 03:39:57,604] jepsen worker 3 - jepsen.print 103	:info	:add	308	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:57,605] jepsen worker 3 - jepsen.print 108	:invoke	:add	313
+INFO [2026-11-01 03:39:57,617] jepsen worker 4 - jepsen.print 104	:info	:add	309	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:57,632] jepsen worker 0 - jepsen.print 180	:info	:add	310	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:57,635] jepsen worker 1 - jepsen.print 96	:info	:add	311	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:57,848] jepsen worker nemesis - jepsen.print :nemesis	:info	:start	{:fired? true, :running? false, :exit-code 137, :bolt-down? true, :killed-at 62455433778}
+INFO [2026-11-01 03:39:57,866] jepsen worker 2 - jepsen.print 102	:info	:add	312	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:39:57,886] jepsen worker 4 - jepsen.print 109	:invoke	:add	314
+INFO [2026-11-01 03:39:57,981] jepsen worker 0 - jepsen.print 185	:invoke	:add	315
+INFO [2026-11-01 03:39:58,010] jepsen worker 1 - jepsen.print 101	:invoke	:add	316
+INFO [2026-11-01 03:39:58,080] jepsen worker 2 - jepsen.print 107	:invoke	:add	317
+INFO [2026-11-01 03:40:02,616] jepsen worker 3 - jepsen.print 108	:info	:add	313	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:40:02,897] jepsen worker 4 - jepsen.print 109	:info	:add	314	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:40:02,991] jepsen worker 0 - jepsen.print 185	:info	:add	315	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:40:03,022] jepsen worker 1 - jepsen.print 101	:info	:add	316	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:40:03,092] jepsen worker 2 - jepsen.print 107	:info	:add	317	Unable to connect to db:7687, ensure the database is running and that there is a working network connection to it.
+INFO [2026-11-01 03:40:03,093] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	nil
+INFO [2026-11-01 03:40:03,410] jepsen worker nemesis - jepsen.relate.nemesis db restarted in 251 ms, identity Neo4j/5.26.0
+INFO [2026-11-01 03:40:03,410] jepsen worker nemesis - jepsen.print :nemesis	:info	:stop	{:restarted? true, :identity "Neo4j/5.26.0", :restart-ms 251}
+INFO [2026-11-01 03:40:03,411] jepsen worker 3 - jepsen.print 113	:invoke	:read	nil
+INFO [2026-11-01 03:40:03,457] jepsen worker 3 - jepsen.print 113	:ok	:read	#{275 291 249 299 287 70 218 74 282 273 233 298 240 259 210 229 213 7 86 20 224 72 205 27 1 69 101 24 102 55 206 85 225 297 39 274 88 217 46 239 300 4 204 77 106 232 222 293 95 54 92 221 307 290 234 104 15 48 242 50 251 75 99 281 21 31 32 284 208 305 256 214 241 226 235 304 40 294 91 223 278 56 33 13 22 257 90 237 292 216 247 36 41 303 238 219 89 100 243 43 231 29 44 258 250 301 93 6 28 280 295 248 285 227 220 103 51 25 201 34 252 228 306 276 17 3 286 279 12 2 236 23 230 47 35 302 82 76 215 97 277 19 202 68 11 255 9 5 244 289 245 254 283 83 14 45 53 78 26 203 16 288 81 79 211 38 98 87 30 207 73 96 10 272 271 18 105 52 253 209 67 296 71 42 80 37 212 94 8 246 49 84}
+INFO [2026-11-01 03:40:03,917] jepsen test runner - jepsen.core Run complete, writing
+INFO [2026-11-01 03:40:04,065] jepsen test runner - jepsen.core Analyzing...
+INFO [2026-11-01 03:40:04,071] jepsen test runner - jepsen.core Analysis complete
+INFO [2026-11-01 03:40:04,076] jepsen results - jepsen.store Wrote /src/testing/jepsen/store/relate-set-kill9-everysecond/2026-11-01T03:38:47.512265418Z/results.edn
+INFO [2026-11-01 03:40:04,080] jepsen test runner - jepsen.core {:stats {:valid? true,
+         :count 318,
+         :ok-count 193,
+         :fail-count 0,
+         :info-count 125,
+         :by-f {:add {:valid? true,
+                      :count 317,
+                      :ok-count 192,
+                      :fail-count 0,
+                      :info-count 125},
+                :read {:valid? true,
+                       :count 1,
+                       :ok-count 1,
+                       :fail-count 0,
+                       :info-count 0}}},
+ :set {:read-type :ok,
+       :attempted-count 317,
+       :valid? true,
+       :lost-acked-writes {:count 0, :sample []},
+       :window-secs 1,
+       :lost-outside-loss-window {:count 0, :sample []},
+       :acknowledged-count 192,
+       :kills-fired 4,
+       :ghost-ids {:count 0, :sample []},
+       :rejected-but-present {:count 0, :sample []},
+       :recovered-count 192},
+ :fault-evidence {:valid? true,
+                  :kills-fired 4,
+                  :restarts-recovered 4,
+                  :fault-never-fired? false,
+                  :kills-without-effect [],
+                  :restarts-that-never-recovered []},
+ :valid? true}
+
+
+Everything looks good! ヽ(‘ー`)ノ

@@ -1,0 +1,19 @@
+# ADR-0326 (F-59, F-60; D-16, D-17, D-33, D-34): point results are
+# Point2D 0x58 / Point3D 0x59 structures with Float coordinates, a whole
+# number included (13.0, never Int 13).
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN point({srid: 7203, x: 1.5, y: 2.5}) AS a, point({longitude: 13, latitude: 55.6}) AS b, point({srid: 9157, x: 1, y: 2, z: 3}) AS c" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["a", "b", "c"]}
+   RECORD [{"#58": [7203, 1.5, 2.5]}, {"#58": [4326, 13.0, 55.6]}, {"#59": [9157, 1.0, 2.0, 3.0]}]
+   SUCCESS {}
+
+# A point parameter echoes back as the same structure.
+C: RUN "RETURN $p AS p" {"p": {"#58": [7203, 2.3, 4.5]}} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["p"]}
+   RECORD [{"#58": [7203, 2.3, 4.5]}]
+   SUCCESS {}

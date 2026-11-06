@@ -1,0 +1,38 @@
+[package]
+name = "relate-ffi-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.relate-ffi]
+path = ".."
+
+# The extern "C" declarations every target shares (the C-client mirror).
+[lib]
+path = "src/lib.rs"
+bench = false
+test = false
+
+[[bin]]
+name = "params_builder"
+path = "fuzz_targets/params_builder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "query_params"
+path = "fuzz_targets/query_params.rs"
+test = false
+doc = false
+bench = false
+
+# Detached from the workspace on purpose: a fuzz crate builds only under
+# `cargo fuzz` (libfuzzer sanitizer flags), never in the workspace gates.
+[workspace]

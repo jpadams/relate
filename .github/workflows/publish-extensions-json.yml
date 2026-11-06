@@ -1,0 +1,137 @@
+name: Publish extensions.json
+
+# Publishes the signed extension channel index consumed by
+# `relate extension install` (the default source) and
+# `extension list --available` (ADR-0431 §1): the website-root pair
+# https://relatedb.ai/extensions.json +
+# extensions.json.sig, committed to the root of the `gh-pages` branch
+# beside releases.json — pipeline-owned there (gh-pages/MAINTAINING.md);
+# a hand edit is overwritten by the next publish. Both files are written
+# by this workflow only.
+#
+# The document is a full snapshot of the channel's package releases
+# (tags `relate-extensions-<name>-<X.Y.Z>` and their per-platform
+# tarballs), regenerated and re-signed on every run — the ADR-0250 §6
+# publisher contract carried over — and it is SIGNED: the one release
+# signing key (ADR-0115, the same key that signs SHA256SUMS) under the
+# `relate-release` SSHSIG namespace. An unsigned index is not a
+# publishable artifact; the script refuses without the key.
+#
+# Trigger:
+#   - `workflow_call` — chained from release-extensions.yml's
+#     `publish-extensions-json` job, which runs after `create-release`
+#     (the asset list is complete). Chained explicitly because
+#     release-extensions.yml publishes via softprops/action-gh-release
+#     with the default GITHUB_TOKEN, and GitHub suppresses downstream
+#     workflow runs for GITHUB_TOKEN-triggered events (ADR-0265) — a
+#     `release: published` trigger here would never fire.
+#   - `workflow_dispatch` — manual run: a BACKFILL that regenerates the
+#     index from the existing releases without cutting one (the
+#     publish-releases-json backfill shape). A backfill needs a
+#     deploy-pages.yml dispatch too — gh-pages is the site's source, not
+#     the live site (ADR-0330).
+#
+# The commit lands on gh-pages and deploy-pages.yml publishes it on its
+# next run, the same path releases.json and install.sh take. Pages
+# deploys are paused (2026-11-05, maintainer direction; deploy-pages.yml
+# runs on manual dispatch only): neither a release nor a backfill
+# deploys the site anymore, so a commit here goes live only on a manual
+# deploy-pages.yml dispatch.
+#
+# Idempotent apart from `generated_at`: the document is recomputed from
+# the live release list, so a re-run for the same releases is safe.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag this publish belongs to (commit-message audit trail only; empty on a manual backfill)"
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Serialize publishes: two runs would both rewrite the index, a
+    # conflict push-gh-pages.sh refuses to resolve. The other gh-pages
+    # writers touch other files; the push rebases onto them. Job-level
+    # (not workflow-level) so it holds for both entry paths.
+    concurrency:
+      group: publish-extensions-json
+      cancel-in-progress: false
+
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # The generator reads the live release list; `main` carries the
+      # current script (a backfill dispatch runs from main as well), and
+      # only the script directory is needed — the sparse-checkout shape
+      # of publish-releases-json.yml.
+      - name: Checkout main (generator)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: |
+            .github/scripts
+
+      - name: Checkout gh-pages into subdirectory
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+
+      # Same gh-pages checkout + guarded commit + push-gh-pages.sh shape
+      # as publish-releases-json.yml: the generator writes straight into
+      # the gh-pages checkout, then the commit step below publishes only
+      # those two files. RELEASE_SIGNING_PRIVATE_KEY rides the inherited
+      # secrets (release-extensions.yml calls with `secrets: inherit`) —
+      # the script writes it to a 0600 temp file and removes it, the
+      # create-release SHA256SUMS signing shape.
+      - name: Generate and sign extensions.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+        run: .github/scripts/publish-extensions-json.sh gh-pages/extensions.json gh-pages/extensions.json.sig
+
+      - name: Commit and push extensions.json to gh-pages
+        env:
+          PUBLISH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cd gh-pages
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add extensions.json extensions.json.sig
+          if git diff --cached --quiet; then
+            echo "extensions.json unchanged; nothing to publish."
+            exit 0
+          fi
+          if [ -n "${PUBLISH_TAG}" ]; then
+            subject="chore(website): publish extensions.json for ${PUBLISH_TAG}"
+          else
+            subject="chore(website): publish extensions.json"
+          fi
+          git commit -m "${subject}"
+          ../.github/scripts/push-gh-pages.sh .

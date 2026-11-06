@@ -1,0 +1,1352 @@
+name: CI
+
+# Draft iteration loops push every ~10 minutes: cancel the superseded run
+# on the same ref instead of stacking full matrices (the review workflows
+# carry their own concurrency groups). The group carries the PR's draft
+# state, so flipping draft -> ready does NOT cancel the in-flight draft
+# run (a status change is not a new push: the draft lanes finish, the
+# ready matrix runs beside them). A new push within the same state still
+# cancels its predecessor, and merge-time cancellation is
+# cancel-on-merge.yml's job.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}${{ github.event.pull_request.draft && '-draft' || '' }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main, claude/*]
+  pull_request:
+    branches: [main]
+    # ready_for_review re-runs the matrix when a draft is marked ready:
+    # the draft-era run (full_ci=false, heavy jobs skipped) must not be
+    # the run that satisfies the merge gate — the full suite runs at
+    # ready, before merge, not first on push to main afterwards.
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Manual dispatch: the push trigger only matches main / claude/*, so a
+  # feature branch run needs an explicit `gh workflow run ci.yml --ref <branch>`.
+  workflow_dispatch:
+
+# ADR-0255: the one-shot-build env contract, workflow-level so every lane
+# (not only `test`) inherits it. Both variables feed the Swatinem/rust-cache
+# environment hash, so they must be identical on every lane that shares a
+# cache key — workflow-level is the single source.
+env:
+  # CI is a one-shot build: incremental compilation only re-pays its
+  # multi-GB on-disk cache (target/debug/incremental) without any
+  # warm-rebuild benefit.
+  CARGO_INCREMENTAL: "0"
+  # Debug-info trim for dev-profile builds: full debug info is the bulk of
+  # every test/example binary's static link; backtraces stay symbolized
+  # with line numbers. All dev shared-key (ADR-0251 §5) lanes must produce
+  # cache-compatible artifacts, so the trim lives here, not per job.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # CI is not a user session: the CLI's anonymous usage metrics
+  # (ADR-0079) are opted out on every relate spawn a lane of this
+  # workflow can reach. Gosonic stage containers only receive explicitly
+  # mapped env, so the spawning stage commands in .sonic/ci.yml carry
+  # their own opt-out — keep the two layers together.
+  DO_NOT_TRACK: "1"
+
+jobs:
+  # One gosonic binary for every Linux lane. Stages run on separate runners,
+  # so this job builds the CLI once and the gosonic action downloads it.
+  # No `needs`: it overlaps change detection.
+  sonic-init:
+    name: Sonic init
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+        with:
+          repository: triha74/gosonic
+          ref: 5ef8494f0d805c31a667fc099e95561c153c26a8
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23.5"
+
+      - name: Build gosonic
+        run: CGO_ENABLED=0 go build -o gosonic .
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gosonic
+          path: gosonic
+          if-no-files-found: error
+
+  # A docs-only change (ADR, README, guide, planning note) does not need the
+  # build/test/loadtest suite. The code jobs below are gated on this; the
+  # docs-validating jobs (link-check, doc-examples, cookbook-wasm, notebook)
+  # always run, so a bad docs edit is still caught. Cookbook recipes are
+  # tests (ADR-0130): `docs/cookbook/*` edits set the `cookbook` output so
+  # the merged `corpus` job (ADR-0252) still runs the native recipe gate on
+  # a recipe-only change.
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+      cookbook: ${{ steps.detect.outputs.cookbook }}
+      full_ci: ${{ steps.full.outputs.full }}
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - id: full
+        name: Draft PRs run the fast gate only (full suite on ready-for-review)
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" && "${{ github.event.pull_request.draft }}" == "true" ]]; then
+            echo "full=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "full=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - id: detect
+        name: Detect non-doc changes
+        run: |
+          set -euo pipefail
+          # Manual runs always take the full suite.
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "cookbook=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            range="origin/${GITHUB_BASE_REF}...${GITHUB_SHA}"
+          else
+            before="${{ github.event.before }}"
+            # All-zero `before` means a new branch push: no base to diff.
+            if [[ "$before" =~ ^0+$ ]]; then
+              range="$(git rev-parse "${GITHUB_SHA}^" 2>/dev/null || echo "")...${GITHUB_SHA}"
+            else
+              range="${before}...${GITHUB_SHA}"
+            fi
+          fi
+
+          files="$(git diff --name-only "$range" 2>/dev/null || true)"
+          echo "changed files:"; echo "${files:-<none>}"
+
+          code=false
+          cookbook=false
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            case "$f" in
+              # Documentation and planning trees do not affect the product.
+              # docs/api/bolt is the exception: its documented examples
+              # run in the continuous relate-bolt job.
+              docs/api/bolt/*) code=true ;;
+              # The WASM API examples are tests of the bundle.
+              docs/api/wasm/examples/*) code=true ;;
+              # The Swift API examples run in the `swift` job (ADR-0433).
+              docs/api/swift/examples/*) code=true ;;
+              # The Go API examples run in the sonic `clients` stage.
+              docs/api/go/examples/*) code=true ;;
+              # Cookbook recipes are tests (ADR-0130): a recipe-only edit
+              # must still run the native recipe gate (the merged corpus
+              # job, ADR-0252) even though it is not a code change.
+              docs/cookbook/*) cookbook=true ;;
+              docs/*|.plans/*) ;;
+              # The image and everything the smoke suite exercises. The
+              # docker image smoke itself is nightly
+              # (background-cadences.yml `docker-smoke`), not continuous.
+              Dockerfile|.dockerignore|Makefile) code=true ;;
+              # The Rust/Python test suites run against CARGO_BIN_EXE and a
+              # debug binary, never the image.
+              surfaces/relate-bolt/tests/*) code=true ;;
+              surfaces/relate-bolt/*) code=true ;;
+              # Anything under a subdirectory is code. This arm must precede
+              # the root-markdown one: a `*.md` pattern also matches slashed
+              # paths, and surfaces/relate-cli/src/skill/bundle/*.md are include_str!'d into
+              # the CLI, so they are source.
+              */*) code=true ;;
+              # Root-level markdown (README.md, AGENTS.md, CHANGELOG.md, …).
+              *.md) ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "cookbook=$cookbook" >> "$GITHUB_OUTPUT"
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+  # ADR-0251 §4 fail-fast ordering: read the previous completed CI run on
+  # this branch through the GH API, annotate the jobs that failed there, and
+  # re-run the cheap half of a previously-failed Lint (rustfmt) right away,
+  # so a repeat formatting failure surfaces in about a minute instead of
+  # after the full lane. No history (fresh branch, renamed check) degrades
+  # to the annotation being empty; the API read never fails the run.
+  failfast:
+    name: Fail-fast (previous failures first)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+
+      - name: Previous run's failed checks
+        id: prev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          failed="$(bash scripts/prev-failed-jobs.sh || true)"
+          if [[ -z "$failed" ]]; then
+            echo "No failed jobs on the previous CI run of this branch (or no history)." \
+              >> "$GITHUB_STEP_SUMMARY"
+            echo "lint=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "### Previously failed checks (ADR-0251 fail-fast ordering)" \
+            >> "$GITHUB_STEP_SUMMARY"
+          lint=false
+          while IFS= read -r job_name; do
+            [[ -z "$job_name" ]] && continue
+            echo "- \`$job_name\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=Previously failed::'$job_name' failed on the previous CI run of this branch"
+            # `full-test` is the check name from the run that scheduled every
+            # Linux lane as one Sonic suite. Either name means re-run rustfmt.
+            [[ "$job_name" == "Lint" || "$job_name" == "full-test" ]] && lint=true
+          done <<< "$failed"
+          echo "lint=$lint" >> "$GITHUB_OUTPUT"
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0").
+      - uses: dtolnay/rust-toolchain@1.88.0
+        if: steps.prev.outputs.lint == 'true'
+        with:
+          components: rustfmt
+
+      - name: Re-run rustfmt (Lint failed on the previous run)
+        if: steps.prev.outputs.lint == 'true'
+        run: cargo fmt --all --check
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  lint:
+    name: Lint
+    needs: [changes, sonic-init]
+    # Workspace fmt + clippy wait for ready-for-review. On drafts,
+    # draft-smoke runs fmt and light-crate clippy.
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: lint
+          # Plain per-job key: lint stayed off the dev shared key because
+          # clippy's check profile is a different artifact set. mold and
+          # sccache stay off so the env hash matches that lane.
+          rust-cache: "true"
+          sccache: "false"
+          mold: "false"
+          cache-target: lint
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  test:
+    name: Test (${{ matrix.os }} / ${{ matrix.shard.name }})
+    # One Sonic test stage per shard. The crate lists for each shard live in
+    # .sonic/ci.yml; this matrix only selects the shard. Gated on
+    # ready-for-review: draft-smoke covers the light crates.
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # Runner pilot (LABS-310): the 19-minute critical path moved to the
+      # same larger-runner group the corpus job pilots (docs/testing/
+      # runtime.md, runner-pilot section). ADR-0254/ADR-0255 then removed
+      # the free-disk step and switched execution to nextest + mold.
+      matrix:
+        os: [linux-4-core-x86]
+        # LABS-310 round 3: the 23-crate list shards by measured exec time
+        # (docs/testing/runtime.md): the heavy suites anchor one shard each
+        # (`relate` ~118 s alone; `relate-storage` ~45 s and
+        # `relate-executor` ~38 s each with the ≤ 16 s light suites
+        # grouped around them).
+        # &test_shards is anchored for the dispatch-only 8-core A/B job at
+        # the bottom of this file (LABS-310 round 4) so the A/B can never
+        # drift from the lane it measures.
+        shard: &test_shards
+          - name: engine
+          - name: storage
+          - name: planner
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: test
+          matrix: shard=${{ matrix.shard.name }}
+          rust-cache: "true"
+          free-disk: "false"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: test-${{ matrix.shard.name }}
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  draft-smoke:
+    name: Draft smoke (light unit lane)
+    # Draft fast gate's one compiled signal (draft PRs skip the sharded
+    # test lanes): the 8 light crates — warm dev-v2 shared cache, nextest
+    # parallel execution. The heavy compiles (executor, storage, planner,
+    # cli, relate) wait for ready-for-review; local suites cover a
+    # draft's behavior on those.
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.full_ci == 'false'
+    runs-on: linux-4-core-x86
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-rust-ci
+        with:
+          free-disk: "false"
+          # clippy rides this lane on drafts (the lint job's workspace
+          # clippy waits for ready-for-review)
+          toolchain-components: rustfmt, clippy
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      # The draft's fmt signal — seconds, no compile (the lint job's
+      # workspace fmt + clippy wait for ready-for-review).
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      # 20 `test result: ok` suites locally in <1 min serial; nextest
+      # runs them in parallel (~15 s). Doctests wait for the full lanes.
+      - name: Light unit suites (core, catalog, model, parser, error, splitter, front, formatter)
+        run: |
+          cargo nextest run -p relate-core -p relate-catalog             -p relate-model -p relate-parser -p relate-error             -p relate-splitter -p relate-front -p relate-formatter
+
+      # The draft's clippy signal for the same crate set; the full
+      # workspace clippy (lint job) waits for ready-for-review.
+      - name: Clippy (light crates)
+        run: |
+          cargo clippy -p relate-core -p relate-catalog             -p relate-model -p relate-parser -p relate-error             -p relate-splitter -p relate-front -p relate-formatter             --all-targets -- -D warnings
+
+  # macOS and Windows skip the query-integration suite (planner, executor,
+  # and `cargo test -p relate`). They run storage depth plus one
+  # smoke per surface. Linux keeps the full `test` and `feature-bundles` jobs.
+  # ADR-0251 §6: this is the continuous macOS delta lane; the full
+  # multi-OS sweep (complete surface harness suites) runs 6-hourly in
+  # background-cadences.yml.
+  os-smoke:
+    name: OS smoke (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+    steps:
+      # pull_request otherwise checks out the merge with main. Pin the head
+      # so this job builds the branch.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      # Shared preamble: toolchain + plain cache only (macOS — the mold and
+      # free-disk steps are Linux-guarded inside the action).
+      - uses: ./.github/actions/setup-rust-ci
+        with:
+          sccache: "false"
+          free-disk: "false"
+          mold: "false"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.22"
+
+      - name: Filesystem depth (storage)
+        shell: bash
+        run: cargo test -p relate-storage
+
+      - name: Filesystem depth (storage, no default features)
+        shell: bash
+        run: cargo test -p relate-storage --no-default-features
+
+      # One dev build feeds the Python wheel and the surface smokes.
+      # Windows `os-surface` runs a trimmed variant (no Python; the harness
+      # builds are the compile checks) — see the `os-surface` job comment.
+      # macOS ld rejects an extension-module cdylib unless Python symbols
+      # stay unresolved; Maturin passes the same link args.
+      - name: Build dev surface artifacts
+        shell: bash
+        run: &os_surface_build |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            source scripts/msvc-env.sh --persist-env
+          fi
+          cargo build -p relate-ffi -p relate-mcp -p relate-bolt -p relate-http -p relate-cli
+          if [[ "${RUNNER_OS}" == "macOS" ]]; then
+            cargo rustc -p relate-python --features pyo3/extension-module -- -C link-arg=-undefined -C link-arg=dynamic_lookup
+          else
+            cargo build -p relate-python --features pyo3/extension-module
+          fi
+          cargo test --no-run -p relate-mcp --test stdio_tools
+          cargo test --no-run -p relate-bolt --lib
+          cargo test --no-run -p relate-http --lib
+          cargo test --no-run -p relate-cli --test e2e_bundles
+
+      - name: Install the Python package
+        shell: bash
+        working-directory: surfaces/relate-python
+        run: |
+          pip install pytest maturin
+          pip install . --no-build-isolation --config-settings="build-args=--profile dev"
+
+      # Literal block so `#` in the Java -Dtest selector stays in the script.
+      # Library name: scripts/ffi-lib.sh. C example: scripts/ffi-compile-example.sh.
+      # Windows `os-surface` runs the OS-dependent subset of these smokes
+      # (the four cargo smokes, the C example, and the cgo smoke).
+      - name: Surface smokes
+        shell: bash
+        run: &os_surface_smokes |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            source scripts/msvc-env.sh --require --label os-smoke
+          fi
+          cargo test -p relate-mcp --test stdio_tools stdio_namespace_prefixes_tool_names -- --exact
+          cargo test -p relate-bolt --lib server::tests::bolt_return_one -- --exact
+          cargo test -p relate-http --lib query_api::tests::success_envelope_has_fields_values_and_empty_bookmarks -- --exact
+          cargo test -p relate-cli --test e2e_bundles test_one_shot_query_runs_in_every_bundle -- --exact
+          python -m pytest surfaces/relate-python/python/tests/test_native.py::test_execute_returns_query_result
+          (cd clients/javascript && npm install && node test.js)
+          export RELATE_LIB="$PWD/target/debug/$(bash scripts/ffi-lib.sh --name)"
+          source scripts/ffi-lib.sh
+          bash scripts/ffi-compile-example.sh
+          export RELATE_LIB
+          # Java: bundle the debug native, then PackagedJarIT loads the built
+          # jars in child JVMs with RELATE_LIB removed (ADR-0490).
+          mvn -q -f clients/java/pom.xml -Drelate.ffi.dir="$RELATE_LIB_DIR" '-Dtest=DatabaseTest#returnOne,Native*Test' verify
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            # cgo links with mingw ld. The Rust cdylib import library is
+            # MSVC COFF, so build a mingw import library from the DLL.
+            ffi_dir="${RELATE_LIB%/*}"
+            ffi_base="$(basename "$RELATE_LIB" .dll)"
+            (
+              cd "$ffi_dir"
+              gendef "${ffi_base}.dll"
+              dlltool --dllname "${ffi_base}.dll" --def "${ffi_base}.def" --output-lib "lib${ffi_base}.dll.a"
+            )
+          fi
+          export CGO_LDFLAGS="-L${RELATE_LIB%/*} -lrelate_ffi"
+          go test -C clients/go -count=1 -run '^TestReturnOne$' .
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0433: the Swift surface's day-one gate (ADR-0065's reinstatement
+  # clause). One entry point, `make test-swift`: the three-slice static
+  # XCFramework (scripts/build-xcframework.sh), the package's `swift test`,
+  # every docs/api/swift example, the iOS example's core tests, and the iOS
+  # example app built for the simulator. Drafts skip it like the other
+  # macOS lane.
+  swift:
+    name: Swift (iOS / macOS)
+    needs: changes
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: macos-latest
+    steps:
+      # Pin the head like os-smoke: pull_request otherwise checks out the
+      # merge with main.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - uses: ./.github/actions/setup-rust-ci
+        with:
+          sccache: "false"
+          free-disk: "false"
+          mold: "false"
+          toolchain-targets: "aarch64-apple-darwin,x86_64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios"
+
+      # The gate runs from a working copy in a directory named 'relate':
+      # docs/api/swift/examples references the root package by path, and
+      # SwiftPM derives a path-local package's identity from the checkout
+      # directory name — the repository's own name (ADR-0517 §3: the
+      # pre-cutover name, until the relatedb transfer) — so `package:
+      # "relate"` cannot resolve in the default workspace. The copy (not
+      # a checkout `path:` — local-action references, including the
+      # composite setup-rust-ci's internal ones, resolve against
+      # $GITHUB_WORKSPACE and cannot carry a prefix) keeps every local
+      # action working while giving SwiftPM the identity it needs. Drop
+      # the copy at the relatedb cutover, when the repository itself is
+      # named 'relate'.
+      - name: Swift gate
+        run: |
+          cp -R "$GITHUB_WORKSPACE" "$RUNNER_TEMP/relate"
+          cd "$RUNNER_TEMP/relate" && make test-swift
+
+  # Windows filesystem and surface run as separate jobs so each pays only
+  # for the tools it uses, and the two runners overlap. ADR-0251 §6: these
+  # two are the continuous Windows delta lanes; the full sweep runs
+  # 6-hourly in background-cadences.yml.
+  os-filesystem:
+    name: OS filesystem (windows-16-core)
+    needs: changes
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: windows-16-core
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # pull_request otherwise checks out the merge with main. Pin the head
+      # so this job builds the branch.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      # ADR-0251 §2 Windows lanes: NTFS metadata I/O dominates the Windows
+      # build/test wall-clock, so the target dir and the temp dirs go on an
+      # ImDisk ramdisk (8 GB of the runner's 16 GB). Any driver-install or
+      # mount failure falls back to the plain disk paths with a warning —
+      # the step summary records which mode ran. `line-tables-only` keeps
+      # the debug target inside the ramdisk (backtraces stay symbolized).
+      - name: Ramdisk (ImDisk) for the target dir and tempdirs
+        shell: bash
+        run: scripts/ramdisk-imdisk.sh
+
+      # Shared preamble: toolchain + the os-filesystem shared cache key only.
+      - uses: ./.github/actions/setup-rust-ci
+        with:
+          sccache: "false"
+          free-disk: "false"
+          mold: "false"
+          cache-shared-key: os-filesystem
+
+      - name: Filesystem depth (storage)
+        shell: bash
+        run: cargo test -p relate-storage
+
+      - name: Filesystem depth (storage, no default features)
+        shell: bash
+        run: cargo test -p relate-storage --no-default-features
+
+  # The Windows surface lane keeps only the genuinely OS-dependent work
+  # (ADR-0251 §2/§3): the MSVC compile/link of the FFI cdylib and the four
+  # surface test harnesses, the one-query surface smokes, the cl-compiled C
+  # example, and the mingw import-library dance for cgo. The Python wheel
+  # link is covered by the macOS `os-smoke` lane and the ubuntu `python`
+  # job, and the JS/Java client smokes are OS-independent client code the
+  # ubuntu `relate-clients` lane and the macOS lane already run — so
+  # this lane no longer builds Python, Node, or Java at all. The harness
+  # builds double as the surface crates' compile check; a separate plain
+  # `cargo build` of the same crates paid a second full compile for no
+  # extra signal and is gone.
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+  os-surface:
+    name: OS surface (windows-16-core)
+    needs: changes
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: windows-16-core
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # pull_request otherwise checks out the merge with main. Pin the head
+      # so this job builds the branch.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      # Same ImDisk ramdisk step as `os-filesystem`.
+      - name: Ramdisk (ImDisk) for the target dir and tempdirs
+        shell: bash
+        run: scripts/ramdisk-imdisk.sh
+
+      # Shared preamble: toolchain + the os-surface shared cache key only.
+      - uses: ./.github/actions/setup-rust-ci
+        with:
+          sccache: "false"
+          free-disk: "false"
+          mold: "false"
+          cache-shared-key: os-surface
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.22"
+
+      # cl is the compiler on windows-16-core that can link an MSVC cdylib.
+      # Load it before the dev build so rustc and cl share one linker.
+      - name: MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build dev surface artifacts (compile/link checks)
+        shell: bash
+        run: |
+          source scripts/msvc-env.sh --persist-env
+          cargo build -p relate-ffi
+          cargo test --no-run -p relate-mcp --test stdio_tools
+          cargo test --no-run -p relate-bolt --lib
+          cargo test --no-run -p relate-http --lib
+          cargo test --no-run -p relate-cli --test e2e_bundles
+
+      # Windows subset of the macOS surface smokes (`os_surface_smokes`):
+      # the four one-query surface smokes, the C compile example, and the
+      # Go cgo smoke. With CARGO_TARGET_DIR on the ramdisk, the cdylib path
+      # is resolved through it instead of the workspace target dir.
+      - name: Surface smokes
+        shell: bash
+        run: |
+          source scripts/msvc-env.sh --require --label os-surface
+          cargo test -p relate-mcp --test stdio_tools stdio_namespace_prefixes_tool_names -- --exact
+          cargo test -p relate-bolt --lib server::tests::bolt_return_one -- --exact
+          cargo test -p relate-http --lib query_api::tests::success_envelope_has_fields_values_and_empty_bookmarks -- --exact
+          cargo test -p relate-cli --test e2e_bundles test_one_shot_query_runs_in_every_bundle -- --exact
+          target_dir="$PWD/target"
+          if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+            target_dir="$(cygpath -u "$CARGO_TARGET_DIR")"
+          fi
+          export RELATE_LIB="$target_dir/debug/$(bash scripts/ffi-lib.sh --name)"
+          source scripts/ffi-lib.sh
+          bash scripts/ffi-compile-example.sh
+          export RELATE_LIB
+          # cgo links with mingw ld. The Rust cdylib import library is
+          # MSVC COFF, so build a mingw import library from the DLL.
+          ffi_dir="${RELATE_LIB%/*}"
+          ffi_base="$(basename "$RELATE_LIB" .dll)"
+          (
+            cd "$ffi_dir"
+            gendef "${ffi_base}.dll"
+            dlltool --dllname "${ffi_base}.dll" --def "${ffi_base}.def" --output-lib "lib${ffi_base}.dll.a"
+          )
+          export CGO_LDFLAGS="-L${RELATE_LIB%/*} -lrelate_ffi"
+          go test -C clients/go -count=1 -run '^TestReturnOne$' .
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0104 rule 6: every named CLI bundle is tested; the default `full`
+  # bundle runs in the `test` job. ADR-0105: the engine also builds and
+  # tests without its default `parquet` feature (JSON-only). A separate job
+  # so the extra feature builds do not exhaust the `test` runner's disk.
+  # Ubuntu only: macOS runs the storage half from `os-smoke`, and Windows
+  # from `os-filesystem` (`cargo test -p relate-storage
+  # --no-default-features`), not the full engine `--no-default-features` suite.
+  feature-bundles:
+    name: Feature bundles (${{ matrix.os }} / ${{ matrix.suite }})
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # Two legs measured serial at 172 s + 226 s (run 38780496951). The
+        # feature sets share no cargo fingerprints (distinct
+        # --no-default-features resolutions), so one 4-core runner cannot
+        # overlap them; splitting the matrix runs them on separate runners
+        # and the lane wall drops to the slower leg. The Sonic stage cases
+        # on the same suite names.
+        suite: [cli-bundles, engine-no-parquet]
+    steps:
+      # pull_request otherwise checks out the merge with main. Pin the head
+      # so this job builds the branch.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: feature-bundles
+          matrix: suite=${{ matrix.suite }}
+          rust-cache: "true"
+          free-disk-aggressive: "true"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: feature-bundles-${{ matrix.suite }}
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0259 Consequences: the ADR-0257 limit / limit+1 engine-path tests
+  # must run in a release lane, not only in the debug `test` matrix — the
+  # 64 MiB query-worker's margin over the 500 nesting cap is calibrated
+  # against release frame sizes. Scoped to the stack suite: the tests take
+  # ~0.01 s once compiled; compilation dominates.
+  stack-release:
+    name: Stack-depth engine tests (release)
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    # LABS-310 runner pilot (docs/testing/runtime.md): the release-profile
+    # lanes move to the 4-core runner group — they build binaries and need
+    # disk headroom, and the 150 GB-SSD group skips the free-disk clean via
+    # the MIN_FREE_MB early-exit.
+    runs-on: linux-4-core-x86
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: stack-release
+          rust-cache: "true"
+          cache-shared-key: release-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: stack-release
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # Full pytest stays on Ubuntu. macOS runs the single native smoke from
+  # `os-smoke` (`test_execute_returns_query_result`) plus the wheel
+  # build/link; Windows runs neither — its Python coverage is
+  # OS-independent (ADR-0251 §2).
+  python:
+    name: Python package (${{ matrix.os }})
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    # The debug-info trim the `dev` shared-key (ADR-0251 §5) jobs must
+    # agree on is workflow-level env now (top of file, ADR-0255).
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [linux-4-core-x86]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: python
+          rust-cache: "true"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: python
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  link-check:
+    name: Link check (README + docs)
+    needs: sonic-init
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: link-check
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # Guards ADR number allocation (ADR-0300): the mint lives on a shared
+  # counter branch, and this job catches conflicting docs/adr numbers added
+  # without minting. Always runs on PRs (no `needs: changes`) because an
+  # ADR-only change skips the code jobs but must still be checked.
+  adr-numbers:
+    name: ADR number conflicts
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Scopes only this job's token (other jobs keep the default): the job
+    # runs the PR's own copy of the checker, so the token gets read access
+    # and nothing else, and checkout does not persist credentials.
+    permissions:
+      contents: read
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Unit-test the ADR scripts
+        run: make test-adr-scripts
+
+      # The claim proof reads the ledger: every added ADR's Claim header
+      # must name a claim commit on this branch (scripts/check_adr_numbers.py).
+      # The explicit refspec writes the remote-tracking ref the checker
+      # reads (origin/ADR-NUMBER-MINT-DO-NOT-DELETE) itself, so it does not
+      # depend on checkout's refspec mapping.
+      - name: Fetch the ADR number ledger branch
+        # persist-credentials: false above means git has no stored token; pass
+        # the read-only GITHUB_TOKEN as a one-shot extraheader for this fetch.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c http.extraheader="$AUTH" fetch origin +refs/heads/ADR-NUMBER-MINT-DO-NOT-DELETE:refs/remotes/origin/ADR-NUMBER-MINT-DO-NOT-DELETE
+
+      - name: Check added ADR numbers against the base
+        run: python3 scripts/check_adr_numbers.py --base "origin/${GITHUB_BASE_REF}"
+
+  doc-examples:
+    name: Documented function examples
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    # LABS-310 runner pilot: release-profile lane on the 4-core group
+    # (see stack-release).
+    runs-on: linux-4-core-x86
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: doc-examples
+          rust-cache: "true"
+          cache-shared-key: release-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: doc-examples
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0130: every cookbook recipe is a test. The native half runs in
+  # `corpus`. This job is the browser half: JS unit tests, a dev wasm
+  # bundle, and the site build. Drafts skip it; link-check stays on.
+  cookbook-wasm:
+    name: Cookbook recipes (browser build and site)
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: cookbook-wasm
+          # Plain per-job key, same as before Sonic: wasm32, no mold, no sccache.
+          rust-cache: "true"
+          sccache: "false"
+          mold: "false"
+          cache-target: cookbook-wasm
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  notebook:
+    name: Notebook execution (getting started)
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    # LABS-310 runner pilot: release-profile lane on the 4-core group
+    # (see stack-release).
+    runs-on: linux-4-core-x86
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: notebook
+          rust-cache: "true"
+          cache-shared-key: release-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: notebook
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0252: cookbook-native and the LDBC SF0.1 answer gate. Sonic runs
+  # both commands whenever this job starts, including a cookbook-only
+  # change. A cookbook edit on a draft still runs; a code change on a draft
+  # waits for ready-for-review.
+  corpus:
+    name: Corpus (cookbook native, LDBC SF0.1 answers)
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true' || needs.changes.outputs.cookbook == 'true'
+    # LABS-310 runner pilot (docs/testing/runtime.md): the compile-dominated
+    # corpus job is the one lane piloted on the 4-core runner; every other
+    # free-tier lane is unchanged. Success bar is a 2x wall drop.
+    runs-on: linux-4-core-x86
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: corpus
+          rust-cache: "true"
+          free-disk: "false"
+          cache-shared-key: corpus-v2
+          cache-workspace-crates: "true"
+          cache-target: corpus
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  relate-bolt:
+    name: Bolt + official driver smoke (${{ matrix.leg }}${{ matrix.shard && format(' {0}/4', matrix.shard) || '' }})
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    # The e2e leg compiles four integration binaries on a cold fingerprint;
+    # the free-tier runner runs out of disk during the link and kills the
+    # runner agent (diag log: "No space left on device"), losing the step
+    # log. The 150 GB-SSD 4-core class has the headroom; every other leg
+    # stays on the free tier and relies on the action's free-disk clean
+    # (MIN_FREE_MB 20480, scripts/free-disk.sh): the arrow/parquet
+    # dependency tree grew the per-leg target dirs past the free tier's
+    # headroom — run 39639422717 ENOSPC'd the lib shards at 61 MB free.
+    # The 150 GB-class lanes keep `free-disk: "false"` on purpose: the
+    # script's MIN_FREE_MB early-exit would only pay its ~1 min tree scan
+    # to then skip.
+    runs-on: ${{ matrix.leg == 'e2e' && 'linux-4-core-x86' || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # LABS-310: sharded by test binary, and the 151-test lib suite is
+        # further partitioned at test level (nextest --partition) across 4
+        # runners — one 306 s binary is the exec floor otherwise. The
+        # concurrency battery is timing-sensitive and stays a single isolated
+        # leg (partitioning it across runners re-adds the contention flake).
+        # The lib/concurrency/e2e legs run ONLY relate-bolt tests (no
+        # `cargo build -p relate-bolt` or driver-smoke steps — those live
+        # in the smoke leg). Adding a bolt build/example to a suite leg would
+        # split BoltWsStream's compile from the binary the examples serve.
+        include:
+          - { leg: lib, shard: 1 }
+          - { leg: lib, shard: 2 }
+          - { leg: lib, shard: 3 }
+          - { leg: lib, shard: 4 }
+          - { leg: concurrency }
+          - { leg: e2e }
+          - { leg: smoke }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: bolt
+          matrix: leg=${{ matrix.leg }}${{ matrix.shard && format('-{0}', matrix.shard) || '' }}
+          rust-cache: "true"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: bolt-${{ matrix.leg }}${{ matrix.shard && format('-{0}', matrix.shard) || '' }}
+
+      # The docker image smoke (ADR-0128) stays nightly in
+      # background-cadences.yml. This stage runs the cargo-built server.
+      # lib-N is nextest partition N/4; concurrency, e2e, and smoke are the
+      # other cells of the Sonic `leg` axis.
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  relate-clients:
+    name: Bolt language clients
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: clients
+          rust-cache: "true"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: clients
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0245's per-PR latency ratchet: the timed 30-query SF0.1 suite in
+  # the pinned Docker recipe (2 vCPU / QUERY_LATENCY_MEMORY), compared
+  # against baselines/query-latency-sf0.1.json. Same runner class as the
+  # freeze (create-loadtest-baselines, whose default is the same
+  # `vars.LOADTEST_RUNNER` variable) so the environment classes match.
+  # The report uploads as an artifact for every run, green or not.
+  query-latency:
+    name: Query latency (ADR-0245 ratchet)
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    # The 4-core class (the LABS-310 compile-bound rationale): the suite's
+    # in-container compile is the job's dominant wall time, and a quieter
+    # host steadies the p50s inside the same 2-vCPU CFS-capped recipe.
+    # The timing class itself is unchanged (the capped recipe inside); the
+    # class LABEL is `vars.LOADTEST_RUNNER` — every stamping lane and the
+    # freeze read that one variable, so a class change is one variable
+    # update plus one re-freeze, never a hand-pinned drift site.
+    runs-on: ${{ vars.LOADTEST_RUNNER }}
+    # Reading the repo covers checkout; downloading the gosonic artifact
+    # needs actions: read.
+    permissions:
+      actions: read
+      contents: read
+    env:
+      # The ADR-0071 class stamp's runner field (the loadtest-baselines
+      # sibling's idiom): the per-PR report must carry the CI runner
+      # class, or the envelope compare goes INCOMPATIBLE on every PR.
+      BASELINE_RUNNER: github-actions:${{ vars.LOADTEST_RUNNER }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same rate-limit relief as the loadtest-baselines gate (LABS-248).
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v4
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: query-latency
+
+      - name: Upload query-latency report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: query-latency-report
+          path: target/query-latency/report-graph-benchmark-ldbc-sf0.1.json
+          if-no-files-found: warn
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # wasm32 compile gate (ADR-0084, ADR-0085). The full browser lane runs
+  # 6-hourly in background-cadences.yml; cookbook WASM parity stays in
+  # cookbook-wasm.
+  wasm:
+    name: WASM (relate-wasm)
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: wasm
+          # Plain per-job key, same as before Sonic: wasm32, no mold, no sccache.
+          rust-cache: "true"
+          sccache: "false"
+          mold: "false"
+          cache-target: wasm
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # npm pack/install smoke (scripts/npm-smoke-test.sh).
+  npm-smoke:
+    name: npm pack/install smoke tests
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: npm-smoke
+          rust-cache: "true"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: npm-smoke
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0251 §6: dataset suites at ci() scale plus the comparator and
+  # install.sh harness tests. Full-scale fixtures run nightly in
+  # background-cadences.yml (RELATE_FULL_DATA=1).
+  loadtest-smoke:
+    name: Loadtest smoke
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: loadtest-smoke
+          rust-cache: "true"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: loadtest-smoke
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # ADR-0251 §6 reconciliation (docs/testing/cadences.md): this job stays
+  # continuous — it is the ADR-0070/ADR-0071 CI-owned freeze gate.
+  # Sonic runs the pull and the fraud and identity loadtests. Docker Hub
+  # login stays on the host because the stage uses the host Docker socket.
+  # Upload, comparison render, and the PR comment stay here.
+  # Draft PRs skip it with the rest of the full suite.
+  loadtest-baselines:
+    name: Loadtest baselines gate
+    needs: [changes, sonic-init]
+    if: needs.changes.outputs.full_ci == 'true' && needs.changes.outputs.code == 'true'
+    # The same `vars.LOADTEST_RUNNER` class as the freeze's default and the
+    # query-latency sibling — one variable behind every `runs-on` and every
+    # ADR-0071 stamp, so the per-PR report and the committed envelopes can
+    # no longer disagree on the class (the fraud/identity lane was the last
+    # hand-pinned `ubuntu-24.04` beside 4-core envelopes: every comparison
+    # went INCOMPATIBLE, and every re-freeze flipped which suite matched).
+    runs-on: ${{ vars.LOADTEST_RUNNER }}
+    # Reading the repo covers checkout. Downloading the gosonic artifact
+    # needs actions: read. Posting the PR comparison comment needs
+    # pull-requests: write.
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    env:
+      BASELINE_RUNNER: github-actions:${{ vars.LOADTEST_RUNNER }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same rate-limit relief as the bolt image build (LABS-248).
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v4
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: loadtest-baselines
+          # Plain per-job key. The pre-Sonic lane did not share dev-v2 and
+          # did not use sccache or mold.
+          rust-cache: "true"
+          sccache: "false"
+          mold: "false"
+          cache-target: loadtest-baselines
+
+      - name: Upload fresh loadtest reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: loadtest-reports
+          path: |
+            target/fraud-loadtest.json
+            target/identity-loadtest.json
+          if-no-files-found: warn
+      # LABS-305 presentation, never a gate: render the baseline-vs-report
+      # comparison tables for every pair — a report-missing note for a pair
+      # whose loadtest step failed — into the step summary and
+      # target/loadtest-comparison.md. Render mode always exits 0;
+      # continue-on-error is belt-and-braces so a presentation error
+      # cannot fail the job (the run page still shows the errored step).
+      - name: Render loadtest comparison tables
+        if: always()
+        continue-on-error: true
+        run: make render-loadtest-comparison
+      # LABS-305 presentation, never a gate: post (or PATCH in place) the
+      # one marker comment on the PR. The condition keeps non-pull_request
+      # events (push, workflow_dispatch) from invoking the script at all;
+      # its no-PR no-op and best-effort exits are the second line of
+      # defense.
+      - name: Post comparison comment on the PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/update-pr-comment.sh "${{ github.event.number }}"
+      # - name: Compare against baselines
+      #   run: make compare-loadtests
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # Draft-path sanity for the Jepsen lane (LABS-650): the full harness run
+  # in `jepsen` below is full-CI-gated, so a draft editing testing/jepsen
+  # would otherwise carry no signal at all until ready-for-review. The
+  # cheap half runs on drafts: `docker compose config` over the harness
+  # topology, so a compose YAML error surfaces in seconds. On full runs
+  # this job is skipped — the `jepsen` job's own first step makes the
+  # same check before paying for the image build.
+  jepsen-harness-sanity:
+    name: Jepsen harness sanity (compose config)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.full_ci == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+
+      - name: Validate the harness topology
+        working-directory: testing/jepsen
+        run: docker compose config --quiet
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  # LABS-310 round 4: dispatch-only 8-core A/B (docs/testing/runtime.md).
+  # Same Sonic stages as the continuous lanes, on linux-8-core-x86.
+  # Trigger with `gh workflow run ci.yml` once the runner is provisioned.
+  test-8core-ab:
+    name: "A/B: Test (linux-8-core-x86 / ${{ matrix.shard.name }})"
+    needs: [changes, sonic-init]
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.code == 'true'
+    runs-on: linux-8-core-x86
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: *test_shards
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: test
+          matrix: shard=${{ matrix.shard.name }}
+          rust-cache: "true"
+          free-disk: "false"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: test-${{ matrix.shard.name }}
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+
+  python-8core-ab:
+    name: "A/B: Python package (linux-8-core-x86)"
+    needs: [changes, sonic-init]
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.code == 'true'
+    runs-on: linux-8-core-x86
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/gosonic
+        with:
+          stage: python
+          rust-cache: "true"
+          cache-shared-key: dev-v2
+          cache-save-if-cold-only: "true"
+          cache-workspace-crates: "true"
+          cache-target: python
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh
+

@@ -1,0 +1,8 @@
+# ADR-0315 (F-31): a message signature that is not a Bolt 4.4 request (here
+# the Bolt 1-2 ACK_FAILURE 0x0E) is a fatal decode error: no FAILURE, the
+# connection closes.
+!: BOLT 4.4
+!: AUTO HELLO
+
+C: 0x0E
+S: <EXIT>

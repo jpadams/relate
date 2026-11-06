@@ -1,0 +1,32 @@
+[
+  {
+    "id": "count-people",
+    "prompt": "How many Person nodes are in the database? Answer with just the number.",
+    "setupCypher": "UNWIND ['Alice','Bob','Carol','Dave','Eve','Frank'] AS n CREATE (:Person {name: n})",
+    "expectedAnswer": "6"
+  },
+  {
+    "id": "knows-degree",
+    "prompt": "How many KNOWS relationships does Alice have? Answer with just the number.",
+    "setupCypher": "CREATE (a:Person {name:'Alice'}), (b:Person {name:'Bob'}), (c:Person {name:'Carol'}) CREATE (a)-[:KNOWS]->(b), (a)-[:KNOWS]->(c)",
+    "expectedAnswer": "2"
+  },
+  {
+    "id": "oldest-city",
+    "prompt": "Which City has the smallest population? Answer with just its name.",
+    "setupCypher": "CREATE (:City {name:'Berlin', pop: 3700000}), (:City {name:'Uppsala', pop: 180000}), (:City {name:'Malmo', pop: 360000})",
+    "expectedAnswer": "Uppsala"
+  },
+  {
+    "id": "wide-scan",
+    "prompt": "List the names of all Person nodes, one per line, in the order the query returns them. Then state on a final line how many there were. Answer the final line with just the number.",
+    "setupCypher": "UNWIND range(1, 120) AS i CREATE (:Person {name: 'P' + toString(i)})",
+    "expectedAnswer": "120"
+  },
+  {
+    "id": "profile-plan",
+    "prompt": "Run a PROFILE of MATCH (p:Person)-[:KNOWS]->(f:Person) RETURN f.name and report the operator name of the plan's first row after ProduceResults. Answer with just that operator name.",
+    "setupCypher": "CREATE (a:Person {name:'A'}), (b:Person {name:'B'}) CREATE (a)-[:KNOWS]->(b)",
+    "expectedAnswer": "Expand"
+  }
+]

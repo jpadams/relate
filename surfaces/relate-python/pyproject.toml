@@ -1,0 +1,45 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "relate-db"
+version = "0.16.1"
+description = "A lightweight, embeddable graph database with Cypher queries"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Database",
+]
+
+# Import remains `import relate`. The PyPI name `relate` is taken.
+# `execute_arrow()` returns Arrow IPC bytes; pyarrow is only needed to decode
+# them, so it is an optional extra rather than a hard dependency:
+#   pip install relate-db[arrow]
+# `cursor.to_df()` builds a DataFrame from the materialized rows; pandas is
+# likewise an optional extra (ADR-0213):
+#   pip install relate-db[pandas]
+[project.optional-dependencies]
+arrow = ["pyarrow>=14"]
+pandas = ["pandas>=2.0"]
+
+[project.urls]
+Repository = "https://github.com/relatedb/relate"
+
+[tool.maturin]
+module-name = "relate._native"
+python-source = "python"
+features = ["pyo3/extension-module"]
+manifest-path = "Cargo.toml"

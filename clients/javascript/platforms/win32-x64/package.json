@@ -1,0 +1,20 @@
+{
+  "name": "@relate/win32-x64",
+  "version": "0.16.1",
+  "description": "Windows x64 (MSVC) native library for @relate/relate",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relatedb/relate",
+    "directory": "clients/javascript/platforms/win32-x64"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "lib"
+  ]
+}

@@ -1,0 +1,18 @@
+# ADR-0342 (security F3): a RUN whose statement field is absent or not a
+# string fails the RUN with Request.Invalid and enters the failed state;
+# RESET recovers. The statement never executes.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "missing RUN statement (RUN statement must be a string)"}
+C: RUN "RETURN 1 AS n" {} {}
+S: IGNORED
+C: RESET
+S: SUCCESS {}
+
+C: RUN null {} {}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "unsupported request value for statement: Null (RUN statement must be a string)"}
+C: RESET
+S: SUCCESS {}

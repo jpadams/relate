@@ -1,0 +1,26 @@
+# cargo-nextest configuration (ADR-0254).
+#
+# The unit-lane CI jobs (test, feature-bundles, relate-bolt) and the
+# TCK corpus gate (LABS-310 round 4: the gate tests are self-contained, so
+# per-process scheduling preserves the 3892/3893 accounting — verified
+# locally 55/55, docs/testing/runtime.md) run under `cargo nextest run`.
+# The other corpus steps (CIP-eval, cookbook, query-latency) and the
+# doctests (cargo test --doc) stay on stock cargo test: single-binary
+# suites with nothing for nextest to schedule, resp. invisible to it.
+
+[profile.default]
+# One retry is flake insurance against shared-runner scheduler noise. A
+# retried-then-passing test is reported as FLAKY in the summary, not
+# silently green, so flakes stay visible.
+retries = 1
+# Mark (do not kill) tests over 60 s; the bolt concurrency suite legitimately
+# waits on real socket timeouts, and a hard kill would turn a slow runner
+# into a red lane.
+slow-timeout = { period = "60s" }
+
+# The bolt concurrency suite asserts on real socket concurrency and deadline
+# behavior: a transparent retry could mask a determinism regression as a
+# green run. First failure fails the run there.
+[[profile.default.overrides]]
+filter = "package(relate-bolt)"
+retries = 0

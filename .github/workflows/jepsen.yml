@@ -1,0 +1,135 @@
+name: Jepsen
+
+# The Jepsen crash-durability lane as a dedicated workflow (LABS-734): the
+# per-PR matrix does not pay for the ~18-minute product-image build and the
+# harness run on every ready PR — the certification runs here, on demand,
+# against any ref. The draft-path cheap half (compose config validation)
+# stays in ci.yml as `jepsen-harness-sanity`.
+#
+# Manual dispatch is the documented feature-branch path (`gh workflow run
+# jepsen.yml --ref <branch>`). The default branch is certified nightly at
+# 04:50 UTC (after background-cadences' 03:30 lanes, before the stellar
+# nightshift window); switching to weekly is a one-line cron change.
+on:
+  schedule:
+    - cron: "50 4 * * *"
+  workflow_dispatch:
+    inputs:
+      time_limit:
+        description: Harness time limit in seconds (run.sh TIME_LIMIT)
+        default: "90"
+      ref:
+        description: Branch or tag to certify (blank = this workflow's ref)
+        default: ""
+
+concurrency:
+  group: jepsen-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  jepsen:
+    name: Jepsen (set + kill -9 crash durability)
+    runs-on: ubuntu-latest
+    # Cold image build (~18 min) + first-run Clojure/Maven deps into the
+    # m2 volume + the 90 s run: bounded so a wedged `docker compose run`
+    # cannot hold a runner for the default 6 h.
+    timeout-minutes: 45
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      # Seconds, paid before the ~18-minute image build: a topology YAML
+      # error fails here instead of after the build.
+      - name: Validate the harness topology
+        working-directory: testing/jepsen
+        run: docker compose config --quiet
+
+      # Same rate-limit relief as the docker-smoke lane (LABS-248): the
+      # product image build pulls rust:1.88-alpine, the control image
+      # pulls clojure:temurin-21-bookworm, and the first harness run
+      # downloads the Clojure/Maven deps.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v4
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # The checker contracts are unit-tested inside the control container,
+      # before the ~18-minute product build pays for it: the suite needs
+      # only the control image (compose builds it on first use from
+      # clojure:temurin-21-bookworm) + the Clojure/Maven deps into the m2
+      # volume — no DB node, no FUSE. It pins the semantics a green live
+      # run never exercises (in-window loss PASSES, out-of-window FAILS —
+      # testing/jepsen/README.md), so a nonzero exit fails the lane. The
+      # README documents this exact invocation as the local gate.
+      - name: Checker-contract suite (clojure -M:test)
+        working-directory: testing/jepsen
+        run: docker compose run --rm --no-deps control clojure -M:test
+
+      # The docker-container driver is required for `make docker`'s build,
+      # and --load lands the image in the daemon store for compose.
+      - uses: docker/setup-buildx-action@v4
+        id: buildx
+
+      - name: Build the stock product image
+        env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
+        run: make docker DOCKER_BUILD_FLAGS="--load"
+
+      # run.sh (testing/jepsen) builds the control image, starts the DB
+      # node on the persistent data volume, runs the harness (5 clients,
+      # kill -9 / restart cycle), and tees the log under runs/. Its exit
+      # status is jepsen's: 0 every check passed, 1 a check failed, 2
+      # unknown, 254 bad arguments — every nonzero verdict fails the
+      # lane, with the legend in the annotation so a red run is readable
+      # without opening the log artifact.
+      - name: Run the harness (5 clients, kill -9 nemesis)
+        working-directory: testing/jepsen
+        env:
+          TIME_LIMIT: ${{ github.event.inputs.time_limit || '90' }}
+        run: |
+          set -uo pipefail
+          rc=0
+          ./run.sh || rc=$?
+          if [[ "$rc" -ne 0 ]]; then
+            echo "::error::Jepsen harness exit $rc (0 = all checks passed, 1 = a check failed, 2 = unknown, 254 = bad arguments); the run log and jepsen store are attached as the jepsen-run artifact"
+            exit "$rc"
+          fi
+
+      # Forensics on failure only: the full run log (analysis + verdict)
+      # and the jepsen store dir (history, serialized test,
+      # db_container.log — the DB node's serve stderr, the only forensic
+      # output a scratch image has). A green run uploads nothing.
+      - name: Upload run log and jepsen store (failure forensics)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jepsen-run
+          path: |
+            testing/jepsen/runs/
+            testing/jepsen/store/
+          if-no-files-found: warn
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh

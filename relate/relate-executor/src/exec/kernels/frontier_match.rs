@@ -1,0 +1,822 @@
+//! The frontier family's plan-time matcher arm (ADR-0478 §2): the proofs
+//! that decide whether one `MATCH` clause's quantified pattern is
+//! frontier-eligible, and the compiled artifact the BFS runner and its
+//! wiring (this feature's `frontier-core` / `rider-integration` nodes)
+//! consume. Every gate is a proof, never a heuristic — linear in pattern
+//! size plus the NFA compile (itself linear in the unrolled state
+//! count), nothing reads the graph beyond the interner the NFA interns
+//! through and the planner's estimate machinery the cost gate reads —
+//! and every decline keeps the unchanged per-row DFS: answers identical,
+//! so the decline is always safe.
+//!
+//! Three gate halves:
+//!
+//! - **Structural** ([`compile_frontier`]'s pattern proofs plus the NFA
+//!   compiler, [`super::nfa`]): one pattern with exactly one top-level
+//!   `Quantified` element — the element every var-length spelling lowers
+//!   to since ADR-0471, so every spelling reaches this arm — whose inner
+//!   elements are plain rel hops over static type lists, nested bounded
+//!   quantifiers per the compiler's soundness rule. **The compiler's own
+//!   declines are this arm's declines** ([`FrontierDecline::NfaShape`]):
+//!   a second top-level quantified element, a subpath variable, a pattern
+//!   WHERE or a selector, rel-predicate inner hops, admission-bearing
+//!   interior nodes, the 64-state ceiling, a nested unbounded quantifier,
+//!   broken alternation, an uninterned type name, overflowing bounds. The
+//!   boundary nodes' own admission rides the kernel layer's closed
+//!   predicate vocabulary ([`NodeTarget`] — the chain/hub-star matcher's
+//!   own fold, [`super::matcher::compile_node`]).
+//! - **Answer-shape** ([`Consumer`] and [`decode_consumer`]): the
+//!   semantic half, as much a proof as the structural one — the frontier
+//!   serves exactly the consumers whose answers are functions of the
+//!   (node, state) *pair*, not of the *path*. ADR-0478 Decision 2's
+//!   fourth shape — bounded WALK mode — is carried as the pool fact
+//!   ([`FrontierContract::pool`]), not a consumer variant: WALK
+//!   changes which witnesses are exact (the frontier's native semantics
+//!   for in-bounds arrivals, the re-arrival rule's walk-length check for
+//!   below-min candidates, ADR-0478 §3), never which consumers are
+//!   pair-functions, and full enumeration declines under every mode.
+//! - **Cost** ([`frontier_engages`], this layer's `engages()` cost gate
+//!   extended to the frontier family over the planner's own estimate
+//!   machinery): engage when the quantifier is unbounded (the DFS cannot
+//!   halt below its rel-count cap, so a cyclic type system makes the
+//!   enumeration exponential while the answer stays pair-shaped), or when
+//!   the estimated paths reach [`PATHS_PER_ENDPOINT_FACTOR`] times the
+//!   estimated distinct endpoints; under the factor the DFS is already
+//!   output-bound and keeps the clause (the bounded acyclic-schema
+//!   recursions: paths ≈ endpoints, measured 0.2–0.7 ms). The diagnostic
+//!   switch's forced rung (ADR-0519, `RELATE_PATTERN_ENGINE=nfa`)
+//!   bypasses this gate alone — every other proof stands.
+
+use std::collections::{BTreeMap, HashSet};
+
+use relate_core::Value;
+use relate_ir::{
+    classify_aggregate, AggregateKind, Clause, Expr, MatchMode, NodePattern, PathMode, PathPattern,
+    PatternElement, QuantifiedPathPattern, RelPattern,
+};
+use relate_names::SmallName;
+use relate_planner::PatternStats;
+use relate_planner::{
+    apply_degree, apply_path_degree, endpoint_estimate, seed_on_rel_start, seed_rows,
+};
+
+use crate::eval::expr_vars;
+use crate::graph::Graph;
+use crate::overlay::ExecGraph;
+use crate::pattern_engine::PatternEngine;
+use crate::pattern_walk::label_index_seekable;
+use crate::row::Row;
+
+use super::super::match_cap::return_with_suffix;
+use super::super::pattern_policies::{gpm_group_vocabulary, inlined_all_reduces};
+use super::matcher::compile_node;
+use super::nfa::{self, FrontierNfa, Pool};
+use super::program::{decode_conjunct, NodeTarget, Prog};
+
+/// The answer shapes the frontier serves (ADR-0478 Decision 2): the
+/// consumers whose answers are functions of the (node, state) pair, not
+/// of the path. Constructed by the wiring site — the EXISTS probe arm
+/// builds [`Consumer::Exists`] directly; everything row-shaped goes
+/// through [`decode_consumer`], the statement-suffix decoder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Consumer {
+    /// An EXISTS probe (or boolean-count fold) arm: a verdict, nothing
+    /// consumed — a pair reaching an accepting state is a witness.
+    Exists,
+    /// A distinct-endpoint answer: `count(DISTINCT y)`, `RETURN DISTINCT
+    /// y`, `collect(DISTINCT y)`, `min`/`max` over the endpoint — one row
+    /// per accepting arrival over the boundary variables, running to
+    /// fixpoint or `max` (a riding `LIMIT` only truncates the endpoint
+    /// rows afterwards, a contract-free prefix either way).
+    DistinctEndpoints,
+    /// A walk count (`count(*)`/`count(<boundary var>)`, no DISTINCT)
+    /// under the bounded WALK pool with an unfiltered target — the
+    /// counting arm (`frontier_count`): the walk multiset contracts to
+    /// per-level (node, state) multiplicities and the last leg to a
+    /// degree sum, so no walk is enumerated. Constructed by that fold's
+    /// own wiring, never by [`decode_consumer`] (a row-shaped rung has
+    /// no row to emit for it).
+    WalkCount,
+    /// Un-ordered capped emission (`LIMIT` without `ORDER BY`, the cap
+    /// rider's `Plain` shape): at most `want` witnesses reconstructed
+    /// output-sensitively after the BFS, the path variable and group
+    /// lists consumed through them. BFS-discovery order replaces DFS
+    /// order (ADR-0478 Decision 4 — LIMIT without ORDER BY has no order
+    /// contract).
+    Capped { want: usize },
+}
+
+/// Every gate's decline, typed so a test or plan dump names the gate that
+/// kept the DFS. The decline is always safe: the per-row DFS answers
+/// identically. Every gate decides before a single walk — the rung's
+/// run-time declines are their own type (`crate::ctx::FrontierRunDecline`:
+/// the re-arrival budget and the table ceiling), the one the PROFILE
+/// record carries; this vocabulary stays the matcher's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FrontierDecline {
+    /// The clause does not carry exactly one pattern: the frontier is a
+    /// single-pattern, single-quantifier family (a UNION's arms are
+    /// separate clauses, each decided on its own — the non-quantified arm
+    /// needs no kernel at all).
+    MultiplePatterns,
+    /// The entering row binds anything but the pattern's seed-side
+    /// variable: a prebound group-list pin (the legacy exact-trail rule),
+    /// a prebound target or path variable, or a mid-statement clause's
+    /// outer bindings — per-row semantics the single-seed frontier does
+    /// not reproduce.
+    CarryingRow,
+    /// The mode is outside the family: an explicit TRAIL/ACYCLIC/SIMPLE
+    /// path mode outside the capped consumer (the capped emission's
+    /// per-witness cycle checks serve exactly that consumer —
+    /// `frontier_emit`; full enumeration and distinct-endpoint answers
+    /// stay per-path under these modes), any trail-enforcing mode under
+    /// the REPEATABLE pool (rel reuse is that pool's semantics), or an
+    /// unbounded quantifier under the WALK
+    /// pool — REPEATABLE ELEMENTS keeps its authored
+    /// `UnsafeRepeatableElements` rejection (ADR-0478 §5), and the
+    /// bounded-WALK answer shape is bounded by definition.
+    Mode,
+    /// A nested quantifier inside the quantified spine — a var-length
+    /// rel or a quantified group among its inner elements. The spine
+    /// then unrolls (variable round length) or accumulates
+    /// list-of-list groups, and the emission's fixed-round
+    /// reconstruction (`frontier_emit`) cannot bind those rows; the DFS
+    /// keeps the shape, answers identical. Parser-unreachable (the
+    /// front end's `NestedQuantification` rule rejects both spellings):
+    /// the gate is the defensive bound for hand-built IR.
+    NestedSpine,
+    /// A MATCH-WHERE allReduce the inliner runs over one of this
+    /// quantification's groups — ADR-0478 §2's hard decline: the
+    /// inliner's per-branch prefix semantics cannot survive pair dedup
+    /// (one (node, state) pair stands for many prefixes with different
+    /// accumulator values), so that shape keeps the DFS with its
+    /// inliner.
+    AllReduceGroup,
+    /// A repeated element variable pins a binding the pair-dedup cannot
+    /// reconcile: the target (or an interior node) repeating another
+    /// node's variable, a rel variable repeated across hops or colliding
+    /// with a node name — the walker's pre-bound reconciliation
+    /// semantics.
+    PinnedBinding,
+    /// A MATCH-WHERE conjunct outside the closed predicate vocabulary on
+    /// the boundary nodes: it does not decode (a function over the row,
+    /// `OR`, a nondeterministic bound), it names a group list, the path
+    /// variable, a rel, an interior or an outer variable, or it is a
+    /// second predicate on one boundary variable.
+    Conjunct,
+    /// The NFA compiler declined the shape — its declines are this arm's
+    /// declines: a second top-level quantified element, a subpath
+    /// variable, a pattern WHERE or a selector, rel-predicate inner
+    /// hops, admission-bearing interior nodes (the auto rung; the
+    /// forced rung compiles them as guards), the 64-state ceiling, a
+    /// nested unbounded quantifier, broken alternation, an uninterned
+    /// type name, overflowing bounds.
+    NfaShape,
+    /// A quantified group whose `WHERE` references its own pattern
+    /// variables (the fraud f03 shape) — the forced rung compiles it
+    /// (the predicate rides the round-closing transition, each
+    /// referenced variable read at its last binding), but no consumer
+    /// proof covers serving a predicate-guarded run: the pair-dedup
+    /// answers these shapes approximately, so every consumer declines
+    /// and the DFS answers exactly.
+    GuardedGroup,
+    /// The consumer needs every row, not a pair-shaped answer: no cap and
+    /// no distinct/aggregate fold — full enumeration (two trails to one
+    /// node are two answers), a grouped or filtered suffix, a suffix that
+    /// is not a RETURN/WITH, or a `LIMIT 0`/overflowing cap the cap rider
+    /// itself declines.
+    FullEnumeration,
+    /// `ORDER BY` with `LIMIT`: ordered truncation needs the full
+    /// candidate set to sort (ADR-0478 §2 — ordered caps keep the DFS,
+    /// exactly as they keep full enumeration in ADR-0475).
+    OrderedCap,
+    /// The answer counts or folds the path multiset, not the endpoint
+    /// set: `count(p)`, `count(*)`, a non-DISTINCT `count`/`collect`, or
+    /// a multiplicity-sensitive fold (`sum`, `avg`, …) — path counts are
+    /// exponential by nature; the DFS keeps them on this rung (the one
+    /// path count the family serves, the WALK pool's plain `count`, is
+    /// the walk-count fold's — `frontier_count`, ADR-0523).
+    PathCount,
+    /// A non-capped consumer consumes the path variable or a group list —
+    /// only the ≤ `want` reconstructed witnesses of the capped shape
+    /// carry those bindings, so a distinct/aggregate answer over them
+    /// would read bindings the frontier never produced.
+    PathConsumer,
+    /// The cost gate: a bounded recursion whose estimated paths stay under
+    /// [`PATHS_PER_ENDPOINT_FACTOR`] times its estimated distinct
+    /// endpoints — the DFS is already output-bound (no reconstruction
+    /// pass, the existing row plumbing) and keeps the clause.
+    Cost,
+}
+
+/// The plan-time artifact the matcher returns: everything the BFS runner
+/// (`frontier-core`) and the wiring (`rider-integration`) run on. Built
+/// once per clause and shared by every seed of the run — the capped
+/// consumer's per-seed remaining want rides the emission's own
+/// parameter, never a contract copy.
+pub(crate) struct FrontierContract<'a> {
+    /// The pattern the NFA compiled from — the row-binding vocabulary
+    /// (boundary variables, group lists, subpath and path variables) the
+    /// witness reconstruction reads.
+    pub(crate) pattern: &'a PathPattern,
+    /// The compiled NFA (ADR-0478 Decision 1): states, transitions, hop
+    /// bounds — the BFS runner's input.
+    pub(crate) nfa: FrontierNfa,
+    /// The seed-side boundary admission (labels plus at most one
+    /// predicate program) — the scan segment's target, the single-seed
+    /// frontier's start.
+    pub(crate) start: NodeTarget<'a>,
+    /// The target-side boundary admission — the arrival check.
+    pub(crate) target: NodeTarget<'a>,
+    /// The answer shape the runner serves (the answer-shape gate's
+    /// survivor).
+    pub(crate) consumer: Consumer,
+    /// The pool a run of this contract answers in (ADR-0478 §3), set
+    /// once here from the match mode and the written path mode — the
+    /// typed fact every driver reads, never re-derived: `Walk` for the
+    /// bounded WALK spelling (the frontier's native semantics for
+    /// in-bounds arrivals, the re-arrival rule's walk-length check for
+    /// its below-min candidates), `Default` for everything else (the
+    /// default pool's trail exactness is the rule's jurisdiction).
+    pub(crate) pool: Pool,
+}
+
+/// The frontier family's matcher arm: the plan-time proofs that decide
+/// whether one `MATCH` clause's quantified pattern is frontier-eligible,
+/// returning the compiled artifact. `Err` names the gate that declined —
+/// the caller keeps the unchanged per-row DFS, answers identical.
+///
+/// Call with the same entering row and flattened MATCH-WHERE conjuncts
+/// the GPM expansion site sees: the allReduce gate reads the inliner's
+/// own extraction against that row, so its answer is exact there.
+pub(crate) fn compile_frontier<'a>(
+    graph: &Graph,
+    patterns: &'a [PathPattern],
+    match_mode: MatchMode,
+    row: &Row,
+    conjuncts: &[Expr],
+    consumer: Consumer,
+    stats: &dyn PatternStats,
+) -> Result<FrontierContract<'a>, FrontierDecline> {
+    // One pattern: the frontier is a single-pattern, single-quantifier
+    // family (each UNION arm is its own clause).
+    let [pattern] = patterns else {
+        return Err(FrontierDecline::MultiplePatterns);
+    };
+    let (start_node, target_node) = boundary(pattern).ok_or(FrontierDecline::NfaShape)?;
+    // The entering row may bind exactly the seed-side variable — the
+    // single-seed frontier's premise. Anything else is a prebound pin
+    // (the legacy exact-trail rule binds a group name to a list) or a
+    // mid-statement clause's outer binding.
+    let seed_var = start_node.variable.as_ref();
+    if row
+        .keys()
+        .any(|name| seed_var.is_none_or(|var| var != name.as_str()))
+    {
+        return Err(FrontierDecline::CarryingRow);
+    }
+    // The mode proofs. The default pool's per-witness mode checks are
+    // the emission's (`frontier_emit`): an explicit TRAIL rides the
+    // default pool exactly like the unwritten mode, and the CAPPED
+    // consumer carries the per-witness ACYCLIC/SIMPLE cycle checks —
+    // every other consumer of an explicit mode stays per-path (full
+    // enumeration: two trails to one node are two answers;
+    // distinct-endpoint: an acyclic endpoint set is not a pair
+    // function), and the REPEATABLE pool has no version of a
+    // trail-enforcing mode at all.
+    if match_mode == MatchMode::RepeatableElements
+        && matches!(
+            pattern.mode,
+            Some(PathMode::Trail | PathMode::Acyclic | PathMode::Simple)
+        )
+    {
+        return Err(FrontierDecline::Mode);
+    }
+    if matches!(
+        pattern.mode,
+        Some(PathMode::Trail | PathMode::Acyclic | PathMode::Simple)
+    ) && !matches!(consumer, Consumer::Capped { .. })
+    {
+        return Err(FrontierDecline::Mode);
+    }
+    // The pool a run answers in (ADR-0478 §3): the bounded WALK
+    // spelling — the REPEATABLE pool with no trail-enforcing path mode,
+    // the one spelling whose rel reuse is legal. Its in-bounds arrivals
+    // are the frontier's native pair answers, and its below-min
+    // candidates are answered by the re-arrival rule's walk-length
+    // check — the candidate rule the walk pool shares with the default
+    // pool's own candidate rule. Everything else answers in the default
+    // pool.
+    let pool = if match_mode == MatchMode::RepeatableElements
+        && pattern.mode.is_none_or(|mode| mode == PathMode::Walk)
+    {
+        Pool::Walk
+    } else {
+        Pool::Default
+    };
+    if pool == Pool::Walk
+        && pattern
+            .elements
+            .iter()
+            .any(|element| matches!(element, PatternElement::Quantified(q) if q.max.is_none()))
+    {
+        // Unbounded REPEATABLE ELEMENTS keeps its authored rejection
+        // (ADR-0478 §5) — declining keeps the DFS path that raises it.
+        return Err(FrontierDecline::Mode);
+    }
+    // The allReduce conflict (ADR-0478 §2, hard decline): the inliner's
+    // own extraction, against this row — a spec it returns is a group of
+    // this quantification (its qualification rules require exactly that).
+    if !inlined_all_reduces(pattern, row, conjuncts).is_empty() {
+        return Err(FrontierDecline::AllReduceGroup);
+    }
+    if !names_unique(pattern) {
+        return Err(FrontierDecline::PinnedBinding);
+    }
+    // The spine gate (the emission's premise, `frontier_emit`): the one
+    // quantified element's inner chain must be plain one-hop rels. A
+    // var-length inner rel or a nested quantified group unrolls the
+    // spine (variable round length) or accumulates list-of-list groups,
+    // and the fixed-round reconstruction cannot bind those rows — the
+    // DFS keeps the shape, answers identical.
+    if pattern
+        .elements
+        .iter()
+        .any(|element| matches!(element, PatternElement::Quantified(qpp) if spine_unrolls(qpp)))
+    {
+        return Err(FrontierDecline::NestedSpine);
+    }
+    // The boundary conjuncts: every flattened WHERE conjunct decodes into
+    // the closed predicate vocabulary onto one boundary variable, at most
+    // one per variable (the property-map fold's own bound).
+    // Text render: the compiled boundary programs are keyed by the
+    // variable's String spelling (sorted iteration stays text order).
+    let mut progs: BTreeMap<String, Prog> = BTreeMap::new();
+    for conjunct in conjuncts {
+        let Some((var, prog)) = decode_conjunct(conjunct) else {
+            return Err(FrontierDecline::Conjunct);
+        };
+        let Some(name) = boundary_vars(start_node, target_node)
+            .into_iter()
+            .flatten()
+            .find(|name| *name == var.as_str())
+        else {
+            return Err(FrontierDecline::Conjunct);
+        };
+        if progs.insert(name.to_string(), prog).is_some() {
+            // Two predicates on one boundary variable: the closed
+            // vocabulary's one-program bound.
+            return Err(FrontierDecline::Conjunct);
+        }
+    }
+    let start = boundary_target(start_node, &progs).ok_or(FrontierDecline::Conjunct)?;
+    let target = boundary_target(target_node, &progs).ok_or(FrontierDecline::Conjunct)?;
+    // The diagnostic switch (ADR-0519), resolved once here for the two
+    // facts it decides: the NFA compiler's rung (the forced rung compiles
+    // the gap classes) and the cost gate below.
+    let engine = graph.pattern_engine();
+    // The structural proof engine: the NFA compiler's declines are this
+    // arm's declines.
+    let nfa = nfa::compile(graph, pattern, engine).ok_or(FrontierDecline::NfaShape)?;
+    // A predicate-guarded NFA (the forced rung's class F — a quantified
+    // group whose WHERE references its own pattern variables) compiles,
+    // and the runner evaluates its guards, but no consumer proof covers
+    // serving it: the pair-dedup answers these shapes approximately (the
+    // predicate reads each referenced variable's last binding on the
+    // first-arrival chain), so every consumer declines and the DFS
+    // answers exactly. Per-state guards (class K) carry no such fact —
+    // a node either satisfies the position's pattern or not — and serve.
+    if nfa.predicates.iter().any(Option::is_some) {
+        return Err(FrontierDecline::GuardedGroup);
+    }
+    // The cost gate, forced off by the diagnostic switch (ADR-0519):
+    // `RELATE_PATTERN_ENGINE=nfa` takes every frontier-compilable
+    // clause — every proof above (and the allocation ceiling and the
+    // run-time budget below) still stands, and a decline still fails
+    // through.
+    // The walk count needs no cost gate: its level multiplicities touch
+    // each (node, state) pair once per level the DFS would reach it at
+    // least once on, it allocates no span tables, and the DFS it
+    // replaces enumerates every walk.
+    if engine != PatternEngine::Nfa
+        && consumer != Consumer::WalkCount
+        && !frontier_engages(
+            stats,
+            u128::try_from(graph.next_node_id())
+                .expect("node ids are allocator-issued upward from zero"),
+            conjuncts,
+            start_node,
+            target_node,
+            &pattern.elements,
+            nfa.max_hops,
+        )
+    {
+        return Err(FrontierDecline::Cost);
+    }
+    Ok(FrontierContract {
+        pattern,
+        nfa,
+        start,
+        target,
+        consumer,
+        pool,
+    })
+}
+
+/// The consumer of a `MATCH`'s rows as the statement's suffix proves it —
+/// the answer-shape gate's plan-time half over the first suffix clause
+/// (the same parse the cap riders read, `match_cap::return_with_suffix`).
+/// Conservative everywhere the shape is only approximately knowable: a
+/// suffix outside the frontier-sound vocabulary declines, and the DFS
+/// answers identically.
+pub(crate) fn decode_consumer(
+    suffix: &[Clause],
+    pattern: &PathPattern,
+    graph: &ExecGraph<'_>,
+    params: &BTreeMap<String, Value>,
+    cypher_version: Option<u32>,
+) -> Result<Consumer, FrontierDecline> {
+    let Some(clause) = suffix.first() else {
+        // No suffix at all cannot happen for a planned statement; this is
+        // the defensive arm of "not a RETURN/WITH" below.
+        return Err(FrontierDecline::FullEnumeration);
+    };
+    let Some(s) = return_with_suffix(clause) else {
+        // A suffix that starts with anything but a RETURN/WITH feeds the
+        // rows onward — every row is the answer.
+        return Err(FrontierDecline::FullEnumeration);
+    };
+    // Grouped output is not one row per match (CIP-236 — every per-match
+    // cap declines it, and so does the pair-shaped answer); a filtered
+    // WITH re-filters rows the enumeration would have to produce whole.
+    if s.group_by.is_some() || s.where_clause.is_some() {
+        return Err(FrontierDecline::FullEnumeration);
+    }
+    let (start, target) = boundary(pattern).ok_or(FrontierDecline::NfaShape)?;
+    let boundary: HashSet<String> = boundary_vars(start, target)
+        .into_iter()
+        .flatten()
+        .map(|name| name.to_string())
+        .collect();
+    // Every name the clause consumes: the projection items and the order
+    // keys (an `ORDER BY` over a path shape consumes it as surely as a
+    // projected item does).
+    let mut referenced: HashSet<String> = HashSet::new();
+    for item in s.items {
+        expr_vars(&item.expr, &mut referenced);
+    }
+    for order in s.order {
+        expr_vars(&order.expr, &mut referenced);
+    }
+    let names_boundary_only = |referenced: &HashSet<String>| {
+        referenced
+            .iter()
+            .all(|name| boundary.contains(name.as_str()))
+    };
+
+    // The aggregate calls: an endpoint fold is sound exactly when the
+    // aggregate is idempotent over duplicates (min/max) or collapses them
+    // itself (`count`/`collect` with DISTINCT); everything else folds the
+    // path multiset.
+    let mut calls: Vec<(AggregateKind, bool)> = Vec::new();
+    let mut count_star = false;
+    for item in s.items {
+        count_star |= aggregate_calls(&item.expr, &mut calls);
+    }
+    if count_star {
+        // `count(*)` counts rows — paths, not endpoints.
+        return Err(FrontierDecline::PathCount);
+    }
+    if !calls.is_empty() {
+        let endpoint_fold = |(kind, distinct): &(AggregateKind, bool)| {
+            matches!(kind, AggregateKind::Min | AggregateKind::Max)
+                || (matches!(kind, AggregateKind::Count | AggregateKind::Collect) && *distinct)
+        };
+        if !calls.iter().all(endpoint_fold) {
+            return Err(FrontierDecline::PathCount);
+        }
+        if !names_boundary_only(&referenced) {
+            // An endpoint fold over the path variable or a group list
+            // (`min(length(p))`) reads bindings only witnesses carry.
+            return Err(FrontierDecline::PathConsumer);
+        }
+        return Ok(Consumer::DistinctEndpoints);
+    }
+    if s.distinct {
+        if !names_boundary_only(&referenced) {
+            return Err(FrontierDecline::PathConsumer);
+        }
+        return Ok(Consumer::DistinctEndpoints);
+    }
+    // The capped shape: `LIMIT` without `ORDER BY`, the cap rider's own
+    // `Plain` want (`SKIP + LIMIT`). Any projection rides — the ≤ want
+    // reconstructed witnesses bind everything the DFS's rows bind.
+    let want = match s.skip_limit_want(graph, params, cypher_version) {
+        Ok(want) => want,
+        // A LIMIT that errors here declines; the DFS path's own cap
+        // construction (`match_limit_cap`) raises the identical error.
+        Err(_) => return Err(FrontierDecline::FullEnumeration),
+    };
+    let Some(want) = want else {
+        // No LIMIT (or an overflowing SKIP+LIMIT): every row is consumed.
+        return Err(FrontierDecline::FullEnumeration);
+    };
+    if !s.order.is_empty() {
+        return Err(FrontierDecline::OrderedCap);
+    }
+    if want == 0 {
+        // `LIMIT 0`: the cap rider declines it too (nothing to halt on) —
+        // keep the DFS path's own behavior.
+        return Err(FrontierDecline::FullEnumeration);
+    }
+    Ok(Consumer::Capped { want })
+}
+
+/// Whether the quantified spine's inner chain is anything but plain
+/// one-hop rels — a var-length rel or a nested quantified group: the
+/// shape the emission's fixed-round reconstruction (`frontier_emit`)
+/// cannot bind rows for, the `NestedSpine` decline's predicate.
+fn spine_unrolls(qpp: &QuantifiedPathPattern) -> bool {
+    qpp.elements.iter().any(|element| match element {
+        PatternElement::Relationship(rel) => rel.var_length,
+        PatternElement::Quantified(_) => true,
+        PatternElement::Node(_) => false,
+    })
+}
+
+/// The pattern's boundary node patterns: the first and last elements —
+/// the seed side and the target side of the walk. `None` when the
+/// elements do not start and end with a node (the alternation the NFA
+/// compile itself requires and declines). `pub(crate)`: the emission's
+/// test suite builds its boundary node targets through it.
+pub(crate) fn boundary(pattern: &PathPattern) -> Option<(&NodePattern, &NodePattern)> {
+    match (pattern.elements.first(), pattern.elements.last()) {
+        (Some(PatternElement::Node(start)), Some(PatternElement::Node(target))) => {
+            Some((start, target))
+        }
+        _ => None,
+    }
+}
+
+/// The boundary pair's variable names, seed side first — the one
+/// spelling of the boundary-variable fact every re-derivation site
+/// consults: the conjunct decode's name lookup (here, in
+/// [`compile_frontier`]), the consumer decode's boundary-only set
+/// ([`decode_consumer`]), and the exists arm's counted-expression gate
+/// (`frontier_run::try_frontier_exists`).
+pub(crate) fn boundary_vars<'a>(
+    start: &'a NodePattern,
+    target: &'a NodePattern,
+) -> [Option<&'a SmallName>; 2] {
+    [start.variable.as_ref(), target.variable.as_ref()]
+}
+
+/// One boundary node's compiled admission: the canonical fold of the
+/// pattern's property map and its decoded conjunct (the chain/hub-star
+/// matcher's own `compile_node`), over the boundary facts that fold
+/// covers. An inline element predicate (`WHERE` on the node itself) and
+/// a dynamic label expression decline here — `compile_node` reads
+/// neither, so riding one would silently drop the check (the NFA
+/// compiler's own rule for interior nodes, `plain_node`; the walker
+/// keeps the shape, answers identical).
+fn boundary_target<'a>(
+    node: &'a NodePattern,
+    progs: &BTreeMap<String, Prog>,
+) -> Option<NodeTarget<'a>> {
+    if node.where_clause.is_some() || !label_index_seekable(node) {
+        return None;
+    }
+    compile_node(
+        node,
+        node.variable
+            .as_ref()
+            .and_then(|var| progs.get(&var.to_string()).cloned()),
+    )
+}
+
+/// The top-level element names are unique: every node element's variable
+/// (the boundary pair and the interior context nodes) and every plain
+/// rel's variable occurs exactly once, the quantified groups' inner
+/// names bind each name once (an inner node variable colliding with an
+/// inner rel variable is a pin, not a merge), and the groups' accumulated
+/// names (group lists, subpath variables — the canonical
+/// `gpm_group_vocabulary` spelling) collide with none of them — the tail
+/// check owns that last fact, so no mid-scan copy of it exists. A
+/// repeat is the walker's pre-bound reconciliation, which the
+/// pair-dedup cannot reproduce.
+fn names_unique(pattern: &PathPattern) -> bool {
+    // The plain-element half: one per-scope scan over the top-level
+    // elements — the same skeleton every quantified group's inner scan
+    // below runs.
+    let Some((nodes, rels)) = named_element_scan(&pattern.elements) else {
+        return false;
+    };
+    let mut groups: HashSet<String> = HashSet::new();
+    for element in &pattern.elements {
+        let PatternElement::Quantified(qpp) = element else {
+            continue;
+        };
+        // One group's inner vocabulary binds each name once per kind —
+        // the same per-scope scan the top level runs. The scan is
+        // kind-aware because the accumulated vocabulary
+        // (`gpm_group_vocabulary`, below) merges both kinds into one
+        // name set and would hide the collision.
+        if named_element_scan(&qpp.elements).is_none() {
+            return false;
+        }
+        // The group's whole vocabulary — inner element names plus the
+        // subpath variable — from the one spelling every consumer reads.
+        let mut vocabulary = Vec::new();
+        gpm_group_vocabulary(qpp, &mut vocabulary);
+        groups.extend(vocabulary);
+    }
+    // The collected group vocabulary is String-keyed; each entry is
+    // classified into the name domain once, here, to probe the pattern's
+    // own element-name sets.
+    groups.iter().all(|name| {
+        let probe = SmallName::from_name(name.as_str());
+        !nodes.contains(&probe) && !rels.contains(&probe)
+    })
+}
+
+/// One scope's plain-element name scan: the node elements' variables and
+/// the plain rels' variables, each an insert-or-reject against the
+/// sibling kind, `None` the collision verdict — the one skeleton the
+/// top-level element scan and every quantified group's inner scan run
+/// (`names_unique`). A quantified element is passed by: its names are
+/// the caller's to accumulate (the top level's `groups` set; a nested
+/// group contributes only its subpath variable, through the enclosing
+/// group's `gpm_group_vocabulary` — its inner names are never checked
+/// here, and a nested quantified shape is declined before the frontier
+/// by the spine gate).
+fn named_element_scan<'s>(
+    elements: &'s [PatternElement],
+) -> Option<(HashSet<&'s SmallName>, HashSet<&'s SmallName>)> {
+    let mut nodes: HashSet<&'s SmallName> = HashSet::new();
+    let mut rels: HashSet<&'s SmallName> = HashSet::new();
+    for element in elements {
+        match element {
+            PatternElement::Node(node) => {
+                if let Some(var) = node.variable.as_ref() {
+                    if !insert_or_reject(&mut nodes, &rels, var) {
+                        return None;
+                    }
+                }
+            }
+            PatternElement::Relationship(rel) => {
+                if let Some(var) = rel.variable.as_ref() {
+                    if !insert_or_reject(&mut rels, &nodes, var) {
+                        return None;
+                    }
+                }
+            }
+            PatternElement::Quantified(_) => {}
+        }
+    }
+    Some((nodes, rels))
+}
+
+/// One scope's insert-or-reject: `var` binds in `own`'s kind — a repeat
+/// is the pre-bound pin — and must not already bind in the sibling kind.
+/// Both of `named_element_scan`'s kinds consult the one spelling,
+/// symmetrically.
+fn insert_or_reject<'s>(
+    own: &mut HashSet<&'s SmallName>,
+    sibling: &HashSet<&'s SmallName>,
+    var: &'s SmallName,
+) -> bool {
+    own.insert(var) && !sibling.contains(var)
+}
+
+/// The aggregate calls inside `expr`, each as its typed kind plus the
+/// call's DISTINCT flag; the return value is whether a `count(*)` rides.
+fn aggregate_calls(expr: &Expr, calls: &mut Vec<(AggregateKind, bool)>) -> bool {
+    let mut count_star = false;
+    expr.visit(&mut |expr| match expr {
+        Expr::CountStar => count_star = true,
+        Expr::Function { name, distinct, .. } => {
+            if let Some(kind) = name.with_str(classify_aggregate) {
+                calls.push((kind, *distinct));
+            }
+        }
+        _ => {}
+    });
+    count_star
+}
+
+/// The cost gate's dedup factor (ADR-0478 Decision 1's first cut): the
+/// frontier engages when the DFS's estimated paths reach this multiple of
+/// the estimated distinct endpoints — under it the DFS is already
+/// output-bound.
+const PATHS_PER_ENDPOINT_FACTOR: u128 = 4;
+
+/// The estimate's hop ceiling: a bounded quantifier whose maximum
+/// expansion passes it has a multiplicity saturated beyond pricing (a
+/// degree tail chained per hop), so the estimate engages rather than
+/// underestimates it.
+const MAX_ESTIMATE_HOPS: usize = 1024;
+
+/// The frontier family's cost gate — the `engages()` cost gate (ADR-0473,
+/// `kernels/mod.rs`) extended to the frontier family over the same
+/// planner estimate machinery (ADR-0218's endpoint ladder and degree
+/// tails):
+///
+/// - **(a)** an unbounded quantifier engages on shape alone: the DFS's
+///   termination is the rel-count cap, so a cyclic type system makes the
+///   enumeration exponential in the diameter while the answer stays
+///   pair-shaped — every one of the 42 PathDB timeout classes is this
+///   case;
+/// - **(b)** otherwise the estimated paths (the degree machinery chained
+///   over the maximum hop expansion from the start's seed rows) against
+///   the estimated distinct endpoints (the target's own endpoint
+///   estimate): at [`PATHS_PER_ENDPOINT_FACTOR`] or beyond the dedup win
+///   pays for the reconstruction pass; under it the DFS keeps the clause
+///   (the bounded acyclic-schema recursions sit at paths ≈ endpoints).
+///
+/// Both sides of (b) are counts, never ranks: the path chain prices its
+/// first hop over the distinct seeds ([`apply_degree`], the degree-sum
+/// clamp holds) and every later hop over the path multiset
+/// ([`apply_path_degree`] — paths revisit nodes, so the clamp would cap
+/// a branching recursion's multiplicity at the rel type's total), and
+/// the distinct endpoints are bounded by `population`, the store's
+/// node-id span — an unlabeled target's estimate is the ladder's rank
+/// sentinel, an ordering fact no path count can reach, while no answer
+/// has more distinct endpoints than the store has nodes.
+fn frontier_engages(
+    stats: &dyn PatternStats,
+    population: u128,
+    conjuncts: &[Expr],
+    start: &NodePattern,
+    target: &NodePattern,
+    elements: &[PatternElement],
+    max_hops: Option<u32>,
+) -> bool {
+    if max_hops.is_none() {
+        return true;
+    }
+    let unbound = |_: &str| false;
+    let seeds = seed_rows(endpoint_estimate(start, &unbound, conjuncts.iter(), stats));
+    let mut paths = seeds;
+    let mut hops: Vec<(&NodePattern, &RelPattern)> = Vec::new();
+    if expand_max_hops(elements, None, &mut hops).is_none() {
+        // The expansion passed the estimate's hop ceiling.
+        return true;
+    }
+    for (hop, (seed, rel)) in hops.into_iter().enumerate() {
+        let degree = if hop == 0 {
+            apply_degree
+        } else {
+            apply_path_degree
+        };
+        paths = degree(paths, seed, rel, seed_on_rel_start(rel, false), stats);
+    }
+    let endpoints =
+        seed_rows(endpoint_estimate(target, &unbound, conjuncts.iter(), stats)).min(population);
+    paths >= PATHS_PER_ENDPOINT_FACTOR.saturating_mul(endpoints)
+}
+
+/// The (seed node, rel) hops of `elements` with every quantifier expanded
+/// to its maximum count — the degree estimator's input for the DFS's path
+/// multiplicity. `None` when the expansion passes
+/// [`MAX_ESTIMATE_HOPS`]: the multiplicity is saturated beyond pricing,
+/// and the caller engages rather than underestimates it.
+fn expand_max_hops<'e>(
+    elements: &'e [PatternElement],
+    seed: Option<&'e NodePattern>,
+    hops: &mut Vec<(&'e NodePattern, &'e RelPattern)>,
+) -> Option<()> {
+    let mut seed = seed;
+    for element in elements {
+        if hops.len() > MAX_ESTIMATE_HOPS {
+            return None;
+        }
+        match element {
+            PatternElement::Node(node) => seed = Some(node),
+            PatternElement::Relationship(rel) => {
+                let from = seed.expect("the NFA compile proved the node/rel alternation");
+                hops.push((from, rel));
+            }
+            PatternElement::Quantified(qpp) => {
+                let max = qpp.max.unwrap_or_else(|| {
+                    unreachable!("an unbounded quantifier engaged on cost rule (a) at the top level, and a nested one declined at the NFA compile")
+                });
+                // The body's first and last nodes sit at the shared round
+                // boundary — the NFA compile's own chain model (the cycle
+                // form closes back to the entry state; an unrolled copy's
+                // exit is the next copy's entry) — so a round's
+                // boundary-adjacent hops and the next round both depart
+                // from the entry's population, never from the synthesized
+                // anonymous boundary nodes. The interior middles keep
+                // their own (anonymous) patterns. The body has at least
+                // three elements with a rel between the boundary nodes
+                // (the NFA compile's chain shape), so the interior slice
+                // is well-formed.
+                let interior = &qpp.elements[1..qpp.elements.len() - 1];
+                for _ in 0..max {
+                    expand_max_hops(interior, seed, hops)?;
+                }
+            }
+        }
+    }
+    Some(())
+}

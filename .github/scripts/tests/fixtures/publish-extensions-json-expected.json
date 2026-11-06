@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-15T12:00:00Z",
+  "packages": [
+    {
+      "name": "greet",
+      "hidden": false,
+      "versions": [
+        {
+          "version": "1.2.3",
+          "protocol": "2025-06-18",
+          "assets": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "tag": "relate-extensions-greet-1.2.3",
+              "asset": "greet-1.2.3-darwin-arm64.tar.gz",
+              "sha256": "3998b89c7bad21041f46b2b28fc8d137749a3d30fb4eb5b0604627c35a67fe53"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "tag": "relate-extensions-greet-1.2.3",
+              "asset": "greet-1.2.3-linux-amd64.tar.gz",
+              "sha256": "3998b89c7bad21041f46b2b28fc8d137749a3d30fb4eb5b0604627c35a67fe53"
+            }
+          ]
+        },
+        {
+          "version": "1.1.0",
+          "protocol": "2025-06-18",
+          "assets": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "tag": "relate-extensions-greet-1.1.0",
+              "asset": "greet-1.1.0-darwin-arm64.tar.gz",
+              "sha256": "4c09f1f05dcc1317dbb1266bf923a0d32ffbbe8e584f87ea658993c6ed85da8c"
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "tag": "relate-extensions-greet-1.1.0",
+              "asset": "greet-1.1.0-linux-amd64.tar.gz",
+              "sha256": "4c09f1f05dcc1317dbb1266bf923a0d32ffbbe8e584f87ea658993c6ed85da8c"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

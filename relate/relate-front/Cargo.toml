@@ -1,0 +1,21 @@
+[package]
+name = "relate-front"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Relate parser front-end lowered to planner IR"
+publish = false
+license.workspace = true
+
+[dependencies]
+relate-error = { workspace = true }
+# ADR-0509 §4: the front's lowering carries SmallName AST→IR by copy (stage
+# 3); one edge on the dependency-free leaf, R1-legal.
+relate-names = { workspace = true }
+relate-model = { workspace = true }
+relate-parser = { workspace = true }
+relate-core = { workspace = true }
+relate-ir = { workspace = true }
+
+[dev-dependencies]
+relate-test-support = { workspace = true }

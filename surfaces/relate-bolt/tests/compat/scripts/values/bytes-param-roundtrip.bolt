@@ -1,0 +1,20 @@
+# ADR-0328 (F-64, D-25): a PackStream Bytes parameter round-trips as
+# Bytes. The grammar has no bytes literal, so the RUN
+# 'RETURN $b AS b' {b: bytes 00 01 FF} {} and its RECORD are raw chunks;
+# an ordinary exchange comes first so the automatic handshake and HELLO
+# still run.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["n"]}
+   RECORD [1]
+   SUCCESS {}
+
+C: <RAW> 00 1A B3 10 8E 52 45 54 55 52 4E 20 24 62 20 41 53 20 62 A1 81 62 CC 03 00 01 FF A0 00 00
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["b"], "columnTypes": ["BINARY"]}
+   <RAW> 00 08 B1 71 91 CC 03 00 01 FF 00 00
+   SUCCESS {}

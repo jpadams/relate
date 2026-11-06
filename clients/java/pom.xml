@@ -1,0 +1,537 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.relate</groupId>
+  <artifactId>relate</artifactId>
+  <version>0.1.0</version>
+  <name>relate</name>
+  <description>Java client for Relate, the embedded openCypher graph engine, over its typed C ABI (ADR-0502).</description>
+  <url>https://github.com/relatedb/relate</url>
+  <licenses>
+    <license>
+      <name>Apache-2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <name>Neo4j Labs</name>
+      <organization>Neo4j</organization>
+      <organizationUrl>https://neo4j.com/labs/</organizationUrl>
+    </developer>
+  </developers>
+  <scm>
+    <url>https://github.com/relatedb/relate</url>
+    <connection>scm:git:https://github.com/relatedb/relate.git</connection>
+    <developerConnection>scm:git:git@github.com:relatedb/relate.git</developerConnection>
+  </scm>
+
+  <!--
+    Packaging (ADR-0490). `mvn package` builds:
+      * relate-<ver>.jar — the all-platform ("fat") jar: classes, the
+        library skill (.agents/skills/relate/SKILL.md) and every staged
+        native under native/<key>/;
+      * relate-<ver>-<classifier>.jar — one per staged platform, the same
+        classes and skill plus that platform's native only.
+    Natives come from one of two sources:
+      * -Drelate.natives.dir=<dir> (release / CI): a directory laid out
+        <key>/<library> for all five keys (darwin-arm64, darwin-x64,
+        linux-arm64, linux-x64, win32-x64); the build fails unless all five
+        are present.
+      * otherwise (local development): the build host's library from
+        ${relate.ffi.dir} (default ../../target/release, so build the
+        relate-ffi crate in release mode first); the build fails when it
+        is missing.
+    The key / library / classifier rows mirror com.relate.NativePlatform;
+    PackagedJarIT fails when they drift.
+  -->
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <relate.ffi.dir>${project.basedir}/../../target/release</relate.ffi.dir>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+      <version>5.14.0</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.17.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.3</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <resources>
+      <!-- Only the version stamp is filtered: natives are binary. -->
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>com/relate/relate.properties</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>com/relate/relate.properties</exclude>
+        </excludes>
+      </resource>
+    </resources>
+
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.4.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.5.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+        <configuration>
+          <!-- Unit tests that load the bundled native extract it under
+               target/, not into the developer's user cache. -->
+          <systemPropertyVariables>
+            <relate.native.cache>${project.build.directory}/native-cache</relate.native.cache>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <!-- The docs/api/java examples compile with the tests; PackagedJarIT
+           runs BundledNative from them against the built jars. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.2</version>
+        <executions>
+          <execution>
+            <id>docs-examples</id>
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${project.basedir}/../../docs/api/java/examples</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.11.0</version>
+        <executions>
+          <execution>
+            <id>runtime-classpath</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>build-classpath</goal>
+            </goals>
+            <configuration>
+              <includeScope>runtime</includeScope>
+              <outputProperty>relate.runtime.classpath</outputProperty>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <systemPropertyVariables>
+            <relate.it.buildDir>${project.build.directory}</relate.it.buildDir>
+            <relate.it.finalName>${project.build.finalName}</relate.it.finalName>
+            <relate.it.testClasses>${project.build.testOutputDirectory}</relate.it.testClasses>
+            <relate.it.runtimeClasspath>${relate.runtime.classpath}</relate.it.runtimeClasspath>
+            <relate.it.nativesMode>${relate.natives.mode}</relate.it.nativesMode>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Release / CI: all five prebuilt natives from one staged directory. -->
+    <profile>
+      <id>staged-natives</id>
+      <activation>
+        <property>
+          <name>relate.natives.dir</name>
+        </property>
+      </activation>
+      <properties>
+        <relate.natives.mode>staged</relate.natives.mode>
+      </properties>
+      <build>
+        <resources>
+          <resource>
+            <directory>${relate.natives.dir}</directory>
+            <targetPath>native</targetPath>
+            <filtering>false</filtering>
+          </resource>
+        </resources>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <version>3.7.0</version>
+            <executions>
+              <execution>
+                <id>all-natives-staged</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <requireFilesExist>
+                      <message>-Drelate.natives.dir must hold all five natives (ADR-0490).</message>
+                      <files>
+                        <file>${relate.natives.dir}/darwin-arm64/librelate_ffi.dylib</file>
+                        <file>${relate.natives.dir}/darwin-x64/librelate_ffi.dylib</file>
+                        <file>${relate.natives.dir}/linux-arm64/librelate_ffi.so</file>
+                        <file>${relate.natives.dir}/linux-x64/librelate_ffi.so</file>
+                        <file>${relate.natives.dir}/win32-x64/relate_ffi.dll</file>
+                      </files>
+                    </requireFilesExist>
+                  </rules>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>classifier-darwin-arm64</id>
+                <goals><goal>jar</goal></goals>
+                <configuration>
+                  <classifier>osx-aarch_64</classifier>
+                  <includes>
+                    <include>com/**</include>
+                    <include>.agents/**</include>
+                    <include>native/darwin-arm64/**</include>
+                  </includes>
+                </configuration>
+              </execution>
+              <execution>
+                <id>classifier-darwin-x64</id>
+                <goals><goal>jar</goal></goals>
+                <configuration>
+                  <classifier>osx-x86_64</classifier>
+                  <includes>
+                    <include>com/**</include>
+                    <include>.agents/**</include>
+                    <include>native/darwin-x64/**</include>
+                  </includes>
+                </configuration>
+              </execution>
+              <execution>
+                <id>classifier-linux-arm64</id>
+                <goals><goal>jar</goal></goals>
+                <configuration>
+                  <classifier>linux-aarch_64</classifier>
+                  <includes>
+                    <include>com/**</include>
+                    <include>.agents/**</include>
+                    <include>native/linux-arm64/**</include>
+                  </includes>
+                </configuration>
+              </execution>
+              <execution>
+                <id>classifier-linux-x64</id>
+                <goals><goal>jar</goal></goals>
+                <configuration>
+                  <classifier>linux-x86_64</classifier>
+                  <includes>
+                    <include>com/**</include>
+                    <include>.agents/**</include>
+                    <include>native/linux-x64/**</include>
+                  </includes>
+                </configuration>
+              </execution>
+              <execution>
+                <id>classifier-win32-x64</id>
+                <goals><goal>jar</goal></goals>
+                <configuration>
+                  <classifier>windows-x86_64</classifier>
+                  <includes>
+                    <include>com/**</include>
+                    <include>.agents/**</include>
+                    <include>native/win32-x64/**</include>
+                  </includes>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Local development: the build host's own library, one classifier jar. -->
+    <profile>
+      <id>host-native</id>
+      <activation>
+        <property>
+          <name>!relate.natives.dir</name>
+        </property>
+      </activation>
+      <properties>
+        <relate.natives.mode>host</relate.natives.mode>
+      </properties>
+      <build>
+        <resources>
+          <resource>
+            <directory>${relate.ffi.dir}</directory>
+            <targetPath>native/${relate.host.key}</targetPath>
+            <filtering>false</filtering>
+            <includes>
+              <include>${relate.host.lib}</include>
+            </includes>
+          </resource>
+        </resources>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <version>3.7.0</version>
+            <executions>
+              <execution>
+                <id>host-native-built</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <requireProperty>
+                      <property>relate.host.key</property>
+                      <message>This build host is not one of the five bundled platforms; pass -Drelate.natives.dir=&lt;staged natives&gt; (ADR-0490).</message>
+                    </requireProperty>
+                    <requireFilesExist>
+                      <message>Build the native library first: cargo build -p relate-ffi --release (or pass -Drelate.ffi.dir=&lt;dir holding it&gt;).</message>
+                      <files>
+                        <file>${relate.ffi.dir}/${relate.host.lib}</file>
+                      </files>
+                    </requireFilesExist>
+                  </rules>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-jar-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>classifier-host</id>
+                <goals><goal>jar</goal></goals>
+                <configuration>
+                  <classifier>${relate.host.classifier}</classifier>
+                  <includes>
+                    <include>com/**</include>
+                    <include>.agents/**</include>
+                    <include>native/${relate.host.key}/**</include>
+                  </includes>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>host-darwin-arm64</id>
+      <activation>
+        <os><family>mac</family><arch>aarch64</arch></os>
+        <property><name>!relate.natives.dir</name></property>
+      </activation>
+      <properties>
+        <relate.host.key>darwin-arm64</relate.host.key>
+        <relate.host.lib>librelate_ffi.dylib</relate.host.lib>
+        <relate.host.classifier>osx-aarch_64</relate.host.classifier>
+      </properties>
+    </profile>
+    <profile>
+      <id>host-darwin-x64</id>
+      <activation>
+        <os><family>mac</family><arch>x86_64</arch></os>
+        <property><name>!relate.natives.dir</name></property>
+      </activation>
+      <properties>
+        <relate.host.key>darwin-x64</relate.host.key>
+        <relate.host.lib>librelate_ffi.dylib</relate.host.lib>
+        <relate.host.classifier>osx-x86_64</relate.host.classifier>
+      </properties>
+    </profile>
+    <profile>
+      <id>host-linux-arm64</id>
+      <activation>
+        <os><name>linux</name><arch>aarch64</arch></os>
+        <property><name>!relate.natives.dir</name></property>
+      </activation>
+      <properties>
+        <relate.host.key>linux-arm64</relate.host.key>
+        <relate.host.lib>librelate_ffi.so</relate.host.lib>
+        <relate.host.classifier>linux-aarch_64</relate.host.classifier>
+      </properties>
+    </profile>
+    <profile>
+      <id>host-linux-x64</id>
+      <activation>
+        <os><name>linux</name><arch>amd64</arch></os>
+        <property><name>!relate.natives.dir</name></property>
+      </activation>
+      <properties>
+        <relate.host.key>linux-x64</relate.host.key>
+        <relate.host.lib>librelate_ffi.so</relate.host.lib>
+        <relate.host.classifier>linux-x86_64</relate.host.classifier>
+      </properties>
+    </profile>
+    <profile>
+      <id>host-win32-x64</id>
+      <activation>
+        <os><family>windows</family><arch>amd64</arch></os>
+        <property><name>!relate.natives.dir</name></property>
+      </activation>
+      <properties>
+        <relate.host.key>win32-x64</relate.host.key>
+        <relate.host.lib>relate_ffi.dll</relate.host.lib>
+        <relate.host.classifier>windows-x86_64</relate.host.classifier>
+      </properties>
+    </profile>
+    <!--
+      Maven Central publication (dormant). Activated only by
+      `-Pcentral-publish`; no other build touches it. Central requires
+      sources and javadoc jars beside the binaries, a GPG signature on
+      every artifact, and the verified `com.relate` namespace on the
+      Central Portal. The profile enforces the staged five-platform
+      natives (ADR-0490): -Pcentral-publish alone fails loudly rather
+      than signing and uploading a host-native-only bundle. The release
+      workflow's `java-central` job runs
+      `mvn deploy -Pcentral-publish` once the repository variable
+      MAVEN_CENTRAL_ENABLED is 'true' and the secrets it reads exist
+      (see clients/java/README.md, "Publishing to Maven Central").
+      autoPublish stays false: the first deployments are validated and
+      released by hand from the Central Portal.
+    -->
+    <profile>
+      <id>central-publish</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <version>3.7.0</version>
+            <executions>
+              <execution>
+                <id>central-requires-staged-natives</id>
+                <goals>
+                  <goal>enforce</goal>
+                </goals>
+                <configuration>
+                  <rules>
+                    <requireProperty>
+                      <property>relate.natives.mode</property>
+                      <value>staged</value>
+                      <message>Central publication needs the staged five-platform natives: pass -Drelate.natives.dir=&lt;dir&gt; (ADR-0490) — a host-native-only bundle must never be signed and uploaded.</message>
+                    </requireProperty>
+                  </rules>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.11.2</version>
+            <configuration>
+              <doclint>none</doclint>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <configuration>
+              <!-- The key and passphrase come from the environment
+                   (MAVEN_GPG_KEY / MAVEN_GPG_PASSPHRASE), never a file. -->
+              <bestPractices>true</bestPractices>
+            </configuration>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.7.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>false</autoPublish>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

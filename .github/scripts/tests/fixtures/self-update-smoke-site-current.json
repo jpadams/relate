@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-30T11:00:00Z",
+  "latest": {
+    "tag": "v9.9.9",
+    "published_at": "2026-10-30T10:00:00Z",
+    "prerelease": false,
+    "notes": "The expected release, already deployed: the site lists it as latest.",
+    "assets": [
+      "relate-linux-amd64",
+      "relate-darwin-arm64",
+      "SHA256SUMS",
+      "SHA256SUMS.sig"
+    ]
+  },
+  "latest_prerelease": null,
+  "releases": [
+    {
+      "tag": "v9.9.9",
+      "published_at": "2026-10-30T10:00:00Z",
+      "prerelease": false,
+      "notes": "The expected release, already deployed: the site lists it as latest.",
+      "assets": [
+        "relate-linux-amd64",
+        "relate-darwin-arm64",
+        "SHA256SUMS",
+        "SHA256SUMS.sig"
+      ]
+    },
+    {
+      "tag": "v0.13.1",
+      "published_at": "2026-10-20T10:00:00Z",
+      "prerelease": false,
+      "notes": "The previous stable release.",
+      "assets": [
+        "relate-linux-amd64",
+        "relate-darwin-arm64",
+        "SHA256SUMS",
+        "SHA256SUMS.sig"
+      ]
+    }
+  ]
+}

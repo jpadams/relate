@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "packages": [
+    {
+      "name": "dungeon",
+      "crate_dir": "extensions/relate-dungeon",
+      "manifest": "extensions/relate-dungeon/package/extension.json"
+    },
+    {
+      "name": "fs-to-graph",
+      "crate_dir": "extensions/relate-fs-to-graph",
+      "manifest": "extensions/relate-fs-to-graph/package/extension.json"
+    },
+    {
+      "name": "git-to-graph",
+      "crate_dir": "extensions/relate-git-to-graph",
+      "manifest": "extensions/relate-git-to-graph/package/extension.json"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+# ADR-0313 (F-09, F-68): a HELLO whose extra has no user_agent at all is
+# rejected and opens no session; the RESET after it is IGNORED; a second
+# HELLO is a breach in the AUTHENTICATION state and the server closes. The
+# empty-string variant (ADR-0342 item 4) is pinned by
+# hello-requires-user-agent.bolt: one connection holds at most one rejected
+# HELLO.
+!: BOLT 4.4
+
+C: HELLO {"scheme": "none"}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "Illegal value for field \"user_agent\": Expected value to be non-null"}
+C: RESET
+S: IGNORED
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "scheme": "none"}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "*"}
+S: <EXIT>

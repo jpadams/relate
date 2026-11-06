@@ -1,0 +1,13 @@
+{
+  "kind": "command",
+  "name": "so-to-graph",
+  "version": "0.1.0",
+  "protocol": "2025-06-18",
+  "flags": [
+    {"kind": "string", "name": "tag", "default": "neo4j"},
+    {"kind": "integer", "name": "pages", "default": 1},
+    {"kind": "boolean", "name": "body", "default": false}
+  ],
+  "commit": "per-batch",
+  "executable": "so-to-graph.sh"
+}

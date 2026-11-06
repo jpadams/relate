@@ -1,0 +1,9 @@
+# Baseline B-18 (F-38): ROUTE with no db answers a routing table whose ttl
+# is 300. Only rt.ttl is pinned. rt.servers (role order) and the rt.db
+# default are not: the ROUTE change pins both in its own script.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: ROUTE {"address": "localhost:7687"} [] {}
+S: SUCCESS {"rt": {"ttl": 300}}

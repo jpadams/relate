@@ -1,0 +1,502 @@
+{
+ "_source": {
+  "what": "the answers of queries/q01..q30.cypher at SF0.1 (verbatim, except the queries `literals` lists, which run with its substitutions), produced by Neo4j as the oracle; upstream (prrao87/graph-benchmark-ldbc@c8eb87f) publishes answers for SF1 only",
+  "literals": {
+   "file": "literals-sf0.1.json",
+   "sha256": "108b09591a0a5edb8b42d11bd37391cff2ccfddb22d3b8173c366e6ef394e508",
+   "queries": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    9,
+    10,
+    13,
+    16,
+    20,
+    21,
+    23,
+    27
+   ]
+  },
+  "engine": {
+   "name": "Neo4j",
+   "version": "2026.09.0",
+   "default_language": "CYPHER 25",
+   "limits": {
+    "cpus": "4",
+    "memory": "10g",
+    "NEO4J_server_memory_pagecache_size": "2G",
+    "NEO4J_server_memory_heap_initial__size": "2G",
+    "NEO4J_server_memory_heap_max__size": "4G"
+   },
+   "schema": "UNIQUE constraint on ID per label (upstream's), no other index"
+  },
+  "data": {
+   "archive": "social_network-sf0.1-CsvBasic-StringDateFormatter.tar.zst",
+   "sha256": "61dea06f162cda1624edfe55f458ee7f13f532847318d65596fcd7282fc3aff8",
+   "loaded_by": "loader/load.cypher expanded to LOAD CSV ... CALL (r) { ... } IN TRANSACTIONS (neo4j_lane.load)",
+   "counts": {
+    "nodes": 327588,
+    "relationships": 1477965,
+    "published": [
+     327588,
+     1477965
+    ],
+    "ok": true
+   },
+   "loaded_utc": "2026-10-14T15:40:13Z"
+  },
+  "method": "one session (sync Python driver, autocommit); each query run twice, session.run(text).data(), the two answers required identical by gbl.equality; untimed. A query ending in LIMIT k is run again without the LIMIT: limit_check.determined is false when other rows tie with the k-th on the ORDER BY column (or, without ORDER BY, when more than k rows qualify), and tied_rows lists every row that could stand in its place",
+  "order_sensitive": "copied from queries/expected.json (SF1): a property of the query text",
+  "driver": "neo4j 6.4.0",
+  "harness": {
+   "script_sha256": "a0013032748321be306ab92ed24553515d43f899829f014db78b03bdb871163b"
+  },
+  "utc": "2026-10-14T15:40:17Z",
+  "license": "queries: MIT, Copyright (c) 2026 Prashanth Rao (see ../NOTICE); data: LDBC SNB, CC BY 4.0"
+ },
+ "q1": {
+  "rows": [
+   {
+    "p.firstName": "Jimmy",
+    "p.lastName": "Brown"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows",
+  "query_sha256": "689151e546ace7d3fe44f806a47a09610d52f2eaa360693aafbced30b83e5b28",
+  "literals": [
+   [
+    "\"Napoleon\"",
+    "\"Voltaire\""
+   ]
+  ]
+ },
+ "q2": {
+  "rows": [
+   {
+    "post.ID": 755914269419
+   },
+   {
+    "post.ID": 755914441220
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows",
+  "query_sha256": "8fa0f6eee888e42c137556bb81e49ea273cdc649c0c97702c1e9a5a5acda6ae6",
+  "literals": [
+   [
+    "\"Zulu\"",
+    "\"Pope\""
+   ]
+  ]
+ },
+ "q3": {
+  "rows": [
+   {
+    "person.firstName": "Mahinda",
+    "person.lastName": "Perera",
+    "org.name": "Tallinn_University_of_Applied_Sciences"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows",
+  "query_sha256": "88e1d3326feef0766492cd5099cd283c419e20a9d5840f14d984da14a7763500",
+  "literals": [
+   [
+    "962077547172",
+    "3"
+   ]
+  ]
+ },
+ "q4": {
+  "rows": [
+   {
+    "c.ID": 1030792487640
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows",
+  "query_sha256": "0901ebe71376c1cb6590f2d974656e89a4135866956e22d3e5eebf751684f43c",
+  "literals": [
+   [
+    "\"Alfredo\"",
+    "\"David\""
+   ],
+   [
+    "\"Gomez\"",
+    "\"Agudelo\""
+   ]
+  ]
+ },
+ "q5": {
+  "rows": [
+   {
+    "p.firstName": "Vladimir",
+    "p.lastName": "Kofler"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows",
+  "query_sha256": "b5e1843a936e2e08bc6f8d59051fbd33b63f7269e3de5c84eadff6a0604ef3a7",
+  "literals": [
+   [
+    "\"Choi\"",
+    "\"Kofler\""
+   ]
+  ],
+  "limit_check": {
+   "limit": 10,
+   "order_by": null,
+   "rows_without_limit": 1,
+   "determined": true,
+   "tied_rows": []
+  }
+ },
+ "q6": {
+  "rows": [
+   {
+    "p.ID": 24189255812290
+   },
+   {
+    "p.ID": 30786325577905
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows",
+  "query_sha256": "130d97d6c21bb9130564491beb9591398333041644f97d8fd259927cbcc89894",
+  "literals": [
+   [
+    "\"Bravo\"",
+    "\"Alvarez\""
+   ]
+  ]
+ },
+ "q7": {
+  "rows": [],
+  "order_sensitive": false,
+  "assert": "_assert_rows",
+  "query_sha256": "296d43e20157567b9f65e6fd6430f0d10ffa446f52823b422e1eb0f7a8f3a86e"
+ },
+ "q8": {
+  "rows": [
+   {
+    "p.ID": 13194139534410
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows",
+  "query_sha256": "37d70ec955f59c84e5407aea8aa26930afcb63ea52916b42f0d2b2684faf9b32"
+ },
+ "q9": {
+  "rows": [
+   {
+    "p.ID": 1242,
+    "p.firstName": "Hans",
+    "p.lastName": "Johansson"
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_rows",
+  "query_sha256": "a0a1cae40cca77cd357fe732d2e5ea8eca1f74d81d7c95fdfad053841a98453b",
+  "literals": [
+   [
+    "\"Tallinn\"",
+    "\"Berlin\""
+   ]
+  ]
+ },
+ "q10": {
+  "rows": [
+   {
+    "p.ID": 13194139533618
+   },
+   {
+    "p.ID": 17592186044868
+   },
+   {
+    "p.ID": 6597069767242
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows",
+  "query_sha256": "73a66ba931ed800c779875136187df17e6579bc6d294a63f69670522339d7ce4",
+  "literals": [
+   [
+    "\"Cate_Blanchett\"",
+    "\"Olivia_de_Havilland\""
+   ]
+  ]
+ },
+ "q11": {
+  "rows": [
+   {
+    "num_e": 32,
+    "o.name": "Deccan_360"
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows",
+  "query_sha256": "fabb5a05adc529d0ba13b7f9db55850f0436829f1d14b11c571a724492493f60",
+  "limit_check": {
+   "limit": 1,
+   "order_by": "num_e",
+   "rows_without_limit": 1026,
+   "determined": true,
+   "tied_rows": []
+  }
+ },
+ "q12": {
+  "rows": [
+   {
+    "num_comments": 550
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "ec691b02f905bc2273229dfbd680e35582cd1c6974060d70d1c73c4749e2dcae"
+ },
+ "q13": {
+  "rows": [
+   {
+    "num_persons": 399
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "1a3ed21df9f223384d529dec7eb1a06a6e76d5a5814db373fbd9c5e1e123d7ed",
+  "literals": [
+   [
+    "\"Rafael\"",
+    "\"Alexander\""
+   ],
+   [
+    "\"Alonso\"",
+    "\"Popov\""
+   ]
+  ]
+ },
+ "q14": {
+  "rows": [
+   {
+    "num_forums": 11
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "2067f9a57e32fa3f2e685c9c8e3c69a2c754f5c399577857893c9a84c8bc579b"
+ },
+ "q15": {
+  "rows": [
+   {
+    "num_forums": 15
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "4c17f68ce8741a26d7117c815cc2d5dd42edba8f3d5d0a980e3823c0f826eeff"
+ },
+ "q16": {
+  "rows": [
+   {
+    "num_posts": 1
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "e1638610789c48ad1a3a702b2986bc153aaa8fdfeeeff0f6aa3bb410ce8aef2e",
+  "literals": [
+   [
+    "\"Mumbai\"",
+    "\"Visakhapatnam\""
+   ]
+  ]
+ },
+ "q17": {
+  "rows": [
+   {
+    "t.name": "Hamid_Karzai",
+    "tag_count": 6
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows",
+  "query_sha256": "1111b2831dbef55e2a1c2bcb1816a85566b47a5ab71f0343e5e7af37fc01d467",
+  "limit_check": {
+   "limit": 1,
+   "order_by": "tag_count",
+   "rows_without_limit": 376,
+   "determined": true,
+   "tied_rows": []
+  }
+ },
+ "q18": {
+  "rows": [
+   {
+    "num_p": 2
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "f23a5d6574b9a883c06fee00477797dce0c1575a21d75288c2601af09f040a48"
+ },
+ "q19": {
+  "rows": [
+   {
+    "l.name": "China",
+    "comment_count": 21
+   }
+  ],
+  "order_sensitive": false,
+  "assert": "_assert_rows",
+  "query_sha256": "59aaab033c1e50515a2bd70a2965339fb569a94b61d846a9e60d38c6b9479d17",
+  "limit_check": {
+   "limit": 1,
+   "order_by": "comment_count",
+   "rows_without_limit": 42,
+   "determined": true,
+   "tied_rows": []
+  }
+ },
+ "q20": {
+  "rows": [
+   {
+    "long_comment_count": 4
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "1b33ca467492d1691d7c0017b14eccb0ea8a3d0ba2ff3487f92e581c1d3f0e89",
+  "literals": [
+   [
+    "> 1000",
+    "> 170"
+   ]
+  ]
+ },
+ "q21": {
+  "rows": [
+   {
+    "liked": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "bf8f8698e0c6a0202add49fd07ae0152d78736202aba11deecb536ba5c743c52",
+  "literals": [
+   [
+    "\"Bill\"",
+    "\"Steve\""
+   ],
+   [
+    "1649268446863",
+    "206158612824"
+   ]
+  ]
+ },
+ "q22": {
+  "rows": [
+   {
+    "has_reply_comment": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "2f923b25e0c25dc1a14110542b2be49297cce094a21816a7366d2fe8b3551db7"
+ },
+ "q23": {
+  "rows": [
+   {
+    "has_moderator": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "3da86423736edd14a0b718911a7de9b391782dad9c63d20fed70324c8eee2e88",
+  "literals": [
+   [
+    "\"Gurung\"",
+    "\"Kumar\""
+   ]
+  ]
+ },
+ "q24": {
+  "rows": [
+   {
+    "has_person": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "31cf6708c42afd468c52298f2c4fbe6222af6a21603c4392994ea96dbca26706"
+ },
+ "q25": {
+  "rows": [
+   {
+    "knows_someone": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "1f53e5c69f83f2b82c2d4dbc1358a888ff32dc0d165f351e7d4bc9a847678910"
+ },
+ "q26": {
+  "rows": [
+   {
+    "has_forum": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "a3e704d1c0a349f1d21772662f7080cfdbd57f1bc87d5969e4c40ea8a859de43"
+ },
+ "q27": {
+  "rows": [
+   {
+    "has_comment": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "0b8becabe37db525f7ff56385e8e467e83847fb3cb3e8f8fe987697dba0089dd",
+  "literals": [
+   [
+    "\"Toronto\"",
+    "\"Santa_Catarina\""
+   ]
+  ]
+ },
+ "q28": {
+  "rows": [
+   {
+    "has_people": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "62ef98bee3852e58395cac66a36d4ee836458b9daefa3f33c5c79d117c319e5a"
+ },
+ "q29": {
+  "rows": [
+   {
+    "has_written_post_with_safari": false
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "222f6d24fe3de43df1a5fb4cda884a1c85d9668efd0e5a0e0257354429448026"
+ },
+ "q30": {
+  "rows": [
+   {
+    "has_self_reply": true
+   }
+  ],
+  "order_sensitive": true,
+  "assert": "_assert_single_value",
+  "query_sha256": "c9f7cadbf3200f53f0eae7b334ca6e0c184942c02869420319990d86b7e05ea7"
+ }
+}

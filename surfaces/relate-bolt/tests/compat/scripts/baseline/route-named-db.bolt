@@ -1,0 +1,9 @@
+# Baseline B-19 (F-39): ROUTE that names db "neo4j" answers a routing
+# table for that db with ttl 300. Only rt.db and rt.ttl are pinned; the
+# servers list (role order) is not.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: ROUTE {"address": "localhost:7687"} [] {"db": "neo4j"}
+S: SUCCESS {"rt": {"db": "neo4j", "ttl": 300}}

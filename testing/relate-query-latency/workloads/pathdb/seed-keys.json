@@ -1,0 +1,343 @@
+{
+ "_source": {
+  "policy": "degree-median: among nodes of the seed label with >=1 incident edge of the first-hop types, order by (degree, ID), take the element at the lower-median position (pairs.len()/2); when no node of the label carries those types, the same policy over all labels (one such template: q95, whose Comment seed label is unreachable in any LDBC output \u2014 its key records the label the policy resolved, Tag)",
+  "recorded": "2026-11-01 spike, graph-benchmark-ldbc SF0.1 store (run-sf0.1.log); SF1 records from the SF1 spike subset",
+  "regenerate": "seeds are store-specific \u2014 regenerate per store/scale factor with the driver (pathdb corpus lane, --seed-policy median); these values are the spike-recorded choices, kept as the pinned CI reference",
+  "what": "The workload's ONE canonical seed-key fact table: one record per (seed label, first-hop types) key per scale factor (null where the key has no seed there). The key grammar is canonical \u2014 the label plus the type set sorted and de-duplicated \u2014 so one fact has exactly one spelling and the loader refuses a second; the per-SF params files carry only the derived per-query entries. Every record's label is the label of the node the policy chose and must equal its key's label \u2014 checked on load",
+  "why": "0/26 original PathDB SF1 seed ids exist in our graph-benchmark-ldbc SF1 store (different datagen run); PathDB ids are not portable across LDBC datagen outputs"
+ },
+ "seed_keys": {
+  "Comment|commentHasCreator|commentHasTag|forumHasTag|postHasCreator|postHasTag": {
+   "sf0.1": {
+    "id": 893353446359,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|commentHasCreator|commentIsLocatedIn|organisationIsLocatedIn|personIsLocatedIn|postHasCreator|postIsLocatedIn": {
+   "sf0.1": {
+    "id": 687195048305,
+    "degree": 2,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|commentHasCreator|knows|postHasCreator": {
+   "sf0.1": {
+    "id": 687195048305,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": {
+    "id": 1374394072916,
+    "degree": 1,
+    "label": "Comment"
+   }
+  },
+  "Comment|commentHasCreator|postHasCreator": {
+   "sf0.1": {
+    "id": 687195048305,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|commentHasCreator|postHasCreator|replyOfComment|replyOfPost": {
+   "sf0.1": {
+    "id": 824633921929,
+    "degree": 2,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|commentHasTag|forumHasTag|postHasTag|replyOfComment|replyOfPost": {
+   "sf0.1": {
+    "id": 893353446359,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|commentIsLocatedIn|hasInterest|knows|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn": {
+   "sf0.1": {
+    "id": 687195048305,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|commentIsLocatedIn|knows|likeComment|likePost|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn": {
+   "sf0.1": {
+    "id": 687195095778,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": {
+    "id": 1374394495009,
+    "degree": 1,
+    "label": "Comment"
+   }
+  },
+  "Comment|commentIsLocatedIn|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn|studyAt": {
+   "sf0.1": {
+    "id": 687195048305,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|commentIsLocatedIn|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn|workAt": {
+   "sf0.1": {
+    "id": 687195048305,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": null
+  },
+  "Comment|replyOfComment|replyOfPost": {
+   "sf0.1": {
+    "id": 824633921929,
+    "degree": 1,
+    "label": "Comment"
+   },
+   "sf1": {
+    "id": 1649268615606,
+    "degree": 1,
+    "label": "Comment"
+   }
+  },
+  "Forum|containerOf": {
+   "sf0.1": {
+    "id": 893353206099,
+    "degree": 10,
+    "label": "Forum"
+   },
+   "sf1": {
+    "id": 2061584385473,
+    "degree": 10,
+    "label": "Forum"
+   }
+  },
+  "Forum|containerOf|hasMember": {
+   "sf0.1": {
+    "id": 687194781509,
+    "degree": 16,
+    "label": "Forum"
+   },
+   "sf1": null
+  },
+  "Forum|hasMember": {
+   "sf0.1": {
+    "id": 824633721143,
+    "degree": 6,
+    "label": "Forum"
+   },
+   "sf1": null
+  },
+  "Forum|hasModerator": {
+   "sf0.1": {
+    "id": 755914247373,
+    "degree": 1,
+    "label": "Forum"
+   },
+   "sf1": null
+  },
+  "Forum|hasModerator|knows": {
+   "sf0.1": {
+    "id": 755914247373,
+    "degree": 1,
+    "label": "Forum"
+   },
+   "sf1": null
+  },
+  "Person|commentIsLocatedIn|hasInterest|knows|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn": {
+   "sf0.1": {
+    "id": 24189255811906,
+    "degree": 35,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|commentIsLocatedIn|knows|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn": {
+   "sf0.1": {
+    "id": 32985348834794,
+    "degree": 10,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|commentIsLocatedIn|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn|studyAt": {
+   "sf0.1": {
+    "id": 13194139533500,
+    "degree": 2,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|hasInterest": {
+   "sf0.1": {
+    "id": 13194139533584,
+    "degree": 14,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|hasInterest|knows": {
+   "sf0.1": {
+    "id": 24189255811906,
+    "degree": 34,
+    "label": "Person"
+   },
+   "sf1": {
+    "id": 21990232558899,
+    "degree": 46,
+    "label": "Person"
+   }
+  },
+  "Person|hasInterest|likeComment|likePost": {
+   "sf0.1": {
+    "id": 13194139534430,
+    "degree": 75,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|hasInterest|studyAt": {
+   "sf0.1": {
+    "id": 8796093022574,
+    "degree": 15,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|hasInterest|workAt": {
+   "sf0.1": {
+    "id": 28587302322824,
+    "degree": 16,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|knows": {
+   "sf0.1": {
+    "id": 15393162790472,
+    "degree": 12,
+    "label": "Person"
+   },
+   "sf1": {
+    "id": 13194139533588,
+    "degree": 21,
+    "label": "Person"
+   }
+  },
+  "Person|knows|likeComment|likePost": {
+   "sf0.1": {
+    "id": 15393162789696,
+    "degree": 61,
+    "label": "Person"
+   },
+   "sf1": {
+    "id": 17592186055199,
+    "degree": 178,
+    "label": "Person"
+   }
+  },
+  "Person|knows|likeComment|likePost|workAt": {
+   "sf0.1": {
+    "id": 8796093023634,
+    "degree": 59,
+    "label": "Person"
+   },
+   "sf1": {
+    "id": 30786325586365,
+    "degree": 173,
+    "label": "Person"
+   }
+  },
+  "Person|knows|studyAt": {
+   "sf0.1": {
+    "id": 13194139534384,
+    "degree": 11,
+    "label": "Person"
+   },
+   "sf1": {
+    "id": 10995116279587,
+    "degree": 20,
+    "label": "Person"
+   }
+  },
+  "Person|knows|workAt": {
+   "sf0.1": {
+    "id": 2199023256576,
+    "degree": 13,
+    "label": "Person"
+   },
+   "sf1": {
+    "id": 24189255817181,
+    "degree": 21,
+    "label": "Person"
+   }
+  },
+  "Person|likeComment|likePost": {
+   "sf0.1": {
+    "id": 6597069767868,
+    "degree": 51,
+    "label": "Person"
+   },
+   "sf1": {
+    "id": 2199023262332,
+    "degree": 159,
+    "label": "Person"
+   }
+  },
+  "Person|likeComment|likePost|replyOfComment|replyOfPost": {
+   "sf0.1": {
+    "id": 6597069767868,
+    "degree": 51,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|likeComment|likePost|workAt": {
+   "sf0.1": {
+    "id": 8796093022409,
+    "degree": 50,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Person|studyAt": {
+   "sf0.1": {
+    "id": 17592186044732,
+    "degree": 1,
+    "label": "Person"
+   },
+   "sf1": null
+  },
+  "Place|isPartOf": {
+   "sf0.1": {
+    "id": 841,
+    "degree": 1,
+    "label": "Place"
+   },
+   "sf1": null
+  },
+  "Tagclass|isSubclassOf": {
+   "sf0.1": {
+    "id": 233,
+    "degree": 1,
+    "label": "Tagclass"
+   },
+   "sf1": null
+  },
+  "Tag|hasInterest": {
+   "sf0.1": {
+    "id": 14313,
+    "degree": 1,
+    "label": "Tag"
+   },
+   "sf1": null
+  }
+ }
+}

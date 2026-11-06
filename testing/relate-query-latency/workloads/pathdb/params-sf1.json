@@ -1,0 +1,114 @@
+{
+ "_source": {
+  "recorded": "2026-11-01 spike, graph-benchmark-ldbc SF1 store (the spike's 26-query subset)",
+  "regenerate": "seeds are store-specific \u2014 regenerate per store/scale factor with the driver (pathdb corpus lane, --seed-policy median); these values are the spike-recorded SF1 choices",
+  "what": "The derived per-query seed entries at SF1 (the spike's 26-query subset): each query's seed and the seed key (seed-keys.json, the one fact table) it resolves through; a query without an entry here is planned, not run, at this scale factor",
+  "why": "0/26 original PathDB SF1 seed ids exist in our graph-benchmark-ldbc SF1 store (different datagen run); PathDB ids are not portable across LDBC datagen outputs"
+ },
+ "queries": {
+  "p006": {
+   "seed": 2199023262332,
+   "seed_key": "Person|likeComment|likePost"
+  },
+  "p007": {
+   "seed": 1649268615606,
+   "seed_key": "Comment|replyOfComment|replyOfPost"
+  },
+  "p009": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p012": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p017": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p023": {
+   "seed": 17592186055199,
+   "seed_key": "Person|knows|likeComment|likePost"
+  },
+  "p031": {
+   "seed": 2061584385473,
+   "seed_key": "Forum|containerOf"
+  },
+  "p037": {
+   "seed": 2199023262332,
+   "seed_key": "Person|likeComment|likePost"
+  },
+  "p039": {
+   "seed": 2199023262332,
+   "seed_key": "Person|likeComment|likePost"
+  },
+  "p045": {
+   "seed": 17592186055199,
+   "seed_key": "Person|knows|likeComment|likePost"
+  },
+  "p052": {
+   "seed": 24189255817181,
+   "seed_key": "Person|knows|workAt"
+  },
+  "p057": {
+   "seed": 10995116279587,
+   "seed_key": "Person|knows|studyAt"
+  },
+  "p061": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p067": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p073": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p082": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p086": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p092": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p099": {
+   "seed": 17592186055199,
+   "seed_key": "Person|knows|likeComment|likePost"
+  },
+  "p104": {
+   "seed": 10995116279587,
+   "seed_key": "Person|knows|studyAt"
+  },
+  "p111": {
+   "seed": 21990232558899,
+   "seed_key": "Person|hasInterest|knows"
+  },
+  "p124": {
+   "seed": 13194139533588,
+   "seed_key": "Person|knows"
+  },
+  "p125": {
+   "seed": 1374394072916,
+   "seed_key": "Comment|commentHasCreator|knows|postHasCreator"
+  },
+  "p132": {
+   "seed": 1649268615606,
+   "seed_key": "Comment|replyOfComment|replyOfPost"
+  },
+  "p138": {
+   "seed": 1374394495009,
+   "seed_key": "Comment|commentIsLocatedIn|knows|likeComment|likePost|organisationIsLocatedIn|personIsLocatedIn|postIsLocatedIn"
+  },
+  "p141": {
+   "seed": 30786325586365,
+   "seed_key": "Person|knows|likeComment|likePost|workAt"
+  }
+ }
+}

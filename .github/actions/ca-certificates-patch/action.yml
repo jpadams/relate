@@ -1,0 +1,42 @@
+# Temporary workaround for CVE-2026-111943 (eMudhra CA compromise,
+# LABS-456): GitHub's ubuntu-latest images ship a ca-certificates build
+# that trusts the compromised eMudhra root, so every TLS fetch a job
+# makes (checkouts, toolchain downloads, crates.io, artifact uploads)
+# is interceptable until GitHub ships a fixed image. This step
+# re-installs ca-certificates from the (unaffected) archive and rebuilds
+# the trust store before anything else runs.
+#
+# Linux-guarded so mixed-OS matrix jobs can call it unconditionally —
+# the macOS/Windows legs skip it. Delete this action and its call sites
+# once GitHub's runner images carry the fixed package.
+#
+# It only serves callers that run AFTER checkout (a local composite
+# needs the workspace on disk). Jobs that must patch BEFORE checkout
+# (everything that does not run the shared Rust preamble) carry the
+# same three commands inline as their first step — GitHub mechanics
+# force the two spellings; both are deleted together.
+name: Patch CVE-2026-111943 (eMudhra CA compromise)
+description: >-
+  Rebuild the runner's CA trust store before a job does any TLS work
+  (CVE-2026-111943, eMudhra root compromise in GitHub's ubuntu-latest
+  images). Linux only; temporary until GitHub ships fixed images.
+runs:
+  using: composite
+  steps:
+    - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install --only-upgrade -y ca-certificates
+        sudo update-ca-certificates --fresh
+        # Post-condition (remediation assurance): the compromised root
+        # must be absent from the rebuilt store -- an on-path attacker
+        # replaying validly-signed metadata could otherwise make the
+        # upgrade a silent no-op behind a green check. A fixed runner
+        # image satisfies this too, so it never false-fails the lane.
+        if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+          echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+          exit 1
+        fi
+        dpkg-query -W -f='ca-certificates ${Version}' ca-certificates

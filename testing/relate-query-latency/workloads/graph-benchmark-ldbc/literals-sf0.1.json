@@ -1,0 +1,64 @@
+{
+ "_source": {
+  "what": "Literal substitutions applied to the query statements at SF0.1 only (ADR-0247). Upstream chose its literals on SF1; at SF0.1 these 14 queries found nothing while their SF1 answers have rows, a non-zero count or true.",
+  "rule": "Each [from, to] pair replaces the one occurrence of `from` in the statement (the query file without its header); a pair that matches zero or several times is an error. Only literals change. The SF0.1 answer has the shape of upstream's SF1 answer; as few literals as possible change; a value is replaced by one of the same kind.",
+  "chosen": "2026-10-14, by exploring the SF0.1 data set with Relate 0.12.1; the recorded answers in expected-sf0.1.json come from Neo4j (ADR-0243)",
+  "unchanged": "q7, q24, q25, q26 and q29 answer nothing at SF1 too (upstream's negative checks) and stay verbatim"
+ },
+ "q1": {
+  "replace": [["\"Napoleon\"", "\"Voltaire\""]],
+  "reason": "Glasgow has one resident at SF0.1, who is interested in Voltaire (a person tag like Napoleon); one row, as at SF1"
+ },
+ "q2": {
+  "replace": [["\"Zulu\"", "\"Pope\""]],
+  "reason": "Lei Zhang exists at SF0.1; \"Pope\" occurs in exactly two of their posts' content; two rows, as at SF1"
+ },
+ "q3": {
+  "replace": [["962077547172", "3"]],
+  "reason": "post 3 is the lowest post ID whose creator studied at exactly one organisation; one row, as at SF1"
+ },
+ "q4": {
+  "replace": [["\"Alfredo\"", "\"David\""], ["\"Gomez\"", "\"Agudelo\""]],
+  "reason": "no Gomez at SF0.1, and the only Alfredo with comments longer than 100 has two, whose order the order-sensitive check would pin though the query has no ORDER BY; David Agudelo has exactly one; one row, as at SF1"
+ },
+ "q5": {
+  "replace": [["\"Choi\"", "\"Kofler\""]],
+  "reason": "no Choi is a member of a forum whose title contains John Brown at SF0.1; one Kofler is; one row, as at SF1"
+ },
+ "q6": {
+  "replace": [["\"Bravo\"", "\"Alvarez\""]],
+  "reason": "Nova_Air has four employees at SF0.1, none named Bravo; two are named Alvarez; two rows (SF1: five)"
+ },
+ "q9": {
+  "replace": [["\"Tallinn\"", "\"Berlin\""]],
+  "reason": "no Johansson at SF0.1 knows someone who studied in Tallinn; one knows someone who studied in Berlin; one row, as at SF1"
+ },
+ "q10": {
+  "replace": [["\"Cate_Blanchett\"", "\"Olivia_de_Havilland\""]],
+  "reason": "no post is tagged Cate_Blanchett at SF0.1; Olivia_de_Havilland (a person tag, an actor too) has exactly three distinct commenters on its posts; three rows, as at SF1"
+ },
+ "q13": {
+  "replace": [["\"Rafael\"", "\"Alexander\""], ["\"Alonso\"", "\"Popov\""]],
+  "reason": "no Rafael Alonso at SF0.1; Alexander Popov's comments have the most distinct likers (399; SF1's Rafael Alonso: 2,293)"
+ },
+ "q16": {
+  "replace": [["\"Mumbai\"", "\"Visakhapatnam\""]],
+  "reason": "nobody lives in Mumbai at SF0.1; every city of a Copernicus poster has one such post; Visakhapatnam is an Indian city like Mumbai; count 1 (SF1: 3)"
+ },
+ "q20": {
+  "replace": [["> 1000", "> 170"]],
+  "reason": "the longest comment containing World War II at SF0.1 is 175; two lengths tie at 171, so no threshold gives SF1's three; > 170 gives 4"
+ },
+ "q21": {
+  "replace": [["\"Bill\"", "\"Steve\""], ["1649268446863", "206158612824"]],
+  "reason": "no Bill Moore at SF0.1; Steve Moore liked post 206158612824 (the lowest post ID he liked); true, as at SF1"
+ },
+ "q23": {
+  "replace": [["\"Gurung\"", "\"Kumar\""]],
+  "reason": "no Gurung at SF0.1; a Kumar moderates a forum tagged Norah_Jones; true, as at SF1"
+ },
+ "q27": {
+  "replace": [["\"Toronto\"", "\"Santa_Catarina\""]],
+  "reason": "Toronto's one resident at SF0.1 wrote no Winston_Churchill comment; residents of the city Santa_Catarina wrote three (the most of any city); true, as at SF1"
+ }
+}

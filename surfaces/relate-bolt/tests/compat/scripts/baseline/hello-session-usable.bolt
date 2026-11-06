@@ -1,0 +1,13 @@
+# Baseline B-09 (F-08): HELLO with a user_agent (boltkit's HELLO map)
+# opens a usable session: its SUCCESS names a server and a connection id,
+# and a RESET after it succeeds. The HELLO is written out, not
+# !: AUTO HELLO, so its SUCCESS keys can be asserted. Only the presence of
+# server and connection_id is pinned; hints and patch_bolt are not.
+!: BOLT 4.4
+
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "scheme": "none"}
+S: SUCCESS {"server": "*", "connection_id": "*"}
+C: RESET
+S: SUCCESS {}
+C: GOODBYE
+S: <EXIT>

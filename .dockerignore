@@ -1,0 +1,57 @@
+# memorydb-cloud builds this as a named context (--build-context
+# relate=../relate). Allowlist: the leading `*` excludes
+# everything (.git, docs, fixtures, build output, …) and the `!` lines
+# re-include exactly what cargo needs: Cargo.toml, Cargo.lock and every
+# workspace group: relate/*, surfaces/*, testing/*, extensions/*
+# (the CLI links relate-wire through relate-mcp — ADR-0431 §11,
+# R3). A new top-level workspace group MUST be re-included here or every
+# Docker build that compiles the CLI breaks (observed: the first
+# create-loadtest-baselines run after extensions/ landed failed on the
+# missing extensions/relate-wire/Cargo.toml). New NON-workspace
+# top-level dirs stay excluded by default. dockerignore is
+# last-match-wins,
+# so a later line re-excludes the Python sources (pyo3 builds happen
+# outside Docker; maturin pulls in a large tree). Nested `.venv`,
+# `node_modules`, and `target` directories inside the re-included
+# trees are excluded after that.
+# .cargo/config.toml only sets wasm32 rustflags and rust-toolchain.toml
+# is only honored by rustup (absent from rust:1.88-alpine), so neither
+# is re-included.
+#
+# One docs file is compile-time input, not documentation for the reader:
+# the CLI pins the extension kit's canonical body with include_str! at
+# build time (surfaces/relate-cli/src/extensions/kit.rs), so the
+# memory-shape image — which builds `--bin relate` — needs it in the
+# context. Re-include exactly that file via the parent-chain pattern
+# (dockerignore cannot re-include under an excluded parent, so each
+# ancestor is re-included first and its other children re-excluded); the
+# rest of docs/ stays excluded.
+*
+!Cargo.toml
+!Cargo.lock
+!relate
+!surfaces
+!testing
+!extensions
+surfaces/*/python
+**/.venv
+**/node_modules
+**/target
+!docs
+docs/*
+!docs/api
+docs/api/*
+!docs/api/extensions
+docs/api/extensions/*
+!docs/api/extensions/examples
+docs/api/extensions/examples/*
+!docs/api/extensions/examples/mcp-client.sh
+# ADR-0251 §5 prebuilt path: `make docker DOCKER_PREBUILT_DIR=<dir>` stages
+# the static binaries in target/docker-prebuilt/ and builds with
+# --build-arg BINARY_SOURCE=prebuilt. Re-include exactly that directory
+# (dockerignore cannot re-include under an excluded parent, so the root
+# target/ dir is re-included first and everything else under it stays
+# excluded).
+!target
+target/*
+!target/docker-prebuilt

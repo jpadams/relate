@@ -1,0 +1,7 @@
+# Baseline B-17 (F-30): GOODBYE closes the connection. Written out rather
+# than !: AUTO GOODBYE, so this is the one script whose subject it is.
+!: BOLT 4.4
+!: AUTO HELLO
+
+C: GOODBYE
+S: <EXIT>

@@ -1,0 +1,24 @@
+# The README example: a result pulled in two batches, then a failed
+# query, the IGNORED that follows it, and the RESET that clears it.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "UNWIND range(1, 5) AS n RETURN n" {} {}
+   PULL {"n": 3}
+S: SUCCESS {"fields": ["n"]}
+   RECORD [1]
+   RECORD [2]
+   RECORD [3]
+   SUCCESS {"has_more": true}
+C: PULL {"n": -1}
+S: RECORD [4]
+   RECORD [5]
+   SUCCESS {}
+
+C: RUN "RETURN" {} {}
+S: FAILURE {"code": "*", "message": "*"}
+C: RUN "RETURN 1" {} {}
+S: IGNORED
+C: RESET
+S: SUCCESS {}

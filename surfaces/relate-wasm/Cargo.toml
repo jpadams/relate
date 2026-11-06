@@ -1,0 +1,42 @@
+[package]
+name = "relate-wasm"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Results are the relate_model::wire envelope every Relate surface
+# returns, built by `relate` (execute_wire, run_script_wire). Watch
+# `wasm-pack build --release` output after adding dependencies — the WASM
+# ships to every browser page.
+[dependencies]
+relate = { workspace = true }
+# The recording renderer (`renderResult`, ADR-0131): the code the native
+# cookbook harness renders with.
+relate-formatter = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+relate-storage = { workspace = true }
+crc32fast = { workspace = true }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
+serde_json = { workspace = true }
+web-sys = { version = "0.3", features = [
+    "Blob",
+    "BlobPropertyBag",
+    "MessageEvent",
+    "Performance",
+    "Url",
+    "Window",
+    "Worker",
+    "WorkerOptions",
+    "WorkerType",
+] }

@@ -1,0 +1,3 @@
+# Local no-Maven test scratch: fetched jars, JDK, compiled classes.
+.test-libs/
+target/

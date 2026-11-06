@@ -1,0 +1,101 @@
+Usage: relate [OPTIONS] [--database PATH] [QUERY]
+       relate <COMMAND> [ARGS]
+
+Commands:
+  query          Run a statement session (oneshot, stdin, or shell)
+  clone          Copy a database into a new store and exit
+  info           Print store metadata for a database without opening it
+  pull           Copy a Neo4j/Aura subgraph into a database
+  push           Copy a database subgraph into Neo4j/Aura
+  skill          Install, inspect, or remove the embedded agent skill bundle
+  upgrade        Update the relate binary (alias: update)
+  telemetry      Manage anonymous usage metrics (on, off, status)
+  lab            Import a directory tree or a git history into a graph (experimental)
+  serve          Host the HTTP Query API and MCP surfaces on a database
+  agent-context  Print the compact agent briefing (commands, flags, exit codes)
+
+Options:
+  -h, --help    Show this help and exit
+  --version     Show version and license and exit (with --json: one JSON object)
+  -d, --database PATH  Database directory, .rl bundle, or :memory: (default :memory:)
+  --json        Output as JSON (indented on a terminal, compact when piped)
+  --csv         Output as CSV
+  --markdown    Output as Markdown
+  --jsonl       Output as JSON Lines
+  --toon        Output as TOON (one header line, one line per row)
+  --noheader    Disable column headers
+  --mode MODE   Set output mode (table, csv, json, jsonl, envelope, markdown, cypher, toon, speedscope)
+                default: table on a terminal, jsonl when stdout is piped or redirected
+                (toon instead of jsonl when agent mode is on — ADR-0426)
+  --format MODE Alias of --mode
+  --pretty      Indent JSON output even when stdout is not a terminal
+  --param N=V   Bind a Cypher parameter (repeatable; V parsed as JSON scalar, bare words are strings)
+  --fetch-params N=SRC  Fetch a URL or read a file (http, https, file path), parse it as JSON, and bind it as the parameter N (repeatable)
+  --snapshot-format F  Snapshot codec (parquet|json); empty directory only
+  --wal-dir DIR        WAL directory (default <DATABASE>/wal)
+  --checkpoint-interval-secs N  Timed checkpoint period; 0 disables
+  --durability-mode MODE  WAL durability (full|everysecond|snapshot; default full)
+  --logical-graph-size-limit SIZE  Live graph + index cap (bytes or mb/mib/gb/gib)
+  --expression-memory-limit SIZE  Per-value expression build cap (bytes, mb/mib/gb/gib, or none)
+                       Default: 256 MiB. Guards against one statement
+                       building a pathological single value; raise it, or
+                       pass none for known bulk pipelines (ADR-0463)
+  --concurrent-logical-workspace-limit SIZE  Shared logical-workspace pool (bytes or mb/mib/gb/gib)
+                       A positive value turns admission on. Omit, or an
+                       unset RELATE_CONCURRENT_LOGICAL_WORKSPACE_LIMIT,
+                       leaves it off. 0 is rejected (ADR-0452)
+  --max-traversal-depth N  Largest explicit traversal hop bound (1-2000; default 500)
+                       A query whose explicit hop bound exceeds this fails at
+                       admission with TraversalDepthExceeded. This is a safety
+                       limit, not a database limit: raising it risks a stack
+                       overflow on small-stack platforms.
+                       RELATE_MAX_TRAVERSAL_DEPTH sets the default
+                       (LABS-610, ADR-0466).
+  --safe               Refuse agent-typical dangerous statement shapes; --no-safe
+                       negates it. Refuses a new named node without a label, and
+                       a MATCH read without LIMIT or a reducing aggregate
+                       (collect() does not count). A policy, not a database
+                       limit. RELATE_SAFE_MODE=1/0 sets the default; off
+                       unless asked (LABS-680, ADR-0477).
+  --agent-mode         Force agent ergonomics on (the row cap's default and the
+                       toon piped default, ADR-0426); pairs with --max-rows.
+                       --no-agent-mode turns them off (the -mode suffix stays
+                       clear of the skill-install harness selector).
+                       ADR-0407's ladder: the flag, then RELATE_AGENT_MODE=1/0,
+                       then harness detection (piped runs only). The explicit
+                       acts print a one-line announcement; detection stays silent
+  --max-rows N         Print at most N rows per statement; 0 = unlimited.
+                       Default: 100 under a detected agent harness with stdout
+                       not a terminal, unlimited otherwise (RELATE_MAX_ROWS)
+  --width N            Wrap the human table to N display columns; the widest
+                       columns shrink and their cells wrap over lines.
+                       Default: the terminal width, else an exported COLUMNS
+                       (both floored at 20), else the natural width
+  --timeout DURATION   Cancel a statement that runs longer (500ms, 10s, 2m;
+                       bare number = seconds; 0 disables). Exit code 7
+  --read-only[=FRESH]  Open an existing database without writing or checkpointing.
+                       FRESH is snapshot (default: a frozen snapshot at open) or
+                       live (tail the WAL and follow the writer's commits;
+                       refused for .rl and :memory:). Attach the value
+                       (--read-only=live); once per run.
+                       A native directory can be open beside a writer. A .rl file
+                       opens only while no writer holds it. :memory: rejects writes
+                       and creates nothing
+  --load-csv-dir PATH  Allow local LOAD CSV under this directory (default denied; overrides RELATE_LOAD_CSV_DIR)
+  --namespace NAME     Session namespace (neo4j|system|system_ontologies; default neo4j)
+  -c, --command Q      One-shot statement or `;`-separated list (same as positional QUERY)
+  --            Treat all following arguments as positional
+On a TTY, the interactive shell supports readline-style editing (arrow keys, Home/End).
+
+--database is a directory (WAL + snapshot), a .rl bundle, or :memory: (the default).
+With no QUERY, the interactive shell opens on a terminal (ADR-0231); on piped
+or redirected stdin this help is printed. `query` with no STATEMENT reads a script
+from stdin, or opens the same shell on a terminal.
+
+Examples:
+  # Run a query and print JSON
+  relate --database ./mydata --json -c "MATCH (n) RETURN count(n) AS nodes"
+  # Explore without being able to change anything
+  relate --database ./mydata --read-only --mode envelope -c "MATCH (n:Person) RETURN n.name LIMIT 5"
+
+Run 'relate <COMMAND> --help' for details on a command.

@@ -1,0 +1,17 @@
+[package]
+name = "relate-serve"
+description = "Shared accept loop for Relate network surfaces (ADR-0238): connection cap, resilient accept, thread-per-connection; plus the workspace's one shutdown-signal wait"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+signal-hook = { workspace = true }
+
+[dev-dependencies]
+# The tests' env-var guard (`EnvRestore`): the process environment is
+# shared across parallel tests, so the mutation restores on drop —
+# panic path included.
+relate-test-support = { workspace = true }

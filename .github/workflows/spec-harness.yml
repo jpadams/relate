@@ -1,0 +1,196 @@
+name: spec-harness
+
+# The spec-coverage lane (ADR-0482): every in-review PR runs the
+# cypher-test-harness suites against the PR's own Python-wheel build — the
+# wheel installed in the venv IS the engine under test — and reports
+# coverage (passed / (passed + failed), @fails / nondeterministic /
+# skipped never counted) with a traffic light in the job summary and a PR
+# comment. The engine's TCK extension corpus and CIP evaluation suite run
+# in that harness too, as two of its own features/ suites — the engine no
+# longer vendors them (ADR-0520). Reporting, not gating: coverage below
+# 100% never fails the build; only a summary the report script cannot
+# read does.
+on:
+  pull_request:
+    branches: [main]
+    # `ready_for_review` is not in the default types list — without it
+    # here, flipping a draft to ready would never trigger this lane.
+    # Draft pushes (synchronize) still reach the job and skip below.
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write   # the coverage comment
+
+# The draft-state suffix keeps a draft -> ready flip from canceling the
+# in-flight draft run (a status change is not a new push); a new push in
+# the same state still cancels its predecessor, and merge-time
+# cancellation is cancel-on-merge.yml's.
+concurrency:
+  group: spec-harness-${{ github.head_ref || github.ref }}${{ github.event.pull_request.draft && '-draft' || '' }}
+  cancel-in-progress: true
+
+jobs:
+  harness:
+    name: Spec harness (coverage traffic light)
+    # The draft contract (AGENTS.md): drafts run the light fast gate only;
+    # this lane waits for ready-for-review. A dispatch run has no
+    # pull_request context and passes the guard.
+    if: ${{ !github.event.pull_request.draft }}
+    # The free tier is enough (measured, ADR-0482 Later references): the
+    # lane's whole footprint is ~1–2 GB (its rust-cache is 188 MiB — one
+    # cdylib, no test binaries; the Bolt-lane ENOSPC history was
+    # multi-binary legs), a warm run is 3–6 min on the same 4 vCPU, and
+    # every new PR is a cold first build either way (GHA caches are
+    # PR-ref scoped). The paid 4-core class stays free for the
+    # compile-bound lanes it exists for.
+    runs-on: ubuntu-latest
+    steps:
+      # No stored credentials: this checkout is never used to push, and
+      # the comment step passes github.token explicitly (ADR-0482 §5,
+      # security review).
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The harness repo (private, same org). A read token is REQUIRED
+      # (ADR-0482 §5, verified in CI 2026-11-02): github.token is scoped
+      # to this repository, so a cross-repo checkout fails with
+      # "Repository not found" even with the harness repo internal.
+      # Remedies: set HARNESS_READ_TOKEN (fine-grained PAT, Contents: Read
+      # on the harness repo) or use a GitHub App token. The fallback keeps
+      # the lane correct should a default-token path ever exist. Ref is
+      # main — the numbers are current, the sha lands in the report.
+      # ADR-0517 §3: the external home is acquired outside this repo. The
+      # harness repository still lives under its pre-rename name until the
+      # relatedb cutover moves it; this checkout flips to
+      # relatedb/relate-cypher-test-harness at that cutover.
+      - name: Check out the spec harness (neo4j-labs/cypherlite-cypher-test-harness)
+        uses: actions/checkout@v7
+        with:
+          repository: neo4j-labs/cypherlite-cypher-test-harness
+          path: harness
+          ref: main
+          token: ${{ secrets.HARNESS_READ_TOKEN || github.token }}
+          # The harness PAT (and the comment-writable github.token on the
+          # engine checkout) must not sit in .git/config while PR-authored
+          # code runs (security review, ADR-0482 §5).
+          persist-credentials: false
+
+      # Informational, never blocking (ADR-0482 §5): the default token is
+      # expected to see the same-org harness repo. Shell-inert probe of the
+      # secret's presence — the value never reaches the log.
+      - name: Note the harness checkout token in use
+        env:
+          HARNESS_TOKEN: ${{ secrets.HARNESS_READ_TOKEN }}
+        run: |
+          if [ -n "${HARNESS_TOKEN}" ]; then
+            echo "harness checkout: HARNESS_READ_TOKEN"
+          else
+            echo "::warning::HARNESS_READ_TOKEN is not set — using the default GITHUB_TOKEN for the harness checkout (ADR-0482 §5)."
+          fi
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Standard Rust preamble (toolchain 1.88, sccache, mold, rust-cache).
+      # free-disk is off: the lane's whole footprint is ~1–2 GB (its
+      # rust-cache measures 188 MiB — one cdylib, no test binaries; the
+      # ENOSPC history that justifies the script is the multi-binary
+      # lanes), so the ~90 s cleanup pass costs more than the suite it
+      # precedes. The release-profile cache key is this lane's own — it
+      # must not pollute the debug-profile shared keys.
+      - uses: ./.github/actions/setup-rust-ci
+        with:
+          free-disk: "false"
+          cache-shared-key: spec-harness-v1
+          cache-workspace-crates: "true"
+          cache-save-if-cold-only: "true"
+
+      # The venv is created fresh every run and never cached: a cached venv
+      # holds the engine wheel (the thing under test) and a stale one
+      # silently measures the wrong engine (ADR-0482). Only cargo/sccache
+      # artifacts are cached, never pip state.
+      - name: Create the harness venv (never cached — the wheel is reinstalled every run)
+        run: |
+          python3 -m venv harness/.venv
+          harness/.venv/bin/pip install --upgrade pip
+          harness/.venv/bin/pip install behave maturin
+
+      # maturin must run from the package dir, not the workspace root
+      # (root fails with "TOML parse error ... missing field 'package'",
+      # hit live while building this lane). The wheel is written to a
+      # scratch dir wiped before the build, so no stale wheel from any
+      # cache can be picked up by the install glob below.
+      - name: Build the engine wheel from the PR's commit (maturin, release)
+        run: |
+          rm -rf dist
+          cd surfaces/relate-python
+          ../../harness/.venv/bin/maturin build --release --out "$GITHUB_WORKSPACE/dist"
+          ls -l "$GITHUB_WORKSPACE/dist"
+
+      - name: Install the PR's wheel into the venv (force-reinstall)
+        run: |
+          harness/.venv/bin/pip install --force-reinstall dist/relate_db-*.whl
+          harness/.venv/bin/python -c "import relate; print('engine under test:', relate.__file__)"
+
+      - name: Run the spec-harness suite (~32k scenarios)
+        run: |
+          cd harness
+          start=$SECONDS
+          .venv/bin/python scripts/generate_report.py
+          echo "HARNESS_SECONDS=$((SECONDS - start))" >> "$GITHUB_ENV"
+
+      # The step is named for what it is. It exits 0 for any coverage
+      # number (ADR-0482 §4: reporting, not gating) and fails only on a
+      # summary the report script cannot read — a real problem, since
+      # then there is no number at all.
+      - name: Spec coverage report (traffic light, never fails on a number)
+        run: |
+          set -o pipefail
+          # The runtime row is context: when the suite step did not record
+          # a duration, the flag is omitted, never passed empty.
+          run_seconds_args=()
+          if [ -n "${HARNESS_SECONDS:-}" ]; then
+            run_seconds_args=(--run-seconds "$HARNESS_SECONDS")
+          fi
+          python3 scripts/spec-harness-coverage.py \
+            harness/reports/summary.json \
+            --harness-sha "$(git -C harness rev-parse HEAD)" \
+            "${run_seconds_args[@]}" \
+            | tee "$RUNNER_TEMP/coverage.md"
+
+      # One upserted comment per PR, not one per push. Never fails the
+      # lane: a comment-posting hiccup must not turn a green report red.
+      - name: Post the coverage report as a PR comment
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          marker="<!-- spec-harness-coverage -->"
+          body="$marker
+          $(cat "$RUNNER_TEMP/coverage.md")
+
+          <sub>Rerun \`spec-harness\` to refresh. Coverage below 100% never fails the build (ADR-0482 §4).</sub>"
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" \
+              -f body="$body" >/dev/null
+            echo "updated coverage comment $existing"
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+              -f body="$body" >/dev/null
+            echo "created coverage comment"
+          fi
+
+      - name: Disk headroom (telemetry)
+        if: always() && runner.os == 'Linux'
+        run: scripts/report-disk.sh

@@ -1,0 +1,32 @@
+[package]
+name = "relate-dungeon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The dungeon game as a first-party extension crate (ADR-0431 §11): a
+# command-kind child the `relate run` host drives over MCP stdio —
+# one `--command` per turn, all game state in the host's store, every
+# verb composed of `read_cypher`/`write_cypher` calls through the wire
+# kit (LABS-884). The lib is the game (data tables, verbs, renderer —
+# testable without a host); the bin is the child: one request envelope
+# on stdin, then the session whose calls are the turn.
+#
+# `package/extension.json` is the package the `--from` install stages:
+# the committed manifest beside the executable's source. The Python
+# child this port replaces lives on as `reference/dungeon.py` — the
+# iteration artifact the Rust source mirrors statement-for-statement.
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The wire kit: the MCP child glue (`serve`, `McpChild`) both sides of
+# the mount share.
+relate-wire = { workspace = true }
+
+[lib]
+name = "relate_dungeon"
+
+[[bin]]
+name = "dungeon"
+path = "src/main.rs"

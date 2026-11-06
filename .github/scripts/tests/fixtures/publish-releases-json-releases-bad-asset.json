@@ -1,0 +1,16 @@
+[
+  {
+    "tagName": "v0.10.1",
+    "name": "v0.10.1",
+    "publishedAt": "2026-10-14T10:00:00Z",
+    "createdAt": "2026-10-14T10:00:00Z",
+    "isDraft": false,
+    "isPrerelease": false,
+    "body": "A release with an asset name that cannot form a download URL.\n",
+    "assets": [
+      { "name": "SHA256SUMS" },
+      { "name": "relate release notes.txt" }
+    ],
+    "url": "https://api.github.com/repos/relatedb/relate/releases/100000013"
+  }
+]

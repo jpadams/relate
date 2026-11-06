@@ -1,0 +1,77 @@
+[package]
+name = "relate-test-support"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Shared test-only helpers for the Relate workspace (big-stack runner, platform samplers, fixture files, loopback Query API fixture)"
+publish = false
+license.workspace = true
+
+# The loopback fixture is split in two: the wire side (client exchanges,
+# request builders, response parsers, scripted servers — `wire`, needing
+# only flate2 for the gzip inflater) and the loader bridge (`loopback_opts`
+# builds `LoadOpts`, so `loopback` pulls relate-load and serde_json).
+# The fixture itself serves over std::net, no HTTP stack.
+[dependencies]
+# The DST-overlap fixture (`temporal`) builds `Temporal` values.
+chrono = { workspace = true }
+# The durability-mode table (`durability`) names the engine's mode type.
+relate = { workspace = true, optional = true }
+relate-bolt = { workspace = true, optional = true }
+# `nested_eval`'s kind parse-back asserts the ADR-0395 row
+# (`ErrorKind::NestedEvaluationBudgetExceeded`).
+relate-error = { workspace = true, optional = true }
+# The same helper's expected error text is built from the executor's
+# canonical budget constant, so the asserted contract cannot drift from
+# the enforced one.
+relate-executor = { workspace = true, optional = true }
+relate-core = { workspace = true }
+relate-load = { workspace = true, optional = true }
+# The recursive VFS traversal (`vfs_walk`) the store suites share: pulls
+# only the storage crate's `Vfs` trait, no engine features.
+relate-storage = { workspace = true, optional = true }
+# The `wire` fixture's gzip inflate helper (the wire tests' gzip bodies).
+flate2 = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+# The shared pinned fetch kit (`fetch`, ADR-0243): the
+# per-data-set lock (fs4), the streamed sha256 (sha2) and the verified
+# download (ureq).
+fs4 = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
+# The scratch git config behind `git::Repo` and the fixture kits' scratch
+# repositories: a test-only dependency, promoted from dev-only so the library
+# module (not just this crate's own tests) can create and clean them up.
+tempfile = { workspace = true }
+
+# The platform samplers in `sampling` (`getrusage`, `task_info`).
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+
+[features]
+bolt = ["dep:relate-bolt"]
+# The durability-mode table (`durability`, ADR-0470): the one
+# (spelling, mode) enumeration the engine, CLI and Bolt durability pins
+# iterate.
+durability = ["dep:relate"]
+# The ADR-0395 budget assertion (`nested_eval`): pulls the error registry
+# and the executor's budget constant. Only the two budget-test consumers
+# (relate-executor and relate as dev-deps) enable it, so the
+# general-purpose users of this crate do not compile the engine.
+nested_eval = ["dep:relate-error", "dep:relate-executor"]
+# The envelope-keys pin (ADR-0430 §6) the first-party children's tests and
+# the wire kit's own call.
+envelope = ["dep:serde_json"]
+# The wire fixtures: raw client, request builders, response parsers,
+# scripted servers. No loader.
+wire = ["dep:flate2"]
+# The full loopback Query API fixture: `wire` plus the `LoadOpts` bridge the
+# pull/loader tests use.
+loopback = ["wire", "dep:relate-load", "dep:serde_json"]
+# The recursive `Vfs` traversal (`vfs_walk`): the golden-store and
+# markdown-vault suites' one walk policy.
+vfs_walk = ["dep:relate-storage"]
+# The shared pinned fetch kit (`fetch`): the pin-table parse, the streamed
+# sha256, the verified download and the lock-and-stamp ensure the
+# query-latency data-set fetches use.
+fetch = ["dep:fs4", "dep:sha2", "dep:ureq"]

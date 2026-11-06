@@ -1,0 +1,22 @@
+# Baseline B-14 (F-25): a syntax error fails at RUN, the PULL sent with it
+# is IGNORED, and after RESET the session serves a query again. What this
+# adds over readme_example.bolt (an empty RETURN, a RUN IGNORED, then
+# RESET): a different syntax error, a PULL (not a RUN) in the failed
+# state, and a query answered after the RESET. The syntax error is a
+# pre-execution failure, so it stays at RUN after the runtime-error-at-pull
+# change. The FAILURE code and message are "*".
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 +" {} {}
+   PULL {"n": -1}
+S: FAILURE {"code": "*", "message": "*"}
+   IGNORED
+C: RESET
+S: SUCCESS {}
+C: RUN "RETURN 2 AS y" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["y"]}
+   RECORD [2]
+   SUCCESS {}

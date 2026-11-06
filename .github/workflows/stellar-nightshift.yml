@@ -1,0 +1,453 @@
+name: stellar night-shift
+
+# LABS-311 / ADR-0292: plan the carried-open stellar findings into small
+# finding-clusters, only inside 03:00-07:00 Europe/Berlin so the job never
+# collides with active development. The cron fires hourly across both the
+# CET and CEST windows; nightshift.py's window gate decides.
+
+on:
+  schedule:
+    - cron: "0 1-6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Ignore the 03:00-07:00 CET window"
+        type: boolean
+        default: false
+
+concurrency:
+  group: stellar-nightshift
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+# CI is not a user session: the CLI's anonymous usage metrics
+# (ADR-0079) are opted out on every relate spawn a lane of this
+# workflow can reach — including any the night-shift agents run on the
+# runner while working a cluster. Workflow-level — the ADR-0255
+# single-source placement, so every lane inherits the identical value —
+# and DO_NOT_TRACK is not a CARGO* var, so the Swatinem/rust-cache
+# environment hash is untouched.
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Optional: with LINEAR_API_KEY set, clusters become Linear issues
+      # labelled review-tasks and open review-tasks issues are pulled back.
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+    outputs:
+      cluster: ${{ steps.pick.outputs.cluster }}
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      - name: Window gate
+        id: gate
+        run: |
+          T=.agents/skills/stellar-review/tools
+          if [ "${{ inputs.force }}" = "true" ] || python3 $T/nightshift.py window; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "outside 03:00-07:00 Europe/Berlin; nothing to do"
+          fi
+
+      - name: Collect ledgers and busy files
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          T=.agents/skills/stellar-review/tools
+          mkdir -p .stellar/ledgers
+          : > .stellar/busy.txt
+          # every *active* PR: its carried ledger, and its files count as busy.
+          # Active = open, not a draft, with activity in the last 24h (gh's
+          # updatedAt tracks pushes, comments, and reviews). Drafts and PRs
+          # gone quiet for a day no longer hold night-shift clusters hostage.
+          ACTIVE=$(gh pr list --repo "$REPO" --state open --limit 200 \
+            --json number,isDraft,updatedAt \
+            --jq '.[] | select(.isDraft == false)
+                     | select((now - (.updatedAt | fromdateiso8601)) < 86400)
+                     | .number')
+          for pr in $ACTIVE; do
+            python3 $T/post.py fetch-ledger --repo "$REPO" --pr "$pr" --out ".stellar/ledgers/$pr.json" || echo "skip ledger of #$pr"
+            gh pr diff "$pr" --repo "$REPO" --name-only >> .stellar/busy.txt || true
+          done
+          sort -u -o .stellar/busy.txt .stellar/busy.txt
+
+      - name: Pull review-tasks from Linear
+        continue-on-error: true
+        if: steps.gate.outputs.go == 'true' && env.LINEAR_API_KEY != ''
+        run: |
+          python3 .agents/skills/stellar-review/tools/linear_queue.py pull --out .stellar/tasks.json
+          jq -r '"review-tasks open: \(length); workable: \([.[]|select(.clusters and (.clusters|length)>0)]|length); skipped: \([.[]|select(.skipped!="" and .scope!="auto-filed")|"\(.identifier) (\(.skipped))"]|join(", "))"' \
+            .stellar/tasks.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Plan queue
+        if: steps.gate.outputs.go == 'true'
+        run: |
+          T=.agents/skills/stellar-review/tools
+          shopt -s nullglob
+          args=(); for l in .stellar/ledgers/*.json; do args+=(--ledger "$l"); done
+          [ -f .stellar/tasks.json ] && args+=(--tasks .stellar/tasks.json)
+          [ ${#args[@]} -gt 0 ] || { echo "no ledgers or review-tasks"; exit 0; }
+          force=(); [ "${{ inputs.force }}" = "true" ] && force=(--force)
+          python3 $T/nightshift.py plan "${args[@]}" --busy-files .stellar/busy.txt \
+            --out .stellar/queue.json "${force[@]}"
+          jq '{open_findings, escalate, runnable: [.runnable[] | {id, test_tier, files: (.files|length)}], held_busy: (.held_busy|length)}' \
+            .stellar/queue.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Sync review-tasks with Linear
+        continue-on-error: true
+        if: steps.gate.outputs.go == 'true' && env.LINEAR_API_KEY != ''
+        run: |
+          T=.agents/skills/stellar-review/tools
+          [ -f .stellar/queue.json ] || exit 0
+          # hand-filed TASK-* clusters already have their issue; sync only the ledger clusters
+          jq '.runnable |= map(select(.task|not)) | .deferred_outside_window |= map(select(.task|not))' \
+            .stellar/queue.json > .stellar/queue-ledger.json
+          python3 $T/linear_queue.py sync --queue .stellar/queue-ledger.json --out .stellar/issues.json
+
+      # One TRUSTED (hand-filed review-tasks, human-authored) cluster per night.
+      # Ledger clusters are PR-comment text and are never fed to the write-
+      # privileged worker (security review on #296). Skip clusters whose autopilot
+      # branch/PR already exists (work in flight).
+      - name: Pick cluster
+        id: pick
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f .stellar/queue.json ] || exit 0
+          for key in $(jq -r '.runnable[]|select(.trusted)|.key' .stellar/queue.json); do
+            if [ -z "$(git ls-remote --heads origin "nightshift/$key")" ] \
+               && [ -z "$(gh pr list --state all --head "nightshift/$key" --json number --jq '.[0].number')" ]; then
+              echo "cluster=$key" >> "$GITHUB_OUTPUT"; break
+            fi
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.go == 'true'
+        with:
+          name: stellar-nightshift-queue
+          path: .stellar/
+          include-hidden-files: true
+          if-no-files-found: error
+
+  # The worker (ADR-0292), split so the model never shares a job with a
+  # write token: `fix` (no token) lets the model edit files, runs the
+  # fast-tier checks and emits a patch; `publish` (write token, fresh
+  # checkout the model never touched) re-checks scope, applies the patch,
+  # pushes and opens the PR. The model's shell can poison its own job
+  # (GITHUB_ENV/PATH, git hooks) but nothing reachable from `publish`.
+  recurrence:
+    # LABS-311 prevention loop: 07:00-09:00 Europe/Berlin — after the
+    # night-shift window — the recurring-pattern histogram from every open
+    # PR's carried ledger. A checklist id crossing the promotion threshold
+    # (>= 5 findings across >= 3 PRs) is a prevention-rule candidate; the
+    # report posts to the distillation tracking issue (#347) for the human
+    # step (AGENTS.md "Prevention distillation loop").
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      - name: Window gate (07:00-09:00 Europe/Berlin)
+        id: gate
+        run: |
+          if [ "${{ inputs.force }}" = "true" ] || python3 - <<'PY'
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          exit(0 if 7 <= datetime.now(ZoneInfo("Europe/Berlin")).hour < 9 else 1)
+          PY
+          then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "outside 07:00-09:00 Europe/Berlin; nothing to do"
+          fi
+
+      - name: Recurrence report
+        if: steps.gate.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          T=.agents/skills/stellar-review/tools
+          mkdir -p .stellar/ledgers
+          PRS=$(gh pr list --repo "$REPO" --state open --limit 200 --json number --jq '.[].number')
+          for pr in $PRS; do
+            python3 $T/post.py fetch-ledger --repo "$REPO" --pr "$pr"               --out ".stellar/ledgers/$pr.json" || echo "skip ledger of #$pr"
+          done
+          python3 - <<'PY' > .stellar/recurrence-report.md
+          import glob, json
+          from collections import Counter, defaultdict
+          total, span = Counter(), defaultdict(set)
+          for path in glob.glob(".stellar/ledgers/*.json"):
+              try:
+                  led = json.load(open(path))
+              except Exception:
+                  continue
+              pr = path.rsplit("/", 1)[-1].removesuffix(".json")
+              for f in led.get("findings", {}).values():
+                  cid = f.get("checklist_id") or "unclassified"
+                  total[cid] += 1
+                  span[cid].add(pr)
+          print("## Stellar recurrence report")
+          print()
+          print("Open-PR ledger histogram by checklist id; promotion")
+          print("threshold: **>= 5 findings across >= 3 PRs**.")
+          print()
+          promoted = False
+          for cid, n in total.most_common():
+              prs = len(span[cid])
+              flag = " — **promotion candidate**" if n >= 5 and prs >= 3 else ""
+              promoted |= bool(flag)
+              print(f"- {cid}: {n} finding(s) across {prs} PR(s){flag}")
+          if not total:
+              print("- (no ledgers carried)")
+          if not promoted:
+              print()
+              print("(no pattern crossed the promotion threshold)")
+          PY
+          cat .stellar/recurrence-report.md
+          if grep -q "promotion candidate" .stellar/recurrence-report.md; then
+            gh issue comment 347 --repo "$REPO" --body-file .stellar/recurrence-report.md
+          else
+            echo "no promotion candidates; no comment"
+          fi
+
+  fix:
+    needs: plan
+    if: needs.plan.outputs.cluster != ''
+    # The 4-core class (~150GB disk, 4 CPUs): the full-tier verify
+    # (cargo test --workspace) plus the restored rust-cache target, the
+    # pristine verifier worktree, and opencode exhausted ubuntu-latest's
+    # ~14GB disk — /usr/bin/ld died with "final link failed: No space
+    # left on device" on every run that had a cluster to fix (observed
+    # on all 02:00-05:00 runs of 2026-10-29..31, zero patches
+    # published). The extra cores also cut the verify tier's build
+    # time; the model-edit step itself is one sequential LLM run.
+    runs-on: linux-4-core-x86
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      KEY: ${{ needs.plan.outputs.cluster }}
+    outputs:
+      changed: ${{ steps.verify.outputs.ok }}
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stellar-nightshift-queue
+          path: .stellar
+
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install opencode
+        run: .github/scripts/install-opencode.sh
+
+      - name: Build task prompt
+        run: |
+          T=.agents/skills/stellar-review/tools
+          {
+            echo 'PROMPT<<PROMPT_EOF'
+            cat .github/prompts/stellar-nightshift.md
+            echo
+            echo "FINDING CLUSTER:"
+            python3 $T/nightshift.py cluster --queue .stellar/queue.json --id "$KEY"
+            echo 'PROMPT_EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Fix cluster (model edits files only)
+        # 40 min timed out mid-verify on the 2026-10-18 run (workspace-wide
+        # test builds in the cold /tmp target); 75 leaves the edit + a
+        # scoped check room, still under the job's 90
+        timeout-minutes: 75
+        env:
+          # Model override (ADR-0302): secret → repo variable → the catalog
+          # router glm-fast-latest (tracks GLM fast releases); pin a catalog
+          # model ID through the override for a reproducible run.
+          STELLAR_NIGHTSHIFT_MODEL: ${{ secrets.STELLAR_NIGHTSHIFT_MODEL || vars.STELLAR_NIGHTSHIFT_MODEL || 'fireworks-ai/accounts/fireworks/routers/glm-fast-latest' }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          GH_TOKEN: none
+        run: opencode run --model "$STELLAR_NIGHTSHIFT_MODEL" "$PROMPT"
+
+      # A pristine copy of the tools: the model step edits the working tree,
+      # so check-scope and the cluster commands must NOT run from it
+      # (security review #296: the agent could rewrite its own verifier).
+      - name: Restore pristine tools
+        run: git worktree add /tmp/pristine HEAD
+
+      - name: Verify scope and fast-tier checks, emit patch
+        id: verify
+        run: |
+          T=/tmp/pristine/.agents/skills/stellar-review/tools
+          Q=$PWD/.stellar/queue.json
+          git -C /tmp/pristine stash -q 2>/dev/null || true
+          git add -A -- .
+          git diff --cached --name-only > .stellar/changed.txt
+          [ -s .stellar/changed.txt ] || { echo "model made no change"; exit 0; }
+          python3 $T/nightshift.py check-scope --queue "$Q" --id "$KEY" < .stellar/changed.txt
+          python3 $T/nightshift.py cluster --queue "$Q" --id "$KEY" --field test_commands > .stellar/cmds.txt
+          # A patch that fails the fast tier is a soft outcome, not an
+          # infrastructure failure: the cluster stays open for a retry and
+          # the run reports honestly (publish skips on ok=false).
+          # errexit is suppressed inside `if !` — accumulate the status so
+          # every tier command (fmt, clippy, tests) gates, not just the last
+          status=0
+          while IFS= read -r c; do echo "+ $c"; bash -c "$c" </dev/null || status=1; done < .stellar/cmds.txt
+          if [ "$status" -ne 0 ]; then
+            echo "fast tier failed; patch discarded — cluster stays open"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --cached --binary > .stellar/fix.patch
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.verify.outputs.ok == 'true'
+        with:
+          name: stellar-nightshift-patch
+          path: .stellar/fix.patch
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, fix]
+    if: needs.fix.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      KEY: ${{ needs.plan.outputs.cluster }}
+      # A PAT/App token lets the PR trigger CI (GITHUB_TOKEN-created PRs do
+      # not); falls back to GITHUB_TOKEN. Requires Settings > Actions >
+      # "Allow GitHub Actions to create and approve pull requests".
+      GH_TOKEN: ${{ secrets.NIGHTSHIFT_TOKEN || secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stellar-nightshift-queue
+          path: .stellar
+      - uses: actions/download-artifact@v4
+        with:
+          name: stellar-nightshift-patch
+          path: .stellar
+
+      - name: Apply patch, re-check scope
+        run: |
+          T=.agents/skills/stellar-review/tools
+          git apply --index .stellar/fix.patch
+          git diff --cached --name-only > .stellar/changed.txt
+          python3 $T/nightshift.py check-scope --queue .stellar/queue.json --id "$KEY" < .stellar/changed.txt
+
+      - name: Commit, push, open PR
+        run: |
+          T=.agents/skills/stellar-review/tools
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
+          git config user.name "stellar-nightshift"
+          git config user.email "stellar-nightshift@users.noreply.github.com"
+          python3 $T/nightshift.py cluster --queue .stellar/queue.json --id "$KEY" > .stellar/cluster.json
+          crate=$(jq -r '.crate' .stellar/cluster.json)
+          git checkout -q -b "nightshift/$KEY"
+          git commit -qm "fix(stellar): night-shift findings in $crate [stellar-ns:$KEY]"
+          AUTH="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c http.https://github.com/.extraheader="$AUTH" push origin "nightshift/$KEY"
+          if ! gh pr create --head "nightshift/$KEY" \
+              --title "fix(stellar): night-shift findings in $crate [stellar-ns:$KEY]" \
+              --body "Autopilot (LABS-311, ADR-0292): one finding-cluster, one commit. Checks run: $(jq -r '.test_commands|join(" ; ")' .stellar/cluster.json)
+
+          $(jq -r '.findings[] | "- \(.severity) \(.path): \(.summary)"' .stellar/cluster.json)"; then
+            # an orphan branch would make the picker skip this cluster forever
+            git -c http.https://github.com/.extraheader="$AUTH" push origin --delete "nightshift/$KEY" || true
+            exit 1
+          fi

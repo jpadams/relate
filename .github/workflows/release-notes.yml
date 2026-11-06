@@ -1,0 +1,365 @@
+name: Release notes
+
+# Generates richer release notes with OpenCode after a Relate release, then
+# publishes them. The agent writes two artifacts under target/release-notes/:
+# notes.md (markdown for the GitHub release body) and slack-payload.json
+# (Block Kit JSON for the Slack webhook). This workflow validates them, prints
+# them, optionally posts to Slack, and prepends the notes to the GitHub release.
+#
+# Trigger:
+#   - `workflow_call` — chained from release.yml's `release-notes` job, which
+#     runs after Create Release has published the GitHub release and its
+#     assets. Called runs always publish (`publish: true`) and never post to
+#     Slack inline (`slack: false`, ADR-0465): the payload is uploaded as the
+#     release-notes-slack-payload artifact for the release run's final
+#     slack-announce job. The chaining is explicit because release.yml
+#     publishes via softprops/action-gh-release
+#     with the default GITHUB_TOKEN, and GitHub suppresses downstream workflow
+#     runs for GITHUB_TOKEN-triggered events — a `release: [published]`
+#     trigger here would never fire (ADR-0265).
+#   - `workflow_dispatch` — manual run. `version` (required, no leading v) picks
+#     the tag; `publish` (optional, default false) opts into publishing;
+#     `slack` (optional, default true) keeps the inline Slack post on a
+#     publishing run (`slack: false` uploads the payload artifact instead).
+#
+# Secrets:
+#   - FIREWORKS_API_KEY (required): authenticates `opencode run`. The run fails
+#     fast with a clear error before generation if it is unset.
+#   - SLACK_WEBHOOK_URL (optional): enables the Slack leg. When unset the
+#     workflow logs a skip and continues with exit 0 — never a failure (LABS-133).
+#   - GITHUB_TOKEN (implicit): used by `gh release edit` to update the release.
+#
+# Dry run:
+#   A `workflow_dispatch` run defaults to `publish=false`, so it generates and
+#   prints the artifacts without touching GitHub or Slack. An inline Slack
+#   post needs `publish=true` AND `slack=true`: the `workflow_call` chain
+#   from release.yml passes `publish: true, slack: false` (ADR-0465) — it
+#   posts nothing inline, uploading slack-payload.json as the
+#   release-notes-slack-payload artifact for the release run's final
+#   slack-announce job — while a `publish=true` dispatch posts inline unless
+#   the operator sets `slack: false`.
+#
+# Contract: ADR-0124. Runner install is pinned in
+# .github/scripts/install-opencode.sh (the ADR-0258 tarball-plus-sha256
+# pattern) — the single source of truth shared with the review workflows.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Relate version (no leading v), e.g. 0.8.0"
+        required: true
+        type: string
+      publish:
+        description: "Publish to Slack and update the GitHub release (off = dry-run, log only)"
+        required: false
+        type: boolean
+        default: false
+      slack:
+        description: "Post to Slack inline from this run (off = upload the payload artifact for the caller's announce job, ADR-0465)"
+        required: false
+        type: boolean
+        default: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Relate version (no leading v), e.g. 0.8.0"
+        required: true
+        type: string
+      publish:
+        description: "Publish to Slack and update the GitHub release (off = dry-run, log only)"
+        required: false
+        type: boolean
+        default: false
+      slack:
+        description: "Post to Slack inline from this run (off = upload the payload artifact for the caller's announce job, ADR-0465)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# Serialize runs per release tag across both entry paths (the `workflow_call`
+# chain from release.yml and a manual `workflow_dispatch`). A called run and a
+# manual `publish=true` dispatch for the same version must not overlap: the
+# `gh release view` → merge → `gh release edit` sequence is a read-modify-write
+# on the release body, and the Slack POST is not idempotent — concurrent runs
+# would duplicate the Slack post and lose one run's body update.
+# Both paths carry the version as bare semver (`0.8.0`) via the `version`
+# input, so the group key normalizes to the `v`-prefixed tag shape through
+# format('v{0}', ...). The release run's final `slack-announce` job (ADR-0465)
+# carries the same group string: every run or job that can POST the
+# non-idempotent payload — an inline-posting release-notes run or the
+# deferred announce job — serializes in this one group.
+concurrency:
+  group: release-notes-${{ format('v{0}', inputs.version) }}
+  cancel-in-progress: false
+
+jobs:
+  release-notes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - name: Resolve run context
+        env:
+          INPUT_PUBLISH: ${{ inputs.publish }}
+          INPUT_SLACK: ${{ inputs.slack }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          # Validate the `version` input BEFORE any $GITHUB_ENV write
+          # (ADR-0125 amendment 3) — for every event name: workflow_call
+          # passes release.yml's computed version, workflow_dispatch takes
+          # operator input. The input is untrusted: a newline in it would
+          # append extra NAME=VALUE lines to $GITHUB_ENV below and could
+          # flip PUBLISH.
+          # Bare semver shape (no leading `v`); the character class excludes
+          # newlines, so a shape mismatch also means a newline is rejected.
+          if [[ ! "${INPUT_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "ERROR: version input '${INPUT_VERSION}' does not match ^[0-9]+\\.[0-9]+\\.[0-9]+([.-][0-9A-Za-z.-]+)?\$ (bare semver, no leading v, no newlines)" >&2
+            exit 1
+          fi
+          # Both entry paths honour the `publish` input: the workflow_call
+          # chain from release.yml passes `publish: true` (automatic
+          # post-release flow); workflow_dispatch defaults to false so manual
+          # runs are dry-run unless the operator opts in.
+          PUBLISH="${INPUT_PUBLISH:-false}"
+          echo "PUBLISH=${PUBLISH}" >> "$GITHUB_ENV"
+          echo "[release-notes] PUBLISH=${PUBLISH}"
+          # `slack` gates only the inline post, and defaults to true so a
+          # publishing standalone run keeps ADR-0124's behavior. The
+          # workflow_call chain from release.yml passes `slack: false`
+          # (ADR-0465): the generate run posts nothing inline — it uploads
+          # the payload as an artifact and the release pipeline's final
+          # slack-announce job posts it after the whole pipeline is green.
+          SLACK="${INPUT_SLACK:-true}"
+          echo "SLACK=${SLACK}" >> "$GITHUB_ENV"
+          echo "[release-notes] SLACK=${SLACK}"
+          # The `version` input is bare semver on both paths, so prepend `v`
+          # ourselves. RELEASE_TAG ends up `vX.Y.Z` and RELEASE_VERSION ends
+          # up `X.Y.Z`.
+          echo "RELEASE_TAG=v${INPUT_VERSION}" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=${INPUT_VERSION}" >> "$GITHUB_ENV"
+          echo "[release-notes] RELEASE_TAG=v${INPUT_VERSION} RELEASE_VERSION=${INPUT_VERSION}"
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          # Do not persist the job's contents:write GITHUB_TOKEN into the
+          # local git config: the opencode agent runs on prompt-injectable
+          # input (changelog / commit text from merged PRs) and must not be
+          # able to reach the write token through git (ADR-0125 amendment 3).
+          # Nothing in this job needs the persisted credential — the
+          # `gh release view/edit` steps authenticate via the GH_TOKEN env
+          # var, and all git operations (describe, show, log) are local after
+          # fetch-depth: 0.
+          persist-credentials: false
+
+      - name: Resolve previous release tag
+        run: |
+          # `git describe --tags --abbrev=0 <tag>^` returns the nearest tag
+          # reachable from the parent of <tag>. The `|| true` keeps the job
+          # alive when there is no prior tag (very first release) — PREV_TAG is
+          # then exported as an empty string and the prompt falls back to a
+          # bounded `git log` range.
+          PREV_TAG=$(git describe --tags --abbrev=0 "${RELEASE_TAG}^" 2>/dev/null || true)
+          echo "PREV_TAG=${PREV_TAG}" >> "$GITHUB_ENV"
+          echo "[release-notes] PREV_TAG=${PREV_TAG:-<none>}"
+
+      - name: Verify Fireworks API key
+        env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: |
+          # Fail fast with a clear error BEFORE installing opencode or spending
+          # tokens. SLACK_WEBHOOK_URL is deliberately not required here: a
+          # missing webhook is a graceful skip, never a failure (ADR-0124).
+          [ -n "$FIREWORKS_API_KEY" ] || { echo "ERROR: FIREWORKS_API_KEY secret not set" >&2; exit 1; }
+          echo "[release-notes] FIREWORKS_API_KEY present (${#FIREWORKS_API_KEY} chars)"
+
+      - name: Install opencode
+        # Pinned install (version + sha256) lives in the script — the single
+        # source shared with opencode-review-reusable.yml.
+        run: .github/scripts/install-opencode.sh
+
+      - name: Generate release notes
+        env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          # Deny-by-default tool permissions for the agent (ADR-0125
+          # amendment 3). OPENCODE_CONFIG is opencode's documented
+          # custom-config-path mechanism; the committed file allowlists only
+          # the Bash commands the prompt needs and denies webfetch/websearch.
+          # No repo-root opencode.json exists, so nothing overrides this file.
+          # OPENCODE_CONFIG must be absolute (or paired with --standalone):
+          # opencode v2's managed background service chdirs to $HOME before
+          # config discovery resolves a relative explicit-config path, and a
+          # missing explicit file is silently skipped — a relative path here
+          # would silently drop the deny-by-default permissions.
+          OPENCODE_CONFIG: ${{ github.workspace }}/.github/opencode-release-notes.json
+          # RELEASE_TAG, RELEASE_VERSION and PREV_TAG are exported to
+          # $GITHUB_ENV by earlier steps, so they are already in this step's
+          # environment. The prompt selects its source (CHANGELOG.md first, git
+          # log fallback) and writes
+          # target/release-notes/{notes.md,slack-payload.json}.
+        run: |
+          # Fail closed BEFORE generation if the permission config is missing:
+          # opencode silently skips a missing explicit config file, so without
+          # this guard a dropped config would leave the agent unrestricted.
+          if [ ! -s "${OPENCODE_CONFIG}" ]; then
+            echo "ERROR: opencode permission config '${OPENCODE_CONFIG}' is missing or empty — refusing to run the agent without deny-by-default permissions" >&2
+            exit 1
+          fi
+          mkdir -p target/release-notes
+          # Feed the versioned prompt file as the run message. The agent has the
+          # Bash/Read/Write tools and the env above, so it can read CHANGELOG.md
+          # and the git log and write the two artifacts under target/release-notes/.
+          # --standalone spawns the server with the startup cwd (no chdir to
+          # $HOME, no cross-invocation managed-service reuse), so the absolute
+          # OPENCODE_CONFIG above is always honored.
+          opencode run --standalone --model fireworks-ai/accounts/fireworks/routers/kimi-latest \
+            "$(cat .github/prompts/release-notes.md)"
+
+      - name: Validate artifacts
+        env:
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: |
+          # Hard-fail if the agent didn't produce a non-empty markdown body.
+          # The `gh release edit` step below assumes one. The whole
+          # Slack-leg policy (skip / warn / fail-closed JSON validation /
+          # POST) lives in .github/scripts/release-notes-slack.sh (ADR-0125
+          # amendment 2); the payload check below adds existence only, on
+          # the one path whose payload outlives this run.
+          if [ ! -s target/release-notes/notes.md ]; then
+            echo "ERROR: target/release-notes/notes.md is missing or empty" >&2
+            exit 1
+          fi
+          # Hard-fail when this run is the announce leg's producer
+          # (ADR-0465): PUBLISH=true with slack=false uploads the payload
+          # for the release run's final slack-announce job, whose POST is
+          # the pipeline's last step — a missing or empty payload would
+          # surface only there, after the whole tail went green, with no
+          # regenerate step behind it. Existence only: the JSON-shape
+          # validation stays in release-notes-slack.sh, which the announce
+          # job runs — not duplicated here. Every other path keeps the
+          # tolerant handling: a dry run (publish=false) only prints, and a
+          # manual inline post (publish=true, slack=true) is fail-closed by
+          # the script's own active-leg check.
+          if [ "${PUBLISH}" = "true" ] && [ "${SLACK}" != "true" ] \
+            && [ ! -s target/release-notes/slack-payload.json ]; then
+            echo "ERROR: target/release-notes/slack-payload.json is missing or empty" >&2
+            exit 1
+          fi
+          # Fail closed if the agent output leaked the API key into the notes
+          # (prompt-injection exfiltration guard): notes.md is auto-published
+          # to the public release body. Fixed-string grep against the env
+          # var — the secret value itself is never echoed.
+          if [ -n "${FIREWORKS_API_KEY}" ] && grep -qF "${FIREWORKS_API_KEY}" target/release-notes/notes.md; then
+            echo "::error::target/release-notes/notes.md contains the FIREWORKS_API_KEY value — refusing to publish" >&2
+            exit 1
+          fi
+          # Fail closed if the agent output leaked the API key into the
+          # Slack payload too. The payload leaves the runner as the
+          # release-notes-slack-payload artifact on every non-inline path
+          # — the chained producer leg (publish=true, slack=false) and any
+          # slack=false manual run upload it, and the release pipeline's
+          # final slack-announce job POSTs it off-runner — so the scan must
+          # fail the run before the upload step, not only at POST time
+          # (the script's active-leg scan). Same idiom as the notes.md scan
+          # above: fixed-string grep against the env var — the secret value
+          # itself is never echoed. The -s guard keeps non-producer paths
+          # tolerant of a missing payload (dry run, inline post).
+          if [ -n "${FIREWORKS_API_KEY}" ] && [ -s target/release-notes/slack-payload.json ] \
+            && grep -qF "${FIREWORKS_API_KEY}" target/release-notes/slack-payload.json; then
+            echo "::error::target/release-notes/slack-payload.json contains the FIREWORKS_API_KEY value — refusing to upload" >&2
+            exit 1
+          fi
+          echo "[release-notes] generated notes: $(wc -c < target/release-notes/notes.md) bytes"
+
+      - name: Print generated release notes
+        # Always-on (no `if:`) so dry runs and failures surface the markdown in
+        # the job log without downloading an artifact.
+        run: |
+          echo "----- target/release-notes/notes.md -----"
+          cat target/release-notes/notes.md
+          echo "----- end -----"
+
+      - name: Print Slack payload
+        # Always-on, and pretty-printed so reviewers can read the Block Kit
+        # structure and the sidebar `text` without copying the file elsewhere.
+        run: |
+          # Tolerate a missing/empty/invalid payload (dry run or no webhook —
+          # the graceful continuation of ADR-0125 amendment 2): skip instead
+          # of failing. When the Slack leg is active, the Post-to-Slack step
+          # below hard-fails on a missing/invalid payload via
+          # release-notes-slack.sh.
+          if [ -s target/release-notes/slack-payload.json ] && jq -e . target/release-notes/slack-payload.json > /dev/null 2>&1; then
+            echo "----- target/release-notes/slack-payload.json -----"
+            jq . target/release-notes/slack-payload.json
+            echo "----- notification text -----"
+            jq -r '.text' target/release-notes/slack-payload.json
+            echo "----- end -----"
+          else
+            echo "[release-notes] (no valid slack payload — skipped)"
+          fi
+
+      - name: Post to Slack
+        # Inline post only on a run that both publishes and posts inline: the
+        # workflow_call chain from release.yml passes `slack: false` (the
+        # release pipeline's final slack-announce job posts the uploaded
+        # artifact after the whole pipeline is green, ADR-0465), and a dry run
+        # (publish=false) never posts. The script's own PUBLISH check below
+        # stays as the second gate on the same decision.
+        if: env.PUBLISH == 'true' && env.SLACK == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # Lets release-notes-slack.sh refuse to POST a payload that leaked
+          # the API key (secret-content scan on the active leg).
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        # Whole Slack-leg policy (skip / warn / fail-closed validation / POST)
+        # lives in the script (LABS-133 / ADR-0124 / ADR-0125 amendment 2).
+        run: .github/scripts/release-notes-slack.sh target/release-notes/slack-payload.json
+
+      - name: Prepend release notes to GitHub release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Idempotent prepend policy (ADR-0124) lives in the script — pure
+          # text policy: body file + notes file in, merged body file out. The
+          # workflow keeps the gh release view/edit orchestration.
+          gh release view "${RELEASE_TAG}" --json body -q '.body' > /tmp/current-body.md
+          .github/scripts/release-notes-prepend.sh /tmp/current-body.md target/release-notes/notes.md /tmp/release-body.md
+          gh release edit "${RELEASE_TAG}" --notes-file /tmp/release-body.md
+          echo "[release-notes] GitHub release ${RELEASE_TAG} updated"
+
+      - name: Upload Slack payload for the announce job
+        # The exact complement of the inline post above: a run that does not
+        # post inline hands the payload to the release pipeline's final
+        # slack-announce job (ADR-0465) as a workflow artifact. The chained
+        # release.yml call (publish=true, slack=false) always lands here, and
+        # so does every dry run — whose payload is then inspectable from the
+        # run page without re-running the agent. upload-artifact's default
+        # if-no-files-found (warn) keeps a dry run without a payload green,
+        # the graceful skip of ADR-0125 amendment 2.
+        if: env.PUBLISH != 'true' || env.SLACK != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-slack-payload
+          path: target/release-notes/slack-payload.json

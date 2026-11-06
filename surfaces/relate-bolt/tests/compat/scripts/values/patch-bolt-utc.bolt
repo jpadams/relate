@@ -1,0 +1,27 @@
+# ADR-0329 (F-10, F-57): HELLO patch_bolt ["utc"] is echoed, and the
+# connection then uses DateTimeUTC 0x49 / DateTimeZoneIdUTC 0x69 in both
+# directions. No AUTO HELLO: the script sends its own.
+!: BOLT 4.4
+!: AUTO GOODBYE
+
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "scheme": "none", "patch_bolt": ["utc"]}
+S: SUCCESS {"patch_bolt": ["utc"]}
+
+C: RUN "RETURN datetime('2024-01-02T03:04:05.123456789+01:00') AS d" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["d"]}
+   RECORD [{"#49": [1704161045, 123456789, 3600]}]
+   SUCCESS {}
+
+C: RUN "RETURN datetime('2024-01-02T03:04:05[Europe/Stockholm]') AS z" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["z"]}
+   RECORD [{"#69": [1704161045, 0, "Europe/Stockholm"]}]
+   SUCCESS {}
+
+# A 0x49 parameter echoes back as itself.
+C: RUN "RETURN $d AS d" {"d": {"#49": [1704161045, 123456789, 3600]}} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["d"]}
+   RECORD [{"#49": [1704161045, 123456789, 3600]}]
+   SUCCESS {}

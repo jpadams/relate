@@ -1,0 +1,13 @@
+[
+  {
+    "tagName": "v0.12.5",
+    "publishedAt": "2026-10-18T12:00:00Z",
+    "isDraft": false,
+    "isPrerelease": false,
+    "body": "",
+    "assets": [
+      {"name": "relate-darwin-arm64"},
+      {"name": "SHA256SUMS"}
+    ]
+  }
+]

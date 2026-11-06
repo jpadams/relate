@@ -1,0 +1,13 @@
+# Baseline B-07 (negotiation-7): the range 5.8 down to 5.0 (00 08 08 05)
+# covers spoken 5.4 and, first in client order, decides the reply
+# (ADR-0484 decision 2): 00 00 04 05, and the connection then serves a
+# session at 5.4: a 5.x HELLO — user_agent plus the mandatory bolt_agent
+# map, its auth fields ignored (ADR-0484 decision 3) — succeeds. The
+# leading C: <RAW> is the script's own handshake, so there is no
+# automatic one and no !: AUTO HELLO.
+!: AUTO GOODBYE
+
+C: <RAW> 60 60 B0 17 00 08 08 05 00 02 04 04 00 00 00 00 00 00 00 00
+S: <RAW> 00 00 04 05
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "bolt_agent": {"product": "relate-bolt-compat/1.0"}}
+S: SUCCESS {}

@@ -1,0 +1,22 @@
+# Baseline B-16 (F-28): the server reassembles a message from many small
+# chunks. RUN "RETURN 'split' AS s" {} {} is hand-encoded in 4-byte
+# chunks, and PULL {"n": -1} in 1-byte chunks, each message one write
+# ending in the 00 00 end marker. The RESET first is an ordinary exchange,
+# because a <RAW> first C: line would replace the automatic handshake and
+# HELLO. Only the RUN fields and the record are pinned.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RESET
+S: SUCCESS {}
+
+# RUN: B3 10, D0 13 + the 19-byte query, A0 (params), A0 (extra), split
+# 4 + 4 + 4 + 4 + 4 + 4 + 1.
+C: <RAW> 00 04 B3 10 D0 13  00 04 52 45 54 55  00 04 52 4E 20 27  00 04 73 70 6C 69  00 04 74 27 20 41  00 04 53 20 73 A0  00 01 A0  00 00
+S: SUCCESS {"fields": ["s"]}
+
+# PULL: B1 3F A1 81 6E FF, one byte per chunk.
+C: <RAW> 00 01 B1  00 01 3F  00 01 A1  00 01 81  00 01 6E  00 01 FF  00 00
+S: RECORD ["split"]
+   SUCCESS {}

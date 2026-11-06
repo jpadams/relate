@@ -1,0 +1,12 @@
+# Baseline B-26 (F-63): a map result with Int, String, List and nested Map
+# values (one of them null) encodes as a PackStream Map. Only the record
+# is pinned.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN {a: 1, b: 'two', c: [3], d: {e: null}} AS m" {} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   RECORD [{"a": 1, "b": "two", "c": [3], "d": {"e": null}}]
+   SUCCESS {}

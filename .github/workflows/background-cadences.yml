@@ -1,0 +1,304 @@
+name: Background cadences
+
+# ADR-0251 §6 (docs/testing/cadences.md): continuous CI (ci.yml) keeps a
+# representative fast slice of every heavy gate; this workflow runs the
+# full versions on timed cadences:
+#
+# - nightly (03:30 UTC): the LDBC graph-benchmark SF0.1 latency suite
+#   (ADR-0243/ADR-0244) with a latency judgement, the full-scale
+#   (scale=1.0) fraud/identity dataset fixtures (RELATE_FULL_DATA=1),
+#   and the docker image build + smoke (ADR-0128) — the full in-container
+#   `make docker` musl build is a from-scratch guarantee (~18 min cold),
+#   and from-scratch guarantees belong on a cadence, not the merge path.
+# - 6-hourly: the full wasm lane (headless-Firefox browser smokes, the
+#   release-wasm bundle and the API examples) and the full multi-OS sweep
+#   (macOS + Windows storage depth and the complete surface harness
+#   suites, not just the one-query smokes).
+#
+# A red cadence lane files a ticket (manual or bot); it never blocks a PR
+# — the continuous slices in ci.yml remain the merge gates. The
+# loadtest-baselines freeze gate is NOT here: it stays continuous (see
+# docs/testing/cadences.md for the reconciliation); the TCK corpus is
+# retired with the in-repo harness (ADR-0520) — language coverage is
+# the spec-harness lane (ADR-0482).
+
+on:
+  schedule:
+    # Nightly, 03:30 UTC.
+    - cron: "30 3 * * *"
+    # Every 6 hours, at :17 past the hour.
+    - cron: "17 */6 * * *"
+  # The scheduled triggers only fire on the default branch; a manual run
+  # exercises every lane on a feature branch before merge.
+  workflow_dispatch:
+
+# CI is not a user session: the CLI's anonymous usage metrics
+# (ADR-0079) are opted out on every relate spawn a lane of this
+# workflow can reach — the multi-OS e2e_bundles sweeps and the docker
+# image smoke's host-side steps alike. Workflow-level — the ADR-0255
+# single-source placement, so every lane inherits the identical value —
+# and DO_NOT_TRACK is not a CARGO* var, so the Swatinem/rust-cache
+# environment hash is untouched.
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  # Full LDBC graph-benchmark SF0.1 suite (ADR-0243): all 30 queries with
+  # a real latency judgement (min-time 5s of timed rounds per query). The
+  # continuous slice is the answers-only SF0.1 gate in ci.yml's `corpus`
+  # job; this lane adds the timing signal and the p50/p99 report.
+  ldbc-sf01:
+    name: LDBC SF0.1 full latency suite
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 3 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Free runner disk (Linux)
+        if: runner.os == 'Linux'
+        run: scripts/free-disk.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ldbc
+      - name: Fetch the SF0.1 extract (19 MB, cached in target/)
+        run: cargo run --release -p relate-query-latency -- fetch --sf 0.1
+      - name: Run all 30 queries (p50/mean/p99 report)
+        run: cargo run --release -p relate-query-latency -- run --sf 0.1 --min-time 5
+      - name: Upload the latency report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ldbc-sf01-report
+          path: target/query-latency/report-graph-benchmark-ldbc-sf0.1.json
+          if-no-files-found: warn
+
+  # The docker image build + smoke (ADR-0128), moved off the merge path
+  # (LABS-310): the full in-container `make docker` musl build is a
+  # from-scratch guarantee (~18 min on a cold buildx cache, LABS-144), and
+  # from-scratch guarantees belong on a cadence. No buildx cache rotation:
+  # the point of the lane is that a cold build works, and the cadence has
+  # no wall-clock budget to protect. The continuous `relate-bolt` job
+  # in ci.yml keeps the driver smokes, which run against the cargo-built
+  # binary and need no image.
+  docker-smoke:
+    name: Docker image build + smoke (ADR-0128)
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 3 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: python -m pip install neo4j
+      # Docker Hub rate-limits unauthenticated pulls per IP, and hosted
+      # runners share a small IP pool (LABS-248); a free-account login moves
+      # CI to the per-account budget. No-op where the secrets don't exist
+      # (forks), so the step is guarded via env indirection.
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v4
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # The docker-container driver is required for `make docker`'s build,
+      # and --load lands the image in the daemon store for the smoke run.
+      # BUILDX_BUILDER points `docker build` at the created builder.
+      - uses: docker/setup-buildx-action@v4
+        id: buildx
+      - name: Full in-container image build and smoke
+        env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
+        run: |
+          make docker DOCKER_BUILD_FLAGS="--load"
+          python3 surfaces/relate-bolt/tests/docker_smoke.py
+
+  # Full-scale (scale=1.0) fraud and identity fixtures — the ignored
+  # dataset tests that RELATE_FULL_DATA=1 enables (docs/datasets.md).
+  # The continuous slice is ci.yml's `loadtest-smoke` job, which runs the
+  # same suites at the ci() scale (0.05) in the dev profile.
+  large-fixtures:
+    name: Full-scale dataset fixtures (RELATE_FULL_DATA=1)
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 3 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Free runner disk (Linux)
+        if: runner.os == 'Linux'
+        run: scripts/free-disk.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: fixtures
+      # Release: at scale=1.0 the debug profile crawls.
+      - name: Fraud fixtures, full scale
+        run: RELATE_FULL_DATA=1 cargo test --release -p relate-datasets --test fraud -- --ignored
+      - name: Identity fixtures, full scale
+        run: RELATE_FULL_DATA=1 cargo test --release -p relate-datasets --test identity -- --ignored
+
+  # The full wasm lane, moved off the continuous path (ADR-0251 §6): the
+  # headless-Firefox browser smokes, the release-wasm bundle (ADR-0100)
+  # and the documented API examples. The continuous slice in ci.yml keeps
+  # the wasm32 cargo checks plus the cookbook WASM parity job.
+  wasm-full:
+    name: WASM full (browser smokes + release bundle)
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 */6 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Free runner disk (Linux)
+        if: runner.os == 'Linux'
+        run: scripts/free-disk.sh
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: wasm
+      # ADR-0255: prebuilt wasm-pack binary (~2 s) instead of the ~2-4 min
+      # from-source `cargo install wasm-pack --version 0.13.1 --locked`;
+      # same pinned version.
+      - name: Install wasm-pack (pinned, for browser smoke test)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.13.1
+      - name: Install wasm-bindgen-cli (matches crate version)
+        run: bash scripts/install-wasm-bindgen.sh
+      # Pinned release, not apt: Ubuntu's binaryen 108 breaks the bundle's
+      # externref table (see scripts/install-binaryen.sh).
+      - name: Install binaryen (wasm-opt)
+        run: bash scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
+      - name: Browser smoke tests (headless Firefox)
+        run: wasm-pack test --headless --firefox surfaces/relate-wasm
+      - name: Build wasm bundle (release-wasm profile, ADR-0100)
+        run: bash scripts/build-wasm.sh --mode release
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      # AGENTS.md §2: the documented API examples are tests.
+      - name: WASM API examples run against the bundle
+        run: node surfaces/relate-wasm/tests/examples.mjs
+
+  # The full multi-OS sweep (ADR-0251 §2/§6): the continuous ci.yml lanes
+  # run the OS-dependent delta (storage filesystem depth plus one-query
+  # surface smokes); this lane runs the complete surface harness suites on
+  # macOS and Windows instead of the single-test smokes. Only genuinely
+  # OS-dependent crates run here — scripts/check-os-matrix.py's package
+  # rules apply to this lane too.
+  os-sweep:
+    name: OS sweep (${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '17 */6 * * *'
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      # Same ImDisk ramdisk as ci.yml's Windows lanes (NTFS metadata I/O
+      # dominates the Windows build/test wall-clock); macOS skips it.
+      - name: Ramdisk (ImDisk) for the target dir and tempdirs
+        if: runner.os == 'Windows'
+        shell: bash
+        run: scripts/ramdisk-imdisk.sh
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: os-sweep
+
+      - name: MSVC developer environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Filesystem depth (storage)
+        shell: bash
+        run: cargo test -p relate-storage
+
+      - name: Filesystem depth (storage, no default features)
+        shell: bash
+        run: cargo test -p relate-storage --no-default-features
+
+      # The complete surface harness suites — the continuous lanes run one
+      # test per harness; here each harness runs in full. On Windows the
+      # MSVC linker setup mirrors ci.yml's os-surface lane.
+      - name: Surface harness suites (full)
+        shell: bash
+        run: |
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            source scripts/msvc-env.sh --require --label os-sweep
+          fi
+          cargo test -p relate-mcp --test stdio_tools
+          cargo test -p relate-bolt --lib
+          cargo test -p relate-http --lib
+          cargo test -p relate-cli --test e2e_bundles

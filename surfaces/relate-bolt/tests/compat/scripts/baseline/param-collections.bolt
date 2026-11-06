@@ -1,0 +1,12 @@
+# Baseline B-27 (F-65): a List parameter (with a null element) and a Map
+# parameter (holding a List) come back unchanged. Only the record is
+# pinned.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "RETURN $l AS l, $m AS m" {"l": [1, "a", null], "m": {"k": [true]}} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   RECORD [[1, "a", null], {"k": [true]}]
+   SUCCESS {}

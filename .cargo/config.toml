@@ -1,0 +1,10 @@
+# wasm32 has a 1 MiB default stack. The relate planner and executor
+# recurse deep enough that non-trivial queries (e.g. MATCH (n) RETURN n)
+# stack-overflow, which wasm surfaces as "memory access out of bounds".
+# Native uses a 64 MiB worker stack (see relate/relate/src/lib.rs);
+# 16 MiB is a comfortable browser-friendly middle ground.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=16777216"]
+
+[alias]
+xtask = "run -p xtask --"

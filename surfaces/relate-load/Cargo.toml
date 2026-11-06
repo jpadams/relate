@@ -1,0 +1,31 @@
+[package]
+name = "relate-load"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Load a Neo4j/Aura subgraph into relate::Database (ADR-0080)"
+publish = false
+license.workspace = true
+
+[dependencies]
+relate = { workspace = true }
+# The typed wire decoder (ADR-0181 item 9): parse_iso, PointValue,
+# VectorCoordKind, uuid_parse and Value are not re-exported by the
+# `relate` facade.
+relate-core = { workspace = true }
+relate-formatter = { workspace = true }
+relate-model = { workspace = true }
+relate-parser = { workspace = true }
+relate-splitter = { workspace = true }
+base64 = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true }
+
+[dev-dependencies]
+# The loader is codec-neutral (ADR-0106); its tests also cover the Parquet
+relate = { workspace = true, features = ["parquet"] }
+# Loopback Query API fixture (ADR-0103 R3: surfaces dev-deps may target
+# testing/relate-test-support).
+relate-test-support = { workspace = true, features = ["loopback"] }
+tempfile = { workspace = true }

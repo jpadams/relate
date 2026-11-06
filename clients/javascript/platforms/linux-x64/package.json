@@ -1,0 +1,20 @@
+{
+  "name": "@relate/linux-x64",
+  "version": "0.16.1",
+  "description": "Linux x64 (glibc) native library for @relate/relate",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relatedb/relate",
+    "directory": "clients/javascript/platforms/linux-x64"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "lib"
+  ]
+}

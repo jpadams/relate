@@ -1,0 +1,13 @@
+# Baseline B-20 (F-47): a node result encodes as the Bolt 4.4 Node
+# structure 0x4E [id, labels, properties]. "*" is a wildcard only as a map
+# value, not as a structure field, so the id is pinned: it is the one this
+# script's own fresh :memory: server assigns its first node.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "CREATE (n:BoltProbe {name: 'a', k: 1}) RETURN n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   RECORD [{"#4E": [0, ["BoltProbe"], {"k": 1, "name": "a"}]}]
+   SUCCESS {}

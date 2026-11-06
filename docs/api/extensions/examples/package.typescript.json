@@ -1,0 +1,8 @@
+{
+  "name": "so-to-graph-ts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.4.0"
+  }
+}

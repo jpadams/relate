@@ -1,0 +1,15 @@
+[package]
+name = "relate-auth"
+description = "Shared generated-token basic auth for Relate network surfaces (ADR-0232)"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+base64 = { workspace = true }
+relate-storage = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }

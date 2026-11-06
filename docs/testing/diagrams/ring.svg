@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 420" width="420" role="img" aria-label="Ring of 12 nodes. Node 11 links back to node 0.">
+  <title>Ring of 12 nodes. Node 11 links back to node 0.</title>
+  <desc>A directed cycle. Node i has one NEXT relationship to i+1, and the last id wraps to 0.</desc>
+  <defs>
+    <marker id="ring-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6e7781" />
+    </marker>
+    <marker id="ring-arrow-focus" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0969da" />
+    </marker>
+  </defs>
+  <line x1="232.22" y1="67.95" x2="261.78" y2="75.88" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="300.26" y1="98.09" x2="321.91" y2="119.74" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="344.12" y1="158.22" x2="352.05" y2="187.78" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="352.05" y1="232.22" x2="344.12" y2="261.78" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="321.91" y1="300.26" x2="300.26" y2="321.91" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="261.78" y1="344.12" x2="232.22" y2="352.05" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="187.78" y1="352.05" x2="158.22" y2="344.12" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="119.74" y1="321.91" x2="98.09" y2="300.26" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="75.88" y1="261.78" x2="67.95" y2="232.22" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="67.95" y1="187.78" x2="75.88" y2="158.22" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="98.09" y1="119.74" x2="119.74" y2="98.09" stroke="#6e7781" stroke-width="1" marker-end="url(#ring-arrow)" />
+  <line x1="158.22" y1="75.88" x2="187.78" y2="67.95" stroke="#0969da" stroke-width="2" marker-end="url(#ring-arrow-focus)" />
+  <circle cx="210.00" cy="62.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="210.00" y="62.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">0</text>
+  <circle cx="284.00" cy="81.83" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="284.00" y="81.83" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">1</text>
+  <circle cx="338.17" cy="136.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="338.17" y="136.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">2</text>
+  <circle cx="358.00" cy="210.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="358.00" y="210.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">3</text>
+  <circle cx="338.17" cy="284.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="338.17" y="284.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">4</text>
+  <circle cx="284.00" cy="338.17" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="284.00" y="338.17" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">5</text>
+  <circle cx="210.00" cy="358.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="210.00" y="358.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">6</text>
+  <circle cx="136.00" cy="338.17" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="136.00" y="338.17" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">7</text>
+  <circle cx="81.83" cy="284.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="81.83" y="284.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">8</text>
+  <circle cx="62.00" cy="210.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="62.00" y="210.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">9</text>
+  <circle cx="81.83" cy="136.00" r="16" fill="#ffffff" stroke="#1f2328" stroke-width="1.5" />
+  <text x="81.83" y="136.00" text-anchor="middle" dominant-baseline="central" fill="#1f2328" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">10</text>
+  <circle cx="136.00" cy="81.83" r="16" fill="#0969da" stroke="#1f2328" stroke-width="2" />
+  <text x="136.00" y="81.83" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">11</text>
+</svg>

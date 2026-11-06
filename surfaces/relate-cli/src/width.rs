@@ -1,0 +1,96 @@
+//! `--width` (LABS-399): the total display width the human table wraps
+//! to — its parsing, its floor, and the terminal-width auto-detect. The
+//! one home of the width policy: `main` reads
+//! [`effective_width`] and nothing else.
+
+/// The narrowest width worth wrapping to: a narrower terminal is not a
+/// grid worth laying out, and the natural width is the honest fallback.
+/// One floor for every source — the explicit flag rejects below it loudly
+/// ([`parse_width`]), the auto-detect drops a narrower answer quietly.
+const MIN_EFFECTIVE_WIDTH: usize = 20;
+
+/// Parse a `--width` value: a terminal width in columns. Below
+/// [`MIN_EFFECTIVE_WIDTH`] — like `0` — is rejected loudly with the
+/// remediation, never silently discarded: an explicit caller gets an
+/// error, not a run that ignored them.
+pub(crate) fn parse_width(raw: &str) -> Result<usize, String> {
+    let value: usize = raw
+        .trim()
+        .parse()
+        .map_err(|_| format!("`{raw}` is not a column count"))?;
+    if value < MIN_EFFECTIVE_WIDTH {
+        return Err(format!(
+            "a width under {MIN_EFFECTIVE_WIDTH} columns cannot hold a table; omit --width for the terminal default"
+        ));
+    }
+    Ok(value)
+}
+
+/// The width a run lays out to: an explicit `--width` wins; otherwise the
+/// terminal is asked. `None` (a pipe, no answer) keeps the natural width —
+/// piped output stays byte-stable.
+pub(crate) fn effective_width(flag: Option<usize>) -> Option<usize> {
+    flag.or_else(terminal_width)
+}
+
+/// The terminal's column count, asked from the terminal itself: a
+/// `TIOCGWINSZ` probe on stdout. That is the one source that works by
+/// default — `COLUMNS` is a shell variable that a child process does not
+/// inherit — and it doubles as the TTY check (the probe fails on a pipe,
+/// which is exactly when the natural width should win). `COLUMNS` remains
+/// the fallback for a caller that exports it over a redirected stdout.
+#[cfg(unix)]
+fn terminal_width() -> Option<usize> {
+    // SAFETY: a plain TIOCGWINSZ probe on the stdout descriptor with a
+    // valid out-parameter; the kernel fills it or returns an error.
+    let mut ws = libc::winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    if unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) } == 0 && ws.ws_col > 0
+    {
+        (ws.ws_col as usize >= MIN_EFFECTIVE_WIDTH).then_some(ws.ws_col as usize)
+    } else {
+        columns_env()
+    }
+}
+
+/// The non-unix fallback: only an exported `COLUMNS` answers.
+#[cfg(not(unix))]
+fn terminal_width() -> Option<usize> {
+    columns_env()
+}
+
+/// The exported `COLUMNS` fallback, floored — one spelling for both cfg
+/// variants.
+fn columns_env() -> Option<usize> {
+    std::env::var("COLUMNS")
+        .ok()?
+        .parse::<usize>()
+        .ok()
+        .filter(|w| *w >= MIN_EFFECTIVE_WIDTH)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_rejects_sub_floor_widths_loudly() {
+        // An explicit caller gets the error, never a silently ignored value.
+        assert!(parse_width("0").is_err());
+        assert!(parse_width("10").is_err());
+        assert_eq!(parse_width("20"), Ok(MIN_EFFECTIVE_WIDTH));
+        assert_eq!(parse_width("120"), Ok(120));
+        assert!(parse_width("wide").is_err());
+    }
+
+    #[test]
+    fn effective_width_prefers_the_flag_then_the_terminal() {
+        // The flag wins when present; the terminal answers on a pipe only
+        // through COLUMNS (absent here) — so None means natural width.
+        assert_eq!(effective_width(Some(50)), Some(50));
+    }
+}

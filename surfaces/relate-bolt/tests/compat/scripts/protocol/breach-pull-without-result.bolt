@@ -1,0 +1,8 @@
+# ADR-0314 (F-35, F-46): PULL with no open result is a protocol breach,
+# never a SUCCESS: one FAILURE, then the server closes the connection.
+!: BOLT 4.4
+!: AUTO HELLO
+
+C: PULL {"n": -1}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "Message of type PullMessage cannot be handled by a session in the READY state."}
+S: <EXIT>

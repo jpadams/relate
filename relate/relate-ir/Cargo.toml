@@ -1,0 +1,14 @@
+[package]
+name = "relate-ir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Planner IR (lowered Cypher AST)"
+license.workspace = true
+
+[dependencies]
+relate-parser = { workspace = true }
+# ADR-0509 §4: the IR's name fields carry SmallName (stage 3); one edge on
+# the dependency-free leaf, R1-legal.
+relate-names = { workspace = true }
+relate-core = { workspace = true }

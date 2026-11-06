@@ -1,0 +1,24 @@
+[package]
+name = "relate-formatter"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+
+[dependencies]
+relate-model = { workspace = true }
+# ADR-0359: the plan presentation composes the engine's Neo4j-facing value
+# with the boundary-rendered text, so the formatter reads `PlanNode`.
+relate = { workspace = true }
+# The one identifier-quoting policy lives with the lexer's keyword table;
+# rendering delegates to it instead of mirroring the reserved words here.
+relate-parser = { workspace = true }
+serde_json = { workspace = true }
+indexmap = { workspace = true }
+unicode-width = "0.2"
+
+[dev-dependencies]
+# The plan fixtures are built through the canonical producer
+# (PlanNode::to_value + value_to_cypher), never hand-copies of the wire
+# form, so producer-to-consumer vocabulary drift fails a test.
+relate = { workspace = true }
+chrono = { workspace = true }

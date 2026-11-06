@@ -1,0 +1,25 @@
+# ADR-0484 decision 7: at 5.4 the DateTime structures are fixed — an
+# offset datetime is DateTimeUTC 0x49 [UTC epoch seconds, nanoseconds,
+# tz_offset_seconds] and a zone datetime DateTimeZoneIdUTC 0x69 [UTC
+# epoch seconds, nanoseconds, tz_id], the ADR-0329 utc-patch forms with
+# no patch to negotiate (compare values/patch-bolt-utc.bolt, the 4.4
+# negotiated spelling of the same bytes); the legacy 0x46/0x66 are never
+# written. A 0x49 parameter echoes back as itself — parameters and
+# results alike.
+!: BOLT 5.4
+!: AUTO HELLO
+!: AUTO LOGON
+!: AUTO GOODBYE
+
+C: RUN "RETURN datetime('2024-01-02T03:04:05.123456789+01:00') AS d, datetime('2024-01-02T03:04:05[Europe/Stockholm]') AS z" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["d", "z"]}
+   RECORD [{"#49": [1704161045, 123456789, 3600]}, {"#69": [1704161045, 0, "Europe/Stockholm"]}]
+   SUCCESS {}
+
+# A 0x49 parameter echoes back as itself.
+C: RUN "RETURN $d AS d" {"d": {"#49": [1704161045, 123456789, 3600]}} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["d"]}
+   RECORD [{"#49": [1704161045, 123456789, 3600]}]
+   SUCCESS {}

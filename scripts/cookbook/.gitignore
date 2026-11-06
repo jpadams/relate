@@ -1,0 +1,3 @@
+# Build output of build.mjs (ADR-0130); the deploy workflow publishes it.
+/dist/
+/dist.partial/

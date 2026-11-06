@@ -1,0 +1,24 @@
+# Baseline B-12 (F-17): PULL {n: 2} pages a 5-row result as 2, 2 and 1
+# records; each page that leaves records ends with has_more: true and the
+# last page with a SUCCESS. What this adds over
+# boltkit/v4.0/return_5_records.bolt and readme_example.bolt (one n = 3
+# page, then the rest): a smaller n, two has_more pages in a row, and a
+# short last page. Only fields, the records per page and has_more are
+# pinned; the page SUCCESS's t_last and db are not.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "UNWIND range(1, 5) AS i RETURN i" {} {}
+   PULL {"n": 2}
+S: SUCCESS {"fields": ["i"]}
+   RECORD [1]
+   RECORD [2]
+   SUCCESS {"has_more": true}
+C: PULL {"n": 2}
+S: RECORD [3]
+   RECORD [4]
+   SUCCESS {"has_more": true}
+C: PULL {"n": 2}
+S: RECORD [5]
+   SUCCESS {}

@@ -1,0 +1,63 @@
+# The lazyfs power-off lane override (LABS-654). NEVER a plain
+# `docker compose up` companion: this file is merged only by
+# run-poweroff.sh (`docker compose -f docker-compose.yml -f
+# docker-compose.lazyfs.yml …`, project and names from
+# lib/isolation.sh), which first probes
+# the host for FUSE and skips loudly (exit 77) where /dev/fuse is absent.
+# The stock compose project stays FUSE-free — a Mac or CI host that never
+# runs the lane never attempts a privileged FUSE mount.
+#
+# What the override changes about the DB node:
+#   image        the lazyfs rig (db-lazyfs.Dockerfile): the stock product
+#                binaries on an ubuntu userspace that mounts lazyfs
+#   privileged + /dev/fuse   lazyfs is a FUSE filesystem mounted INSIDE
+#                the DB container, so its memory IS the power-volatile
+#                tier — docker kill of this container is a faithful
+#                power-off of the whole machine (serve + lazyfs + every
+#                un-fsynced byte die together)
+#   command      restated in full (compose replaces lists): the store
+#                moves onto the lazyfs mount — /mnt/lazyfs/graph, the
+#                path db.clj's setup guard asserts for the :lazyfs rig.
+#                Nothing else changes: the durability mode and the
+#                checkpoint interval stay on the base file's ONE channel,
+#                the environment (RELATE_DURABILITY_MODE /
+#                RELATE_CHECKPOINT_INTERVAL_SECS, inherited from
+#                docker-compose.yml's db service — the engine reads both
+#                natively, ADR-0470), which run-poweroff.sh exports per
+#                half and the guard reads back from docker inspect. No
+#                --durability-mode argv flag: a second channel the guard
+#                cannot see would let the two disagree silently.
+#
+# NAMESPACING — the lane's compose project, DB container, control
+# container and data volume come from the base file's env-parameterized
+# names, derived by lib/isolation.sh from JEPSEN_SUFFIX (run-poweroff.sh
+# defaults it to `poweroff`: project relate-jepsen-poweroff). The
+# base project name is NOT exclusive: the jepsen-certification feature
+# runs several lanes concurrently, each with its own worktree but ONE
+# shared docker daemon — two compose projects with the same
+# `relate-jepsen-db` container name ping-pong-destroy each other's
+# DB node mid-test (observed locally: a sibling lane's compose recreated
+# the DB container under a running test, and the nemesis's fault
+# evidence caught it). The lane's own m2 volume (pinned below) costs one
+# dependency download and buys hermetic concurrent runs.
+services:
+  db:
+    image: relate-jepsen-db-lazyfs:latest
+    privileged: true
+    devices:
+      - /dev/fuse
+    command:
+      - --host
+      - 0.0.0.0
+      - --database
+      - /mnt/lazyfs/graph
+      - --bolt
+      - "7687"
+      - --auth
+      - jepsen:jepsen
+      - --bolt-identity
+      - Neo4j/5.26.0
+
+volumes:
+  relate-jepsen-m2:
+    name: relate-jepsen-poweroff-m2

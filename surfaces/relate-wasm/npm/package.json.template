@@ -1,0 +1,41 @@
+{
+  "name": "@relate/relate-wasm",
+  "version": "__VERSION__",
+  "description": "Relate embedded graph database, compiled to WebAssembly for the browser",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relatedb/relate"
+  },
+  "main": "relate.js",
+  "types": "relate.d.ts",
+  "exports": {
+    ".": {
+      "types": "./relate.d.ts",
+      "default": "./relate.js"
+    },
+    "./trap.js": {
+      "types": "./trap.d.ts",
+      "default": "./trap.js"
+    },
+    "./opfs.js": {
+      "types": "./opfs.d.ts",
+      "default": "./opfs.js"
+    },
+    "./relate_bg.wasm": "./relate_bg.wasm"
+  },
+  "files": [
+    "relate.js",
+    "relate.d.ts",
+    "relate_bg.wasm",
+    "relate_bg.wasm.d.ts",
+    "trap.js",
+    "trap.d.ts",
+    "opfs.js",
+    "opfs.d.ts",
+    "snippets/",
+    "README.md"
+  ],
+  "sideEffects": false
+}

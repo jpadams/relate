@@ -1,0 +1,10 @@
+# ADR-0314 (F-34, F-45): BEGIN inside an open transaction is a protocol
+# breach: one FAILURE, then the server closes the connection.
+!: BOLT 4.4
+!: AUTO HELLO
+
+C: BEGIN {}
+S: SUCCESS {}
+C: BEGIN {}
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "Message of type BeginMessage cannot be handled by a session in the IN_TRANSACTION state."}
+S: <EXIT>

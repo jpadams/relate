@@ -1,0 +1,8 @@
+# ADR-0312 (F-07): HELLO SUCCESS advertises the receive-timeout hint, twice
+# the 60 s NOOP keep-alive interval. The NOOP cadence itself is pinned by a
+# unit test with a short injected interval.
+!: BOLT 4.4
+!: AUTO GOODBYE
+
+C: HELLO {"user_agent": "relate-bolt-compat/1.0", "scheme": "none"}
+S: SUCCESS {"server": "*", "connection_id": "*", "hints": {"connection.recv_timeout_seconds": 120}}

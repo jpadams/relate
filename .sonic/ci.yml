@@ -1,0 +1,529 @@
+# Portable Linux lanes from .github/workflows/ci.yml.
+# Run from the Relate checkout:
+#   gosonic ci run smoke-test
+#   gosonic ci run full-test
+#   gosonic ci run clean
+version: "1"
+project:
+  name: relate
+  language: rust
+  root: "."
+audit:
+  store: file
+  path: target/.sonic-logs
+
+runners:
+  docker-cli: docker.io/library/docker:27-cli
+  sonic-rust: localhost/relate-sonic-rust:1.88
+  sonic-polyglot: localhost/relate-sonic-polyglot:1.88
+
+matrix:
+  shard:
+    - name: engine
+      priority: 1
+    - name: storage
+      priority: 2
+    - name: planner
+      priority: 3
+  # Same split as the feature-bundles job. The two feature sets share no
+  # cargo fingerprints, so CI runs them on separate runners.
+  suite:
+    - name: cli-bundles
+      priority: 1
+    - name: engine-no-parquet
+      priority: 2
+  # Same seven cells as the relate-bolt include list. One axis, because a
+  # leg × shard product would run concurrency, e2e, and smoke once per lib shard.
+  # lib-N is lib partition N/4.
+  leg:
+    - name: lib-1
+      priority: 1
+    - name: lib-2
+      priority: 2
+    - name: lib-3
+      priority: 3
+    - name: lib-4
+      priority: 4
+    - name: concurrency
+      priority: 5
+    - name: e2e
+      priority: 6
+    - name: smoke
+      priority: 7
+
+actions:
+  build-sonic-rust:
+    runner: docker-cli
+    docker_socket: true
+    once: true
+    commands:
+      - docker build -t localhost/relate-sonic-rust:1.88 -f .sonic/docker/sonic-rust.Dockerfile .sonic/docker
+  build-sonic-polyglot:
+    runner: docker-cli
+    docker_socket: true
+    once: true
+    commands:
+      - docker build --pull=false -t localhost/relate-sonic-polyglot:1.88 -f .sonic/docker/sonic-polyglot.Dockerfile .sonic/docker
+
+suites:
+  smoke-test:
+    - lint
+    - link-check
+    - loadtest-smoke
+  full-test:
+    - lint
+    - test
+    - feature-bundles
+    - stack-release
+    - python
+    - link-check
+    - doc-examples
+    - cookbook-wasm
+    - notebook
+    - corpus
+    - bolt
+    - clients
+    - wasm
+    - npm-smoke
+    - loadtest-smoke
+    - query-latency
+
+stages:
+  lint:
+    runner: sonic-rust
+    # The shared rust build dep (LABS-631), anchored once; the
+    # polyglot variant is anchored at its own first stage below.
+    before: &before-rust
+      - build-sonic-rust
+    environment:
+      # The shared cargo env every cargo stage merges (LABS-631):
+      # CARGO_HOME spelled once, beside each stage's own
+      # CARGO_TARGET_DIR.
+      <<: &cargo-env
+        CARGO_HOME: /cargo-home
+      CARGO_TARGET_DIR: /cargo-target/lint
+    volumes: &cargo-cache
+      # $CARGO_HOME/.package-cache is the unpack lock, so it has to sit on this volume.
+      - type: cache
+        source: cargo-home
+        target: /cargo-home
+      # Stage build trees live here, not on the workspace mount. A cold
+      # compile on that mount loses rmeta files and rustc reports
+      # "can't find crate" for a dependency it just built.
+      - type: cache
+        source: cargo-target
+        target: /cargo-target
+    commands:
+      - cargo fmt --all --check
+      - cargo clippy --workspace --all-targets --exclude relate-python -- -D warnings
+      - cargo clippy -p relate-cli --all-targets --no-default-features --features agent -- -D warnings
+      - cargo clippy -p relate-cli --all-targets --no-default-features --features minimal -- -D warnings
+      # The serve bundle completes the cli-bundle clippy set (LABS-638):
+      # serve-only items are dead code without a surface feature — a
+      # combination none of the other gates lint. Beside its siblings so
+      # the smoke lane (which runs lint, not feature-bundles) lints serve
+      # too; the serve nextest leg stays in the cli-bundles suite with its
+      # warm target dir.
+      - cargo clippy -p relate-cli --all-targets --no-default-features --features serve -- -D warnings
+      - cargo clippy -p relate-storage --all-targets --no-default-features -- -D warnings
+      - cargo clippy -p relate --all-targets --no-default-features -- -D warnings
+      - cargo test -p xtask
+      - cargo xtask check-boundaries
+      - python3 scripts/keyword_symbolic_name_probe.py --summary
+      - python3 scripts/check-os-matrix.py
+
+  test:
+    runner: sonic-rust
+    shell: bash
+    matrix: [shard]
+    before: *before-rust
+    environment:
+      <<: *cargo-env
+    volumes: *cargo-cache
+    commands:
+      - |
+        set -euo pipefail
+        case "$shard" in
+          engine) crates=(relate) ;;
+          storage) crates=(relate-storage relate-cli relate-ffi relate-load) ;;
+          # The light mixed shard's load-balancing table
+          # (docs/testing/runtime.md), one crate per line so every
+          # rebalance or new-crate addition diffs as a single-line move.
+          # Still named `planner` for the cache-key prefix it has always
+          # had — the rename to `light` is tracked, not drifted.
+          planner) crates=(
+            relate-executor
+            relate-model
+            relate-parser
+            relate-error
+            relate-formatter
+            relate-arrow
+            relate-splitter
+            relate-core
+            relate-catalog
+            relate-front
+            relate-names
+            relate-planner
+            relate-ir
+            relate-wire
+            relate-fs-to-graph
+            relate-git-to-graph
+            relate-dungeon
+            relate-ontology
+            relate-markdown
+            relate-test-support
+          ) ;;
+          *) echo "unknown shard: $shard" >&2; exit 1 ;;
+        esac
+        args=()
+        for crate in "${crates[@]}"; do args+=(-p "$crate"); done
+        export CARGO_TARGET_DIR="/cargo-target/test-${shard}"
+        cargo nextest run "${args[@]}"
+        cargo test --doc "${args[@]}"
+        if [ "$shard" = engine ]; then
+          find "$CARGO_TARGET_DIR/debug/deps" -maxdepth 1 -type f -perm -u+x ! -name "*.*" -delete
+          rm -rf "$CARGO_TARGET_DIR/debug/incremental"
+          cargo build -p relate --examples
+          for example in relate/relate/examples/*.rs; do
+            cargo run -q -p relate --example "$(basename "$example" .rs)"
+          done
+        fi
+
+  feature-bundles:
+    runner: sonic-rust
+    shell: bash
+    matrix: [suite]
+    before: *before-rust
+    environment:
+      <<: *cargo-env
+    volumes: *cargo-cache
+    commands:
+      - |
+        set -euo pipefail
+        export CARGO_TARGET_DIR="/cargo-target/feature-bundles-${suite}"
+        case "$suite" in
+          cli-bundles)
+            cargo nextest run -p relate-cli --no-default-features --features agent
+            cargo nextest run -p relate-cli --no-default-features --features minimal
+            # The bare `serve` bundle (ADR-0232): its empty SURFACE_FLAGS
+            # shape was invisible to the full/agent/minimal matrix until
+            # LABS-628 — this lane keeps that class from landing
+            # silently again. (The serve clippy gate lives in the lint
+            # stage beside the agent/minimal pair, LABS-638.)
+            cargo nextest run -p relate-cli --no-default-features --features serve
+            ;;
+          engine-no-parquet)
+            cargo nextest run -p relate-storage --no-default-features
+            cargo nextest run -p relate --no-default-features
+            cargo test --doc -p relate-storage --no-default-features
+            cargo test --doc -p relate --no-default-features
+            ;;
+          *)
+            echo "unknown suite: $suite" >&2
+            exit 1
+            ;;
+        esac
+
+  stack-release:
+    runner: sonic-rust
+    before: *before-rust
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/stack-release
+    volumes: *cargo-cache
+    commands:
+      - cargo test -p relate --release --lib tests::stack
+
+  python:
+    runner: sonic-polyglot
+    before: &before-polyglot
+      - build-sonic-rust
+      - build-sonic-polyglot
+    environment:
+      PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/python
+    volumes: *cargo-cache
+    commands:
+      - cargo test -p relate-python
+      - cd surfaces/relate-python
+      - uv pip install --system pytest pyarrow neo4j-viz
+      # The dev-profile bindings install the notebook stage shares
+      # (LABS-622): the --profile dev flag lives on this anchor once.
+      - &python-dev-install uv pip install --system . --config-settings="build-args=--profile dev"
+      - python -m pytest python/tests/ -v
+
+  link-check:
+    runner: sonic-rust
+    before: *before-rust
+    commands:
+      - |
+        arch="$(uname -m)"
+        case "$arch" in
+          x86_64) lychee_arch=x86_64 ;;
+          aarch64|arm64) lychee_arch=aarch64 ;;
+          *) echo "unsupported architecture: $arch" >&2; exit 1 ;;
+        esac
+        curl -fsSL -o /tmp/lychee.tar.gz "https://github.com/lycheeverse/lychee/releases/download/lychee-v0.18.1/lychee-${lychee_arch}-unknown-linux-gnu.tar.gz"
+        tar -xzf /tmp/lychee.tar.gz -C /usr/local/bin
+        lychee --config lychee.toml --no-progress --root-dir "$(pwd)/docs" README.md docs/guides docs/reference docs/cookbook
+
+  doc-examples:
+    runner: sonic-rust
+    before: *before-rust
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/doc-examples
+      # The documented first-priority binary boundary
+      # (scripts/check-doc-examples.sh) — no fabricated auto-detect
+      # symlink, no workspace target written as root (LABS-627).
+      RELATE_BIN: /cargo-target/doc-examples/release/relate
+    volumes: *cargo-cache
+    commands:
+      - cargo build --release -p relate-cli
+      - bash scripts/check-doc-examples.sh
+
+  cookbook-wasm:
+    runner: sonic-polyglot
+    # The toolchain setup below is sourced — its exports must reach this
+    # shell, so the stage pins bash like the other multi-line stages.
+    shell: bash
+    before: *before-polyglot
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/cookbook-wasm
+    volumes: *cargo-cache
+    commands:
+      # The shared wasm toolchain setup (LABS-622): wasm-bindgen +
+      # binaryen onto PATH. Sourced so the exports reach this shell;
+      # anchored once, aliased by npm-smoke (LABS-631).
+      - &wasm-toolchain source scripts/install-wasm-toolchain.sh
+      - make cookbook-js
+      - make cookbook-wasm
+
+  notebook:
+    runner: sonic-polyglot
+    before: *before-polyglot
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/notebook
+    volumes: *cargo-cache
+    commands:
+      - cd surfaces/relate-python
+      # networkx + matplotlib: the obsidian vault demo's static-viz cell.
+      - uv pip install --system nbconvert ipykernel pyarrow pandas networkx matplotlib
+      - *python-dev-install
+      - python -m ipykernel install --user --name python3
+      - cd /workspace
+      # Every notebook in the directory runs — the list is the
+      # directory, never a second table (LABS-631).
+      - |
+        for nb in examples/python/*.ipynb; do
+          jupyter nbconvert --to notebook --execute --stdout --ExecutePreprocessor.timeout=180 "$nb" > /dev/null
+        done
+
+  # Opt-level 2 compile of the engine. It shares the cargo home volume
+  # and the workspace mount with the other cargo stages. Under --jobs 4 it
+  # died while cookbook-wasm and notebook were still compiling, and bolt
+  # started into the freed slot a second later. Wait for those two, and
+  # hold the cargo stages listed after this one.
+  corpus:
+    runner: sonic-rust
+    before: *before-rust
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/corpus
+    volumes: *cargo-cache
+    commands:
+      - make cookbook-native
+      - RELATE_QUERY_LATENCY=1 cargo test --profile corpus -p relate-query-latency --test graph_benchmark_ldbc
+
+  bolt:
+    runner: sonic-polyglot
+    shell: bash
+    matrix: [leg]
+    before: *before-polyglot
+    environment:
+      <<: *cargo-env
+    volumes: *cargo-cache
+    commands:
+      - |
+        set -euo pipefail
+        export CARGO_TARGET_DIR="/cargo-target/bolt-${leg}"
+        case "$leg" in
+          lib-1|lib-2|lib-3|lib-4)
+            shard="${leg#lib-}"
+            cargo nextest run -p relate-bolt --lib --partition "count:${shard}/4"
+            ;;
+          concurrency)
+            cargo nextest run -p relate-bolt --test concurrency
+            ;;
+          e2e)
+            # The boltkit .bolt script replay harness runs with the e2e
+            # suites (ADR-0304); it is the branch's ci.yml e2e-leg addition
+            # carried into the Sonic stage after the rebase onto main.
+            cargo nextest run -p relate-bolt --test e2e_auth --test e2e_browser_sidebar --test e2e_websocket --test bolt_compat
+            ;;
+          smoke)
+            # The whole smoke-leg sequence — serve spawns, port-poll
+            # readiness, the official-driver smokes, the doc examples,
+            # the websocket leg — lives in scripts/bolt-smoke.sh
+            # (LABS-623), invoked like the other stage scripts.
+            bash scripts/bolt-smoke.sh
+            ;;
+          *)
+            echo "unknown leg: $leg" >&2
+            exit 1
+            ;;
+        esac
+
+  clients:
+    runner: sonic-polyglot
+    shell: bash
+    before: *before-polyglot
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/clients
+      RELATE_LIB: /cargo-target/clients/debug/librelate_ffi.so
+    volumes: *cargo-cache
+    commands:
+      # ffi-lib.sh owns the loader path and the library directory: it
+      # respects the preset RELATE_LIB and derives LD_LIBRARY_PATH
+      # and RELATE_LIB_DIR from it (LABS-631).
+      - source scripts/ffi-lib.sh
+      # The cgo link flags name the same directory once, through the
+      # resolved RELATE_LIB_DIR.
+      - export CGO_LDFLAGS="-L$RELATE_LIB_DIR -lrelate_ffi"
+      - cargo build -p relate-ffi
+      # The canonical C-example compile+run (LABS-627): the script owns
+      # the example list (the directory) and both OS arms.
+      - bash scripts/ffi-compile-example.sh
+      # Each lane subshells, so every command runs from the stage root
+      # (LABS-631).
+      - (cd /workspace/clients/javascript && npm install && npm test)
+      # -Drelate.ffi.dir stages the build host's (debug) FFI library
+      # into the jar: the bundled-natives packaging (ADR-0490) fails the
+      # enforcer without a host library, and this lane builds none into
+      # ../../target/release.
+      - (cd /workspace/clients/java && mvn -q -Drelate.ffi.dir="$RELATE_LIB_DIR" test)
+      # The Go gate is one make target (the client's tests plus every
+      # documented example, AGENTS.md §2) so this lane cannot drift from
+      # the recipe; the stage's CGO_LDFLAGS already names the profile.
+      - (cd /workspace && make test-go)
+      # The shipped extension examples are clients of the MCP stdio mount
+      # (ADR-0442): the bash one runs e2e, the Python and TypeScript ones
+      # are parsed here (this image carries node and python3).
+      - bash scripts/check-extension-examples.sh
+
+  wasm:
+    runner: sonic-polyglot
+    before: *before-polyglot
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/wasm
+    volumes: *cargo-cache
+    commands:
+      - cargo check -p relate-storage --target wasm32-unknown-unknown
+      - cargo check -p relate-wasm --target wasm32-unknown-unknown
+
+  npm-smoke:
+    runner: sonic-polyglot
+    # The toolchain setup below is sourced — its exports must reach this
+    # shell, so the stage pins bash like the other multi-line stages.
+    shell: bash
+    before: *before-polyglot
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/npm-smoke
+      RELATE_LIB: /cargo-target/npm-smoke/debug/librelate_ffi.so
+    volumes: *cargo-cache
+    commands:
+      - *wasm-toolchain
+      - cargo build -p relate-ffi
+      - bash scripts/npm-smoke-test.sh
+
+  loadtest-smoke:
+    runner: sonic-rust
+    before: *before-rust
+    environment:
+      <<: *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/loadtest-smoke
+      # The datasets suite's live spawn tests (the serve-child bolt cases
+      # and the Bolt session) take the product binary from this
+      # variable and self-skip without it; the build step below puts the binary
+      # there. test_stage_setup_scripts.sh pins both.
+      RELATE_BIN: /cargo-target/loadtest-smoke/debug/relate
+    volumes: *cargo-cache
+    commands:
+      - cargo build -p relate-cli --bin relate
+      - cargo test -p relate-datasets
+      # Every scripts/tests suite through its one owner (the Makefile's
+      # test-scripts aggregate) — a new script guard extends that
+      # prerequisite list, not this stage's command flow.
+      - make test-scripts
+
+  loadtest-baselines:
+    runner: sonic-rust
+    docker_socket: true
+    before: *before-rust
+    environment:
+      # The baseline env-forwarding trio, the single home (LABS-627):
+      # merged into every Docker-baseline stage's environment below.
+      # The gosonic container only receives explicitly mapped vars, so
+      # each forwarded name must be declared here. Host checkout path,
+      # so baseline-env.sh can bind-mount it through the host Docker
+      # daemon; the ADR-0071 class label the job sets (without it the
+      # fingerprint's hardcoded ubuntu-24.04 fallback stamps the wrong
+      # class); the host Actions flag, so baseline-fingerprint stamps
+      # runner as github-actions:ubuntu-24.04 and the in-stage compares
+      # hard-fail on a class mismatch instead of soft-skipping. All
+      # unset locally; the literals are ignored.
+      # The spec-sanctioned sequence form merges both maps: the
+      # forwarding trio (anchored here, its contract comments the single
+      # home) and the shared cargo env.
+      <<:
+        - &baseline-env-forwarding
+          GITHUB_WORKSPACE: GITHUB_WORKSPACE
+          BASELINE_RUNNER: BASELINE_RUNNER
+          GITHUB_ACTIONS: GITHUB_ACTIONS
+        - *cargo-env
+      CARGO_TARGET_DIR: /cargo-target/loadtest-baselines
+    volumes: *cargo-cache
+    commands:
+      # The shared Docker-baseline stage setup (LABS-622): host Docker
+      # CLI + the pinned baseline environment.
+      - &baseline-docker-setup bash scripts/baseline-docker-setup.sh
+      - make fraud-loadtest
+      - make identity-loadtest
+
+  # ADR-0245's per-PR latency ratchet: the timed 30-query SF0.1 suite in
+  # the pinned Docker recipe, compared against the frozen envelope in
+  # baselines/. The report uploads as an artifact from the ci.yml job
+  # that runs this stage. Until the first freeze lands the compare target
+  # reports and skips (the memory-shape-loadtest precedent under
+  # ADR-0289).
+  query-latency:
+    runner: sonic-rust
+    docker_socket: true
+    before: *before-rust
+    environment:
+      # The baseline env-forwarding trio and the Docker-baseline setup
+      # step, both anchored in loadtest-baselines (LABS-627).
+      <<: [ *baseline-env-forwarding, *cargo-env ]
+      CARGO_TARGET_DIR: /cargo-target/query-latency
+    volumes: *cargo-cache
+    commands:
+      - *baseline-docker-setup
+      - make query-latency
+      - make compare-query-latency
+
+  # `make clean` as root. Stage outputs are root-owned, and the cargo
+  # caches are Docker volumes. Run this on its own, after the other stages
+  # have finished:
+  #   gosonic ci run clean
+  clean:
+    runner: docker-cli
+    docker_socket: true
+    commands:
+      - apk add --no-cache make
+      - make clean

@@ -1,0 +1,20 @@
+{
+  "name": "@relate/darwin-arm64",
+  "version": "0.16.1",
+  "description": "macOS arm64 native library for @relate/relate",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relatedb/relate",
+    "directory": "clients/javascript/platforms/darwin-arm64"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "lib"
+  ]
+}

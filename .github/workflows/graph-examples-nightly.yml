@@ -1,0 +1,209 @@
+# ADR-0144: nightly differential run of the graph-examples suite. Opt-in
+# path — the main CI matrix does not pay for the docker image, the dumps,
+# or the oracle boot. Manual dispatch runs the same job on demand.
+name: Graph-examples differential (nightly)
+
+on:
+  schedule:
+    # 03:17 UTC — off the hour to avoid GitHub-runner load spikes.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # CI is not a user session: the CLI's anonymous usage metrics
+  # (ADR-0079) are opted out on every relate spawn a lane of this
+  # workflow can reach (the differential's `relate pull` child
+  # included).
+  DO_NOT_TRACK: "1"
+
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the CLI (pull surface under test)
+        run: cargo build --release -p relate-cli
+
+      # Dumps (~50 MB) persist across nightly runs; the cache key is the
+      # manifest — a bump refetches. Only dumps and adocs are cached; the
+      # pulled relate databases and env files are run-local.
+      - name: Dump cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            testing/relate-graph-examples/target/graph-examples/*-50.dump
+            testing/relate-graph-examples/target/graph-examples/*.adoc
+          key: graph-examples-dumps-${{ hashFiles('testing/relate-graph-examples/src/manifest.rs') }}
+
+      - name: Run the differential suite
+        env:
+          RELATE_GRAPH_EXAMPLES: "1"
+          RELATE_BIN: ${{ github.workspace }}/target/release/relate
+        run: cargo test --release -p relate-graph-examples --test differential -- --nocapture
+
+      # On failure, capture the reference container's logs and inspect
+      # output into the report dir so the upload step below ships them.
+      # The container name carries a per-run suffix, so match on the
+      # shared prefix. A clean suite exit removes its own container, so
+      # this usually finds one only when the run was killed mid-flight
+      # (job timeout, runner kill) — exactly the case needing diagnostics.
+      - name: Capture reference diagnostics
+        if: failure()
+        run: |
+          set -u
+          report_dir=testing/relate-graph-examples/target/graph-examples
+          mkdir -p "$report_dir"
+          ids=$(docker ps -aq --filter name=relate-graph-examples-reference)
+          if [ -z "$ids" ]; then
+            echo "no reference container found (a clean suite exit removes its own)" \
+              > "$report_dir/reference-diagnostics.txt"
+            exit 0
+          fi
+          for id in $ids; do
+            docker logs "$id" > "$report_dir/reference-$id.log" 2>&1 || true
+            # docker inspect embeds Config.Env, which carries
+            # NEO4J_AUTH=neo4j/<password>; strip it with jq (preinstalled on
+            # the runner) so the uploaded diagnostics never ship the
+            # reference credential.
+            docker inspect "$id" | jq 'del(.[0].Config.Env)' \
+              > "$report_dir/reference-$id.inspect.json" || true
+          done
+
+      - name: Upload the diff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-examples-report
+          # The run's report files and reference diagnostics only — never
+          # the whole workdir, which also holds the sha-pinned dumps/adocs,
+          # the pulled relate databases, and per-dataset *.env files
+          # with the reference password. The full local report dir is
+          # testing/relate-graph-examples/target/graph-examples/.
+          path: |
+            testing/relate-graph-examples/target/graph-examples/report.txt
+            testing/relate-graph-examples/target/graph-examples/apoc-report.txt
+            testing/relate-graph-examples/target/graph-examples/reference-*.log
+            testing/relate-graph-examples/target/graph-examples/reference-*.inspect.json
+            testing/relate-graph-examples/target/graph-examples/reference-diagnostics.txt
+            !testing/relate-graph-examples/target/graph-examples/*.env
+          if-no-files-found: warn
+
+  # The expand-workload skill's generated workloads, executed every night:
+  # a fresh Stack Overflow store (the SE API is allowed to answer), then
+  # the executable adoc validated query by query. Findings (engine errors,
+  # expectation mismatches, timeouts) are the point — report-only, the job
+  # fails only on protocol violations (write leaks, unclassified results).
+  expand-workload:
+    name: Expanded workloads (nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build and install the Python package
+        working-directory: surfaces/relate-python
+        run: pip install .
+
+      - name: Materialize the Stack Overflow store
+        run: |
+          mkdir -p target/expand-workload
+          python3 testing/expand-workload/skill/scripts/build_so_store.py \
+            target/expand-workload/so.db
+
+      - name: Run the expanded workload
+        run: |
+          python3 testing/expand-workload/skill/scripts/run_workload.py \
+            testing/expand-workload/examples/stackoverflow-workload.adoc \
+            --engine relate --store target/expand-workload/so.db \
+            --out target/expand-workload/report.json
+
+      - name: Step summary
+        if: always()
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          r = json.load(open("target/expand-workload/report.json"))
+          s = r["summary"]
+          e = r["expectations"]
+          print("### Expanded Stack Overflow workload")
+          print()
+          print("| status | count |")
+          print("| --- | --- |")
+          for k, v in sorted(s.items()):
+              if k != "total":
+                  print(f"| {k} | {v} |")
+          print()
+          print(f"expectations: {e['matched_errors']} matched errors, "
+                f"{e['unexpected_ok']} unexpected-ok, {e['wrong_error']} wrong-error, "
+                f"{e['slow']} slow")
+          print()
+          print("| tier | median ms | p95 ms | max ms |")
+          print("| --- | --- | --- | --- |")
+          for tier, p in r["perf"]["per_tier"].items():
+              print(f"| {tier} | {p['median_ms']} | {p['p95_ms']} | {p['max_ms']} |")
+          print()
+          if r["defects"]:
+              print(f"#### Defects ({len(r['defects'])})")
+              print()
+              for d in r["defects"][:20]:
+                  err = (d.get("error") or "").replace("\n", " ")[:140]
+                  print(f"- `{d['id']}` ({d['status']}): {err}")
+          EOF
+
+      - name: Upload the workload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: expand-workload-report
+          path: target/expand-workload/report.json
+          if-no-files-found: warn

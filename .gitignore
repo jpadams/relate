@@ -1,0 +1,86 @@
+# Binaries
+/relate
+!/relate/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+/dist/
+/bin/
+target/
+# In-container CARGO_HOME of the baseline-env docker builds
+# (scripts/baseline-env.sh); kept out of target/ on purpose.
+/.cargo-docker/
+# relate-wasm build output (wasm-bindgen writes here; the playground
+# copies from it, the deploy workflow rebuilds it fresh)
+surfaces/relate-wasm/pkg/
+
+# Test artifacts
+*.test
+*.out
+*.db
+
+# Loadtest output (per-run DB dirs, WAL segments, result dumps)
+clients/*/fraud-lt/
+clients/*/identity-lt/
+s3:/
+# WAL segments spill only into the loadtest per-run dirs above; anchor the
+# wal/ patterns so a future tracked wal/ directory elsewhere is not hidden.
+/clients/*/fraud-lt/wal/
+/clients/*/identity-lt/wal/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Node / Docusaurus
+node_modules/
+docs/build/
+docs/.docusaurus/
+
+# Agent orchestration metadata: gbuild state (graph, node checkpoints,
+# node outputs — kept on disk so /gbuild:run stays resumable), PRDs, task
+# checkpoints. Not tracked.
+.gbuild/
+.plans/
+PLAN.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+/credentials/
+
+# stellar-review pipeline runtime state (facts, scope, findings, local ledger)
+# Regenerated per round; the CI ledger round-trips in the PR summary comment.
+.stellar/
+
+# Java client local test artifacts (downloaded JDK, jars, compiled classes)
+clients/java/.test-libs/
+
+# local tooling (uv run) artifacts
+surfaces/relate-python/uv.lock
+testdata/obsidian-vaults/
+aura-test.env
+
+# SwiftPM build state (root Package.swift and examples/ios-snotel)
+.build/
+.swiftpm/
+# Xcode per-user state (window layout, scheme ordering)
+xcuserdata/

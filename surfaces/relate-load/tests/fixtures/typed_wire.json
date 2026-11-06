@@ -1,0 +1,1118 @@
+{
+  "provenance": "captured",
+  "captured_at": "2026-10-07T16:12:36Z",
+  "accept_header": "application/vnd.neo4j.query.v1.2;q=1.0, application/vnd.neo4j.query.v1.1;q=0.9, application/vnd.neo4j.query.v1.0;q=0.8, application/vnd.neo4j.query;q=0.7",
+  "query_api": "POST /db/neo4j/query/v2",
+  "seed_cypher": "typed_wire_seed.cypher (blob property via typed-JSON Base64 parameter)",
+  "seed_queries": {
+    "mappable": "MATCH (n:TypedSample)-[r:TYPED_REL]->(m) RETURN n, r, m",
+    "unmappable": "MATCH (u:TypedUnmappable) RETURN u"
+  },
+  "servers": {
+    "neo4j:2026.09-enterprise": {
+      "kernel_version": "2026.09.0",
+      "image_digest": "sha256:595846b50b04d5f93a4850f501c6105412dc3ea7b6594126d361720b0f450a52",
+      "negotiated_content_type": "application/vnd.neo4j.query.v1.2",
+      "mappable": {
+        "data": {
+          "fields": [
+            "n",
+            "r",
+            "m"
+          ],
+          "values": [
+            [
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:7e963da5-7df1-4c4a-9c31-7ab8df41e40c:0",
+                  "_labels": [
+                    "TypedSample"
+                  ],
+                  "_properties": {
+                    "date": {
+                      "$type": "Date",
+                      "_value": "2015-03-26"
+                    },
+                    "localtime": {
+                      "$type": "LocalTime",
+                      "_value": "12:50:35.556"
+                    },
+                    "datetime_offset": {
+                      "$type": "OffsetDateTime",
+                      "_value": "2015-11-21T21:40:32.142-01:00"
+                    },
+                    "list_time": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Time",
+                          "_value": "01:02:03Z"
+                        },
+                        {
+                          "$type": "Time",
+                          "_value": "04:05:06+02:00"
+                        }
+                      ]
+                    },
+                    "string": {
+                      "$type": "String",
+                      "_value": "hello"
+                    },
+                    "list_duration": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Duration",
+                          "_value": "P1D"
+                        },
+                        {
+                          "$type": "Duration",
+                          "_value": "PT2H30M"
+                        }
+                      ]
+                    },
+                    "list_float": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Float",
+                          "_value": "1.5"
+                        },
+                        {
+                          "$type": "Float",
+                          "_value": "2.5"
+                        }
+                      ]
+                    },
+                    "list_datetime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "ZonedDateTime",
+                          "_value": "2020-01-01T10:00:00+01:00[Europe/Stockholm]"
+                        },
+                        {
+                          "$type": "OffsetDateTime",
+                          "_value": "2020-06-01T10:00:00+02:00"
+                        }
+                      ]
+                    },
+                    "integer": {
+                      "$type": "Integer",
+                      "_value": "42"
+                    },
+                    "float": {
+                      "$type": "Float",
+                      "_value": "3.14159"
+                    },
+                    "uuid": {
+                      "$type": "UUID",
+                      "_value": "550e8400-e29b-41d4-a716-446655440000"
+                    },
+                    "duration": {
+                      "$type": "Duration",
+                      "_value": "P14DT16H12M"
+                    },
+                    "point_wgs84": {
+                      "$type": "Point",
+                      "_value": "SRID=4326;POINT (-0.1278 51.5074)"
+                    },
+                    "list_localdatetime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "LocalDateTime",
+                          "_value": "2020-01-01T10:00:00"
+                        },
+                        {
+                          "$type": "LocalDateTime",
+                          "_value": "2020-06-01T10:00:00"
+                        }
+                      ]
+                    },
+                    "list_integer": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Integer",
+                          "_value": "1"
+                        },
+                        {
+                          "$type": "Integer",
+                          "_value": "2"
+                        },
+                        {
+                          "$type": "Integer",
+                          "_value": "3"
+                        }
+                      ]
+                    },
+                    "vector": {
+                      "$type": "Vector",
+                      "_value": {
+                        "coordinatesType": "FLOAT64",
+                        "coordinates": [
+                          "1.0",
+                          "2.0"
+                        ]
+                      }
+                    },
+                    "point_wgs84_3d": {
+                      "$type": "Point",
+                      "_value": "SRID=4979;POINT Z (-0.1278 51.5074 11.0)"
+                    },
+                    "list_localtime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "LocalTime",
+                          "_value": "01:02:03"
+                        },
+                        {
+                          "$type": "LocalTime",
+                          "_value": "04:05:06"
+                        }
+                      ]
+                    },
+                    "list_boolean": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Boolean",
+                          "_value": true
+                        },
+                        {
+                          "$type": "Boolean",
+                          "_value": false
+                        }
+                      ]
+                    },
+                    "list_date": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Date",
+                          "_value": "2020-01-01"
+                        },
+                        {
+                          "$type": "Date",
+                          "_value": "2020-01-02"
+                        }
+                      ]
+                    },
+                    "list_point": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Point",
+                          "_value": "SRID=4326;POINT (0.0 0.0)"
+                        },
+                        {
+                          "$type": "Point",
+                          "_value": "SRID=4326;POINT (1.0 2.0)"
+                        }
+                      ]
+                    },
+                    "datetime_named_zone": {
+                      "$type": "ZonedDateTime",
+                      "_value": "2015-11-21T21:40:32.142Z[Antarctica/Troll]"
+                    },
+                    "boolean": {
+                      "$type": "Boolean",
+                      "_value": true
+                    },
+                    "list_string": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "String",
+                          "_value": "a"
+                        },
+                        {
+                          "$type": "String",
+                          "_value": "b"
+                        }
+                      ]
+                    },
+                    "list_uuid": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "UUID",
+                          "_value": "550e8400-e29b-41d4-a716-446655440000"
+                        },
+                        {
+                          "$type": "UUID",
+                          "_value": "00000000-0000-0000-0000-000000000000"
+                        }
+                      ]
+                    },
+                    "point_cartesian_3d": {
+                      "$type": "Point",
+                      "_value": "SRID=9157;POINT Z (1.0 2.0 3.0)"
+                    },
+                    "name": {
+                      "$type": "String",
+                      "_value": "mappable"
+                    },
+                    "time": {
+                      "$type": "Time",
+                      "_value": "12:50:35.556+01:00"
+                    },
+                    "localdatetime": {
+                      "$type": "LocalDateTime",
+                      "_value": "2015-07-04T19:32:24"
+                    },
+                    "point_cartesian": {
+                      "$type": "Point",
+                      "_value": "SRID=7203;POINT (1.2 3.4)"
+                    }
+                  }
+                }
+              },
+              {
+                "$type": "Relationship",
+                "_value": {
+                  "_element_id": "5:7e963da5-7df1-4c4a-9c31-7ab8df41e40c:1152921504606846976",
+                  "_start_node_element_id": "4:7e963da5-7df1-4c4a-9c31-7ab8df41e40c:0",
+                  "_end_node_element_id": "4:7e963da5-7df1-4c4a-9c31-7ab8df41e40c:1",
+                  "_type": "TYPED_REL",
+                  "_properties": {
+                    "at": {
+                      "$type": "Point",
+                      "_value": "SRID=4326;POINT (10.0 20.0)"
+                    },
+                    "since": {
+                      "$type": "Date",
+                      "_value": "2020-01-01"
+                    }
+                  }
+                }
+              },
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:7e963da5-7df1-4c4a-9c31-7ab8df41e40c:1",
+                  "_labels": [
+                    "TypedPeer"
+                  ],
+                  "_properties": {
+                    "name": {
+                      "$type": "String",
+                      "_value": "peer"
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        },
+        "queryType": "r",
+        "resultAvailableAfter": 46,
+        "resultConsumedAfter": 58,
+        "bookmarks": [
+          "FB:kcwQfpY9pX3xTEqcMXq430HkDC2Q"
+        ]
+      },
+      "mappable_v1_1": {
+        "data": {
+          "fields": [
+            "n",
+            "r",
+            "m"
+          ],
+          "values": [
+            [
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:f0aede55-cbb4-496a-86fe-a092e5fb7ad5:1",
+                  "_labels": [
+                    "TypedSample"
+                  ],
+                  "_properties": {
+                    "date": {
+                      "$type": "Date",
+                      "_value": "2015-03-26"
+                    },
+                    "localtime": {
+                      "$type": "LocalTime",
+                      "_value": "12:50:35.556"
+                    },
+                    "datetime_offset": {
+                      "$type": "OffsetDateTime",
+                      "_value": "2015-11-21T21:40:32.142-01:00"
+                    },
+                    "list_time": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Time",
+                          "_value": "01:02:03Z"
+                        },
+                        {
+                          "$type": "Time",
+                          "_value": "04:05:06+02:00"
+                        }
+                      ]
+                    },
+                    "string": {
+                      "$type": "String",
+                      "_value": "hello"
+                    },
+                    "list_duration": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Duration",
+                          "_value": "P1D"
+                        },
+                        {
+                          "$type": "Duration",
+                          "_value": "PT2H30M"
+                        }
+                      ]
+                    },
+                    "list_float": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Float",
+                          "_value": "1.5"
+                        },
+                        {
+                          "$type": "Float",
+                          "_value": "2.5"
+                        }
+                      ]
+                    },
+                    "list_datetime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "ZonedDateTime",
+                          "_value": "2020-01-01T10:00:00+01:00[Europe/Stockholm]"
+                        },
+                        {
+                          "$type": "OffsetDateTime",
+                          "_value": "2020-06-01T10:00:00+02:00"
+                        }
+                      ]
+                    },
+                    "integer": {
+                      "$type": "Integer",
+                      "_value": "42"
+                    },
+                    "float": {
+                      "$type": "Float",
+                      "_value": "3.14159"
+                    },
+                    "uuid": {
+                      "$type": "Unsupported",
+                      "_value": "Type \"UUID\" is not supported in the current MimeType."
+                    },
+                    "duration": {
+                      "$type": "Duration",
+                      "_value": "P14DT16H12M"
+                    },
+                    "point_wgs84": {
+                      "$type": "Point",
+                      "_value": "SRID=4326;POINT (-0.1278 51.5074)"
+                    },
+                    "list_localdatetime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "LocalDateTime",
+                          "_value": "2020-01-01T10:00:00"
+                        },
+                        {
+                          "$type": "LocalDateTime",
+                          "_value": "2020-06-01T10:00:00"
+                        }
+                      ]
+                    },
+                    "list_integer": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Integer",
+                          "_value": "1"
+                        },
+                        {
+                          "$type": "Integer",
+                          "_value": "2"
+                        },
+                        {
+                          "$type": "Integer",
+                          "_value": "3"
+                        }
+                      ]
+                    },
+                    "vector": {
+                      "$type": "Vector",
+                      "_value": {
+                        "coordinatesType": "FLOAT64",
+                        "coordinates": [
+                          "1.0",
+                          "2.0"
+                        ]
+                      }
+                    },
+                    "point_wgs84_3d": {
+                      "$type": "Point",
+                      "_value": "SRID=4979;POINT Z (-0.1278 51.5074 11.0)"
+                    },
+                    "list_localtime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "LocalTime",
+                          "_value": "01:02:03"
+                        },
+                        {
+                          "$type": "LocalTime",
+                          "_value": "04:05:06"
+                        }
+                      ]
+                    },
+                    "list_boolean": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Boolean",
+                          "_value": true
+                        },
+                        {
+                          "$type": "Boolean",
+                          "_value": false
+                        }
+                      ]
+                    },
+                    "list_date": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Date",
+                          "_value": "2020-01-01"
+                        },
+                        {
+                          "$type": "Date",
+                          "_value": "2020-01-02"
+                        }
+                      ]
+                    },
+                    "list_point": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Point",
+                          "_value": "SRID=4326;POINT (0.0 0.0)"
+                        },
+                        {
+                          "$type": "Point",
+                          "_value": "SRID=4326;POINT (1.0 2.0)"
+                        }
+                      ]
+                    },
+                    "datetime_named_zone": {
+                      "$type": "ZonedDateTime",
+                      "_value": "2015-11-21T21:40:32.142Z[Antarctica/Troll]"
+                    },
+                    "boolean": {
+                      "$type": "Boolean",
+                      "_value": true
+                    },
+                    "list_string": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "String",
+                          "_value": "a"
+                        },
+                        {
+                          "$type": "String",
+                          "_value": "b"
+                        }
+                      ]
+                    },
+                    "point_cartesian_3d": {
+                      "$type": "Point",
+                      "_value": "SRID=9157;POINT Z (1.0 2.0 3.0)"
+                    },
+                    "name": {
+                      "$type": "String",
+                      "_value": "mappable"
+                    },
+                    "time": {
+                      "$type": "Time",
+                      "_value": "12:50:35.556+01:00"
+                    },
+                    "localdatetime": {
+                      "$type": "LocalDateTime",
+                      "_value": "2015-07-04T19:32:24"
+                    },
+                    "point_cartesian": {
+                      "$type": "Point",
+                      "_value": "SRID=7203;POINT (1.2 3.4)"
+                    }
+                  }
+                }
+              },
+              {
+                "$type": "Relationship",
+                "_value": {
+                  "_element_id": "5:f0aede55-cbb4-496a-86fe-a092e5fb7ad5:1152921504606846977",
+                  "_start_node_element_id": "4:f0aede55-cbb4-496a-86fe-a092e5fb7ad5:1",
+                  "_end_node_element_id": "4:f0aede55-cbb4-496a-86fe-a092e5fb7ad5:2",
+                  "_type": "TYPED_REL",
+                  "_properties": {
+                    "at": {
+                      "$type": "Point",
+                      "_value": "SRID=4326;POINT (10.0 20.0)"
+                    },
+                    "since": {
+                      "$type": "Date",
+                      "_value": "2020-01-01"
+                    }
+                  }
+                }
+              },
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:f0aede55-cbb4-496a-86fe-a092e5fb7ad5:2",
+                  "_labels": [
+                    "TypedPeer"
+                  ],
+                  "_properties": {
+                    "name": {
+                      "$type": "String",
+                      "_value": "peer"
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        },
+        "queryType": "r",
+        "resultAvailableAfter": 2,
+        "resultConsumedAfter": 5,
+        "bookmarks": [
+          "FB:kcwQ8K7eVcu0SWqG/qCS5ft61TmQ"
+        ]
+      },
+      "unmappable": {
+        "data": {
+          "fields": [
+            "u"
+          ],
+          "values": [
+            [
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:f0aede55-cbb4-496a-86fe-a092e5fb7ad5:3",
+                  "_labels": [
+                    "TypedUnmappable"
+                  ],
+                  "_properties": {
+                    "name": {
+                      "$type": "String",
+                      "_value": "unmappable"
+                    },
+                    "blob": {
+                      "$type": "Base64",
+                      "_value": "A2+/"
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        },
+        "queryType": "r",
+        "resultAvailableAfter": 3,
+        "resultConsumedAfter": 6,
+        "bookmarks": [
+          "FB:kcwQ8K7eVcu0SWqG/qCS5ft61TmQ"
+        ]
+      }
+    },
+    "neo4j:5.26-enterprise": {
+      "kernel_version": "5.26.26",
+      "image_digest": "sha256:0f4ab99cde6cfc71f7a268b93e4db8fb64c22faaef7a8a0df19483bd17e8f858",
+      "negotiated_content_type": "application/vnd.neo4j.query.v1.0",
+      "mappable": {
+        "data": {
+          "fields": [
+            "n",
+            "r",
+            "m"
+          ],
+          "values": [
+            [
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:10496b6a-88d2-4215-870f-3e517f4682ec:0",
+                  "_labels": [
+                    "TypedSample"
+                  ],
+                  "_properties": {
+                    "date": {
+                      "$type": "Date",
+                      "_value": "2015-03-26"
+                    },
+                    "localtime": {
+                      "$type": "LocalTime",
+                      "_value": "12:50:35.556"
+                    },
+                    "datetime_offset": {
+                      "$type": "OffsetDateTime",
+                      "_value": "2015-11-21T21:40:32.142-01:00"
+                    },
+                    "list_time": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Time",
+                          "_value": "01:02:03Z"
+                        },
+                        {
+                          "$type": "Time",
+                          "_value": "04:05:06+02:00"
+                        }
+                      ]
+                    },
+                    "string": {
+                      "$type": "String",
+                      "_value": "hello"
+                    },
+                    "list_duration": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Duration",
+                          "_value": "P1D"
+                        },
+                        {
+                          "$type": "Duration",
+                          "_value": "PT2H30M"
+                        }
+                      ]
+                    },
+                    "list_float": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Float",
+                          "_value": "1.5"
+                        },
+                        {
+                          "$type": "Float",
+                          "_value": "2.5"
+                        }
+                      ]
+                    },
+                    "list_datetime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "ZonedDateTime",
+                          "_value": "2020-01-01T10:00:00+01:00[Europe/Stockholm]"
+                        },
+                        {
+                          "$type": "OffsetDateTime",
+                          "_value": "2020-06-01T10:00:00+02:00"
+                        }
+                      ]
+                    },
+                    "integer": {
+                      "$type": "Integer",
+                      "_value": "42"
+                    },
+                    "float": {
+                      "$type": "Float",
+                      "_value": "3.14159"
+                    },
+                    "duration": {
+                      "$type": "Duration",
+                      "_value": "P14DT16H12M"
+                    },
+                    "point_wgs84": {
+                      "$type": "Point",
+                      "_value": "SRID=4326;POINT (-0.1278 51.5074)"
+                    },
+                    "list_localdatetime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "LocalDateTime",
+                          "_value": "2020-01-01T10:00:00"
+                        },
+                        {
+                          "$type": "LocalDateTime",
+                          "_value": "2020-06-01T10:00:00"
+                        }
+                      ]
+                    },
+                    "list_integer": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Integer",
+                          "_value": "1"
+                        },
+                        {
+                          "$type": "Integer",
+                          "_value": "2"
+                        },
+                        {
+                          "$type": "Integer",
+                          "_value": "3"
+                        }
+                      ]
+                    },
+                    "point_wgs84_3d": {
+                      "$type": "Point",
+                      "_value": "SRID=4979;POINT Z (-0.1278 51.5074 11.0)"
+                    },
+                    "list_localtime": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "LocalTime",
+                          "_value": "01:02:03"
+                        },
+                        {
+                          "$type": "LocalTime",
+                          "_value": "04:05:06"
+                        }
+                      ]
+                    },
+                    "list_boolean": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Boolean",
+                          "_value": true
+                        },
+                        {
+                          "$type": "Boolean",
+                          "_value": false
+                        }
+                      ]
+                    },
+                    "list_date": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Date",
+                          "_value": "2020-01-01"
+                        },
+                        {
+                          "$type": "Date",
+                          "_value": "2020-01-02"
+                        }
+                      ]
+                    },
+                    "list_point": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "Point",
+                          "_value": "SRID=4326;POINT (0.0 0.0)"
+                        },
+                        {
+                          "$type": "Point",
+                          "_value": "SRID=4326;POINT (1.0 2.0)"
+                        }
+                      ]
+                    },
+                    "datetime_named_zone": {
+                      "$type": "ZonedDateTime",
+                      "_value": "2015-11-21T21:40:32.142Z[Antarctica/Troll]"
+                    },
+                    "boolean": {
+                      "$type": "Boolean",
+                      "_value": true
+                    },
+                    "list_string": {
+                      "$type": "List",
+                      "_value": [
+                        {
+                          "$type": "String",
+                          "_value": "a"
+                        },
+                        {
+                          "$type": "String",
+                          "_value": "b"
+                        }
+                      ]
+                    },
+                    "point_cartesian_3d": {
+                      "$type": "Point",
+                      "_value": "SRID=9157;POINT Z (1.0 2.0 3.0)"
+                    },
+                    "name": {
+                      "$type": "String",
+                      "_value": "mappable"
+                    },
+                    "time": {
+                      "$type": "Time",
+                      "_value": "12:50:35.556+01:00"
+                    },
+                    "localdatetime": {
+                      "$type": "LocalDateTime",
+                      "_value": "2015-07-04T19:32:24"
+                    },
+                    "point_cartesian": {
+                      "$type": "Point",
+                      "_value": "SRID=7203;POINT (1.2 3.4)"
+                    }
+                  }
+                }
+              },
+              {
+                "$type": "Relationship",
+                "_value": {
+                  "_element_id": "5:10496b6a-88d2-4215-870f-3e517f4682ec:1152921504606846976",
+                  "_start_node_element_id": "4:10496b6a-88d2-4215-870f-3e517f4682ec:0",
+                  "_end_node_element_id": "4:10496b6a-88d2-4215-870f-3e517f4682ec:1",
+                  "_type": "TYPED_REL",
+                  "_properties": {
+                    "at": {
+                      "$type": "Point",
+                      "_value": "SRID=4326;POINT (10.0 20.0)"
+                    },
+                    "since": {
+                      "$type": "Date",
+                      "_value": "2020-01-01"
+                    }
+                  }
+                }
+              },
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:10496b6a-88d2-4215-870f-3e517f4682ec:1",
+                  "_labels": [
+                    "TypedPeer"
+                  ],
+                  "_properties": {
+                    "name": {
+                      "$type": "String",
+                      "_value": "peer"
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        },
+        "bookmarks": [
+          "FB:kcwQEElraojSQhWHDz5Rf0aC7CmQ"
+        ]
+      },
+      "unmappable": {
+        "data": {
+          "fields": [
+            "u"
+          ],
+          "values": [
+            [
+              {
+                "$type": "Node",
+                "_value": {
+                  "_element_id": "4:10496b6a-88d2-4215-870f-3e517f4682ec:2",
+                  "_labels": [
+                    "TypedUnmappable"
+                  ],
+                  "_properties": {
+                    "name": {
+                      "$type": "String",
+                      "_value": "unmappable"
+                    },
+                    "blob": {
+                      "$type": "Base64",
+                      "_value": "A2+/"
+                    }
+                  }
+                }
+              }
+            ]
+          ]
+        },
+        "bookmarks": [
+          "FB:kcwQEElraojSQhWHDz5Rf0aC7CmQ"
+        ]
+      }
+    }
+  },
+  "negotiation_findings": [
+    {
+      "image": "neo4j:2026.09-enterprise",
+      "accept": "application/vnd.neo4j.query",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query"
+    },
+    {
+      "image": "neo4j:2026.09-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.0",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.0"
+    },
+    {
+      "image": "neo4j:2026.09-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.1",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.1"
+    },
+    {
+      "image": "neo4j:2026.09-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.2",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.2"
+    },
+    {
+      "image": "neo4j:2026.09-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.2;q=1.0, application/vnd.neo4j.query.v1.1;q=0.9, application/vnd.neo4j.query.v1.0;q=0.8, application/vnd.neo4j.query;q=0.7",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.2"
+    },
+    {
+      "image": "neo4j:2026.09-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.2;q=1.0, application/vnd.neo4j.query.v1.1;q=0.9, application/vnd.neo4j.query.v1.0;q=0.8, application/vnd.neo4j.query;q=0.7 (content-type check, parameterised body)",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.2"
+    },
+    {
+      "image": "neo4j:5.26-enterprise",
+      "accept": "application/vnd.neo4j.query",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query"
+    },
+    {
+      "image": "neo4j:5.26-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.0",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.0"
+    },
+    {
+      "image": "neo4j:5.26-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.1",
+      "content_type_sent": "application/json",
+      "status": 406,
+      "content_type_received": "application/json"
+    },
+    {
+      "image": "neo4j:5.26-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.2",
+      "content_type_sent": "application/json",
+      "status": 406,
+      "content_type_received": "application/json"
+    },
+    {
+      "image": "neo4j:5.26-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.2;q=1.0, application/vnd.neo4j.query.v1.1;q=0.9, application/vnd.neo4j.query.v1.0;q=0.8, application/vnd.neo4j.query;q=0.7",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.0"
+    },
+    {
+      "image": "neo4j:5.26-enterprise",
+      "accept": "application/vnd.neo4j.query.v1.2;q=1.0, application/vnd.neo4j.query.v1.1;q=0.9, application/vnd.neo4j.query.v1.0;q=0.8, application/vnd.neo4j.query;q=0.7 (content-type check, parameterised body)",
+      "content_type_sent": "application/json",
+      "status": 202,
+      "content_type_received": "application/vnd.neo4j.query.v1.0"
+    }
+  ],
+  "type_tags": [
+    "Base64",
+    "Boolean",
+    "Date",
+    "Duration",
+    "Float",
+    "Integer",
+    "List",
+    "LocalDateTime",
+    "LocalTime",
+    "Node",
+    "OffsetDateTime",
+    "Point",
+    "Relationship",
+    "String",
+    "Time",
+    "UUID",
+    "Unsupported",
+    "Vector",
+    "ZonedDateTime"
+  ],
+  "type_tags_by_image": {
+    "neo4j:2026.09-enterprise": [
+      "Base64",
+      "Boolean",
+      "Date",
+      "Duration",
+      "Float",
+      "Integer",
+      "List",
+      "LocalDateTime",
+      "LocalTime",
+      "Node",
+      "OffsetDateTime",
+      "Point",
+      "Relationship",
+      "String",
+      "Time",
+      "UUID",
+      "Unsupported",
+      "Vector",
+      "ZonedDateTime"
+    ],
+    "neo4j:5.26-enterprise": [
+      "Base64",
+      "Boolean",
+      "Date",
+      "Duration",
+      "Float",
+      "Integer",
+      "List",
+      "LocalDateTime",
+      "LocalTime",
+      "Node",
+      "OffsetDateTime",
+      "Point",
+      "Relationship",
+      "String",
+      "Time",
+      "ZonedDateTime"
+    ]
+  },
+  "engine_parse_gaps": [],
+  "notes": [
+    "Bodies are verbatim Query API v2 responses (element ids, bookmarks, resultAvailableAfter/resultConsumedAfter included).",
+    "accept_header is multi-valued: the server negotiates the newest typed format it supports. Observed: .v1.2 on neo4j:2026.09-enterprise, .v1.0 on neo4j:5.26-enterprise. application/json is deliberately absent so a server without typed JSON fails loudly instead of silently returning untyped JSON.",
+    "neo4j:5.26-enterprise rejects application/vnd.neo4j.query.v1.1 and .v1.2 with HTTP 406 (body {\"errors\":[{\"code\":\"Neo.ClientError.Request.Invalid\",\"message\":\"Not Acceptable\"}]}).",
+    "neo4j:2026.09-enterprise: application/vnd.neo4j.query and .v1.0 cannot serialize UUID or VECTOR. Per-property queries answer HTTP 202 with an errors array (\"Type UUID is not supported.\" / \"Type VECTOR is not supported.\"); a query returning the whole node carrying both answers HTTP 500 {\"errors\":[{\"code\":\"Neo.DatabaseError.General.UnknownError\",\"message\":\"An unknown error occurred.\"}]} with the requested media type echoed in Content-Type.",
+    "application/vnd.neo4j.query.v1.1 serializes VECTOR natively and maps UUID to the Unsupported tag: {\"$type\":\"Unsupported\",\"_value\":\"Type \\\"UUID\\\" is not supported in the current MimeType.\"} (see servers[neo4j:2026.09-enterprise].mappable_v1_1).",
+    "No tag-spelling differences between the two images for the shared types: both emit ZonedDateTime for zoned datetimes and OffsetDateTime for offset-only datetimes; no DateTime alias was observed.",
+    "Both mappable bodies answer the same query; 5.26's node lacks uuid, list_uuid and vector because those functions do not exist there.",
+    "BYTE ARRAY has no Cypher literal or constructor; the seed's blob property is created by a typed-JSON Base64 parameter step (documented in typed_wire_seed.cypher). On 2026.09, uuid('...') stores a native UUID property while randomUUID() is coerced to STRING when stored. A list of uuid('...') values stores as a native LIST<UUID> property.",
+    "A LIST property of POINT values must be homogeneous in SRID; the seed uses two SRID=4326 points.",
+    "The 2026.09 mappable body was recaptured at 2026-10-07T16:12:36Z from a fresh seed run that added the list_uuid property; every other body is from the original 2026-10-07T16:01:51Z capture.",
+    "LIST<UUID> is storable on 2026.09 (SchemaValueType.LIST_UUID): the seed's list_uuid round-trips as {\"$type\":\"List\",\"_value\":[{\"$type\":\"UUID\",\"_value\":\"550e8400-e29b-41d4-a716-446655440000\"},{\"$type\":\"UUID\",\"_value\":\"00000000-0000-0000-0000-000000000000\"}]}, the 12th listable type next to the 11 list_* properties.",
+    "Neo4j cannot store a LIST of VECTOR, so the seed has no list_vector property. Attempted on 2026.09: CREATE (n:ThrowawayListVector {v: [vector([1.0, 2.0], 2, FLOAT64)]}) RETURN n -> HTTP 202 with the streamed data section and errors [{\"code\":\"Neo.DatabaseError.Database.Unknown\",\"message\":\"Unable to complete transaction.\"}]; a follow-up MATCH finds no such node (rolled back)."
+  ]
+}

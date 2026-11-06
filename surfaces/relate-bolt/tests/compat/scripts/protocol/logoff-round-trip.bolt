@@ -1,0 +1,23 @@
+# ADR-0484 decision 4: the LOGOFF round-trip. From an open 5.4 session
+# LOGOFF answers SUCCESS {} and returns to the AUTHENTICATION state,
+# where a fresh LOGON re-opens the session and the same query serves
+# again.
+!: BOLT 5.4
+!: AUTO HELLO
+!: AUTO LOGON
+!: AUTO GOODBYE
+
+C: RUN "RETURN 1 AS n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["n"]}
+   RECORD [1]
+   SUCCESS {}
+C: LOGOFF
+S: SUCCESS {}
+C: LOGON {"scheme": "none"}
+S: SUCCESS {}
+C: RUN "RETURN 2 AS n" {} {}
+   PULL {"n": -1}
+S: SUCCESS {"fields": ["n"]}
+   RECORD [2]
+   SUCCESS {}

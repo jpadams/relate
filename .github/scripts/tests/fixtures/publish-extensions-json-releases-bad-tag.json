@@ -1,0 +1,12 @@
+[
+  {
+    "tagName": "relate-extensions-greet-1.2",
+    "publishedAt": "2026-10-20T09:30:00Z",
+    "isDraft": false,
+    "isPrerelease": false,
+    "body": "",
+    "assets": [
+      {"name": "greet-1.2-darwin-arm64.tar.gz"}
+    ]
+  }
+]

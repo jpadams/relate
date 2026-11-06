@@ -1,0 +1,324 @@
+{
+ "_source": {
+  "what": "Oracle answers for the agg-stress workload at SF0.1. The queries are IN-HOUSE synthetic stress shapes (no upstream query of this form exists), so every value is the answer this build returns over the pinned graph-benchmark-ldbc SF0.1 store \u2014 verified by execution 2026-11-02 (release build, reused store; see the workload README). Rows compare with the graph-benchmark-ldbc lane's no-coercion rules (answers::compare).",
+  "data": "the pinned graph-benchmark-ldbc store at SF0.1 (graph-benchmark-ldbc CsvBasic-StringDateFormatter, CC BY 4.0 \u2014 the same data the graph-benchmark-ldbc, pathdb and snb-bi lanes run; workloads/graph-benchmark-ldbc/data.sha256)",
+  "why": "an engine-self oracle, recorded so the ratchet catches answer regressions in the fold itself (a fold rewrite that drops or double-counts rows fails the run); it is NOT an upstream answer and never gates on upstream behaviour",
+  "regenerate": "re-freezing the graph-benchmark-ldbc data set regenerates this file: run the lane, review each answer, re-record (the stream and group sizes in the README's table move with the data). Per scale factor: a store at another SF resolves its own oracle-sf<SF>.json and fails loudly until one exists.",
+  "verified": "2026-11-02, by execution over the graph-benchmark-ldbc SF0.1 store: a01 ten most-walked endpoints (1205 endpoint groups, 2,624,450 walks); a02 the first ten (src, dst) pairs of 391,109 groups; a03 the first ten sources of 1199; a04 all ten buckets; a05 the ten widest-reach sources of 1199"
+ },
+ "a01-endpoint-trail-count": {
+  "rows": [
+   {
+    "endpoint": 32985348834375,
+    "paths": 74741
+   },
+   {
+    "endpoint": 30786325578932,
+    "paths": 36091
+   },
+   {
+    "endpoint": 32985348834937,
+    "paths": 27771
+   },
+   {
+    "endpoint": 26388279067534,
+    "paths": 26894
+   },
+   {
+    "endpoint": 32985348834483,
+    "paths": 25393
+   },
+   {
+    "endpoint": 30786325578585,
+    "paths": 24182
+   },
+   {
+    "endpoint": 32985348834873,
+    "paths": 23968
+   },
+   {
+    "endpoint": 32985348833548,
+    "paths": 22143
+   },
+   {
+    "endpoint": 28587302322537,
+    "paths": 21887
+   },
+   {
+    "endpoint": 32985348833438,
+    "paths": 21730
+   }
+  ],
+  "order_sensitive": true,
+  "note": "ORDER BY paths DESC, endpoint LIMIT 10 \u2014 the ten most-walked endpoints; the tiebreak makes the order deterministic",
+  "query_sha256": "8b29d884563318c46257a9f9c1508ec27464224344e224bdc21224d8cb423ca7"
+ },
+ "a02-composite-key-fold": {
+  "rows": [
+   {
+    "src": 94,
+    "dst": 987,
+    "paths": 1,
+    "minHops": 1,
+    "maxHops": 1,
+    "avgHops": 1.0
+   },
+   {
+    "src": 94,
+    "dst": 1274,
+    "paths": 1,
+    "minHops": 2,
+    "maxHops": 2,
+    "avgHops": 2.0
+   },
+   {
+    "src": 94,
+    "dst": 1490,
+    "paths": 2,
+    "minHops": 2,
+    "maxHops": 3,
+    "avgHops": 2.5
+   },
+   {
+    "src": 94,
+    "dst": 1564,
+    "paths": 1,
+    "minHops": 3,
+    "maxHops": 3,
+    "avgHops": 3.0
+   },
+   {
+    "src": 94,
+    "dst": 1644,
+    "paths": 1,
+    "minHops": 3,
+    "maxHops": 3,
+    "avgHops": 3.0
+   },
+   {
+    "src": 94,
+    "dst": 2199023255798,
+    "paths": 1,
+    "minHops": 3,
+    "maxHops": 3,
+    "avgHops": 3.0
+   },
+   {
+    "src": 94,
+    "dst": 2199023255871,
+    "paths": 1,
+    "minHops": 2,
+    "maxHops": 2,
+    "avgHops": 2.0
+   },
+   {
+    "src": 94,
+    "dst": 2199023256031,
+    "paths": 1,
+    "minHops": 2,
+    "maxHops": 2,
+    "avgHops": 2.0
+   },
+   {
+    "src": 94,
+    "dst": 2199023256077,
+    "paths": 2,
+    "minHops": 2,
+    "maxHops": 3,
+    "avgHops": 2.5
+   },
+   {
+    "src": 94,
+    "dst": 2199023256081,
+    "paths": 1,
+    "minHops": 2,
+    "maxHops": 2,
+    "avgHops": 2.0
+   }
+  ],
+  "order_sensitive": true,
+  "note": "ORDER BY src, dst LIMIT 10 \u2014 the first ten composite groups in key order; every recorded avgHops is an exact binary fraction, so the floats are bit-stable",
+  "query_sha256": "e8bdcd2604628f2df8233f408d16547a73055dba82786c276de5596ac0a8cb64"
+ },
+ "a03-min-max-per-key": {
+  "rows": [
+   {
+    "src": 94,
+    "firstCreated": "2010-01-02T06:04:55.320+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 7653
+   },
+   {
+    "src": 96,
+    "firstCreated": "2010-03-15T11:58:13.956+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 4063
+   },
+   {
+    "src": 102,
+    "firstCreated": "2010-01-04T19:49:07.430+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 9101
+   },
+   {
+    "src": 143,
+    "firstCreated": "2010-01-04T19:49:07.430+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 18929
+   },
+   {
+    "src": 150,
+    "firstCreated": "2010-01-02T06:04:55.320+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 17230
+   },
+   {
+    "src": 238,
+    "firstCreated": "2010-01-02T06:04:55.320+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 15418
+   },
+   {
+    "src": 250,
+    "firstCreated": "2010-06-04T00:38:26.903+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 7750
+   },
+   {
+    "src": 267,
+    "firstCreated": "2011-11-09T07:50:44.954+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 546
+   },
+   {
+    "src": 290,
+    "firstCreated": "2010-01-06T23:09:42.096+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 9285
+   },
+   {
+    "src": 296,
+    "firstCreated": "2010-01-02T06:04:55.320+0000",
+    "lastCreated": "2012-09-11T04:26:42.403+0000",
+    "arrivals": 13517
+   }
+  ],
+  "order_sensitive": true,
+  "note": "ORDER BY src LIMIT 10 \u2014 the first ten source groups in key order; creationDate compares as its raw ISO string (uniform format, so lexicographic order is temporal order)",
+  "query_sha256": "2a9582aecb23c5099516ae37d5a032d4c20ca1323a7d4b49e3591b196c655696"
+ },
+ "a04-low-card-control": {
+  "rows": [
+   {
+    "bucket": 0,
+    "paths": 269033,
+    "distinctEndpoints": 1159
+   },
+   {
+    "bucket": 1,
+    "paths": 244965,
+    "distinctEndpoints": 1125
+   },
+   {
+    "bucket": 2,
+    "paths": 231236,
+    "distinctEndpoints": 1118
+   },
+   {
+    "bucket": 3,
+    "paths": 243869,
+    "distinctEndpoints": 1160
+   },
+   {
+    "bucket": 4,
+    "paths": 340032,
+    "distinctEndpoints": 1149
+   },
+   {
+    "bucket": 5,
+    "paths": 211226,
+    "distinctEndpoints": 1077
+   },
+   {
+    "bucket": 6,
+    "paths": 267498,
+    "distinctEndpoints": 1098
+   },
+   {
+    "bucket": 7,
+    "paths": 336174,
+    "distinctEndpoints": 1151
+   },
+   {
+    "bucket": 8,
+    "paths": 286728,
+    "distinctEndpoints": 1171
+   },
+   {
+    "bucket": 9,
+    "paths": 193689,
+    "distinctEndpoints": 1156
+   }
+  ],
+  "order_sensitive": true,
+  "note": "the complete fold output \u2014 all ten buckets; the sum of paths is 2,624,450, the same stream a01/a03 fold",
+  "query_sha256": "968dc5ca52b3c7ba3cf0dbdbb036b4d974de87ec70fe9972581d631478035df4"
+ },
+ "a05-collect-reach": {
+  "rows": [
+   {
+    "src": 2199023256816,
+    "reach": 875,
+    "walks": 3306
+   },
+   {
+    "src": 987,
+    "reach": 767,
+    "walks": 1894
+   },
+   {
+    "src": 2199023256300,
+    "reach": 720,
+    "walks": 1352
+   },
+   {
+    "src": 6597069767242,
+    "reach": 715,
+    "walks": 2480
+   },
+   {
+    "src": 1564,
+    "reach": 686,
+    "walks": 1820
+   },
+   {
+    "src": 2199023255688,
+    "reach": 658,
+    "walks": 1169
+   },
+   {
+    "src": 459,
+    "reach": 653,
+    "walks": 1485
+   },
+   {
+    "src": 1274,
+    "reach": 652,
+    "walks": 1551
+   },
+   {
+    "src": 2199023256456,
+    "reach": 642,
+    "walks": 1182
+   },
+   {
+    "src": 2199023256277,
+    "reach": 628,
+    "walks": 1316
+   }
+  ],
+  "order_sensitive": true,
+  "note": "ORDER BY reach DESC, src LIMIT 10 \u2014 the ten widest-reach sources; the recorded reach is size(collect(DISTINCT b.ID)), deterministic where collect's own list order is not",
+  "query_sha256": "305ec3fafbea96346907cb3c422390a69a8ee9bcfc8fa68f93bcf8be49e687c7"
+ }
+}

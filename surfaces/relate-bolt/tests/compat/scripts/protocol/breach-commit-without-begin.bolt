@@ -1,0 +1,8 @@
+# ADR-0314 (F-32, F-43): COMMIT with no open transaction is a protocol
+# breach: one FAILURE, then the server closes the connection.
+!: BOLT 4.4
+!: AUTO HELLO
+
+C: COMMIT
+S: FAILURE {"code": "Neo.ClientError.Request.Invalid", "message": "Message of type CommitMessage cannot be handled by a session in the READY state."}
+S: <EXIT>

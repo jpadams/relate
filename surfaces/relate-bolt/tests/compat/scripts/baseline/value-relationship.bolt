@@ -1,0 +1,14 @@
+# Baseline B-21 (F-48): a relationship result encodes as the Bolt 4.4
+# Relationship structure 0x52 [id, start node id, end node id, type,
+# properties]. "*" is a wildcard only as a map value, not as a structure
+# field, so the ids are pinned: they are the ones this script's own fresh
+# :memory: server assigns its first relationship and its two nodes.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "CREATE (a:BoltProbe)-[r:BOLT_PROBE {since: 2020}]->(b:BoltProbe) RETURN r" {} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   RECORD [{"#52": [0, 0, 1, "BOLT_PROBE", {"since": 2020}]}]
+   SUCCESS {}

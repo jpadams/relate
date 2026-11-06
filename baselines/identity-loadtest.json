@@ -1,0 +1,502 @@
+{
+  "schema_version": 6,
+  "name": "identity-mixed-iam",
+  "started_at": "2026-11-05T13:26:58.062Z",
+  "finished_at": "2026-11-05T13:27:29.986Z",
+  "started_at_unix_ms": 1793885218062,
+  "finished_at_unix_ms": 1793885249986,
+  "duration_ms": 31924,
+  "load_duration_ms": 3379,
+  "worker_duration_ms": 28543,
+  "engine": "relate",
+  "engine_version": "0.16.1",
+  "config": {
+    "uri": ":memory:",
+    "scale": 0.1,
+    "graph_seed": 42,
+    "workload_seed": 7,
+    "ops": 20000,
+    "warmup": 8,
+    "workers": 4,
+    "write_fraction": 0.44,
+    "durability_mode": "full"
+  },
+  "workload": {
+    "kind": "identity",
+    "unit": "users",
+    "config": {
+      "group_k": 12,
+      "nest_depth": 4
+    },
+    "planted": {
+      "fan_group": "nest-0",
+      "group_k": 12,
+      "leaf_users": [
+        "nested-admin",
+        "leaf-0",
+        "leaf-1",
+        "leaf-2",
+        "leaf-3",
+        "leaf-4",
+        "leaf-5",
+        "leaf-6",
+        "leaf-7",
+        "leaf-8",
+        "leaf-9",
+        "leaf-10"
+      ],
+      "nest_depth": 4,
+      "nest_groups": [
+        "nest-0",
+        "nest-1",
+        "nest-2",
+        "nest-3"
+      ],
+      "nested_admin": "nested-admin",
+      "orphan_priv": "orphan-priv",
+      "sod_user": "sod-user",
+      "stale_grant": "stale-grant",
+      "stale_until": "2020-06-01"
+    },
+    "dataset": {
+      "start": {
+        "nodes": 1264,
+        "relationships": 2744,
+        "groups": 54,
+        "memberships": 1389,
+        "roles": 5,
+        "users": 1015
+      },
+      "finish": {
+        "nodes": 3403,
+        "relationships": 8395,
+        "groups": 54,
+        "memberships": 5195,
+        "roles": 5,
+        "users": 2390
+      }
+    }
+  },
+  "throughput": {
+    "ops_per_sec": 700.6971937077392,
+    "reads_per_sec": 389.41246540307606,
+    "writes_per_sec": 311.28472830466313,
+    "read_ops": 11115,
+    "write_ops": 8885
+  },
+  "memory": {
+    "after_open": {
+      "rss_bytes": 10272768,
+      "peak_rss_bytes": 11694080,
+      "rss_per_node": 0.0,
+      "rss_per_relationship": 0.0,
+      "rss_per_entity": 0.0,
+      "rss_per_unit": 0.0
+    },
+    "start": {
+      "rss_bytes": 22777856,
+      "peak_rss_bytes": 22581248,
+      "rss_per_node": 18020.45569620253,
+      "rss_per_relationship": 8300.967930029154,
+      "rss_per_entity": 5683.097804391217,
+      "rss_per_unit": 22441.237438423646
+    },
+    "finish": {
+      "rss_bytes": 35143680,
+      "peak_rss_bytes": 35848192,
+      "rss_per_node": 10327.264178665882,
+      "rss_per_relationship": 4186.263251935676,
+      "rss_per_entity": 2978.7828445499235,
+      "rss_per_unit": 14704.468619246862
+    },
+    "graph": {
+      "rss_bytes": 12505088,
+      "bytes_per_node": 9893.26582278481,
+      "bytes_per_relationship": 4557.247813411079,
+      "bytes_per_entity": 3120.0319361277443,
+      "bytes_per_unit": 12320.283743842365
+    },
+    "workload_delta": {
+      "rss_bytes": 12365824,
+      "nodes": 2139,
+      "relationships": 5651,
+      "rss_bytes_per_new_entity": 1587.3971758664954
+    },
+    "logical_used_start_bytes": 1898015,
+    "logical_used_bytes": 6464874,
+    "logical_limit_bytes": 41943040
+  },
+  "usecases": [
+    {
+      "id": "provision_user",
+      "kind": "write",
+      "related": false,
+      "description": "Provision: CREATE a User and MEMBER_OF an existing group",
+      "ops": 1373,
+      "errors": 0,
+      "statements": 1373,
+      "latency_ns": {
+        "min": 266481,
+        "max": 15303804,
+        "mean": 2841923.718863802,
+        "p50": 2070050,
+        "p95": 7990824,
+        "p99": 9440443
+      }
+    },
+    {
+      "id": "add_to_group",
+      "kind": "write",
+      "related": false,
+      "description": "Directory: MERGE a user into a group",
+      "ops": 1775,
+      "errors": 0,
+      "statements": 1775,
+      "latency_ns": {
+        "min": 1183072,
+        "max": 21263339,
+        "mean": 6746485.371267606,
+        "p50": 7009091,
+        "p95": 11943506,
+        "p99": 16497320
+      }
+    },
+    {
+      "id": "grant_role",
+      "kind": "write",
+      "related": false,
+      "description": "Grant: CREATE HAS_ROLE from a user to viewer/editor",
+      "ops": 1079,
+      "errors": 0,
+      "statements": 1079,
+      "latency_ns": {
+        "min": 1176346,
+        "max": 20299131,
+        "mean": 6696194.638554217,
+        "p50": 7028218,
+        "p95": 11788289,
+        "p99": 16500538
+      }
+    },
+    {
+      "id": "attach_device",
+      "kind": "write",
+      "related": false,
+      "description": "Device: CREATE Device and OWNS",
+      "ops": 907,
+      "errors": 0,
+      "statements": 907,
+      "latency_ns": {
+        "min": 1168092,
+        "max": 20287372,
+        "mean": 6811232.628445424,
+        "p50": 7223213,
+        "p95": 12124614,
+        "p99": 17038925
+      }
+    },
+    {
+      "id": "nested_grant",
+      "kind": "write",
+      "related": true,
+      "description": "IAM continuation: extra MEMBER_OF into the planted nest leaf",
+      "ops": 736,
+      "errors": 0,
+      "statements": 736,
+      "latency_ns": {
+        "min": 1186465,
+        "max": 24035397,
+        "mean": 6833753.34375,
+        "p50": 7338683,
+        "p95": 12355644,
+        "p99": 16347209
+      }
+    },
+    {
+      "id": "effective_access",
+      "kind": "read",
+      "related": false,
+      "description": "Effective access: direct HAS_ROLE UNION inherited MEMBER_OF* roles",
+      "ops": 2173,
+      "errors": 0,
+      "statements": 2173,
+      "latency_ns": {
+        "min": 1418598,
+        "max": 26937667,
+        "mean": 8069125.922227335,
+        "p50": 8295330,
+        "p95": 16146715,
+        "p99": 19165154
+      }
+    },
+    {
+      "id": "org_walk",
+      "kind": "read",
+      "related": false,
+      "description": "Org walk: REPORTS_TO* managers",
+      "ops": 1387,
+      "errors": 0,
+      "statements": 1387,
+      "latency_ns": {
+        "min": 1119333,
+        "max": 26004819,
+        "mean": 6278732.339581831,
+        "p50": 6572218,
+        "p95": 12471568,
+        "p99": 16999358
+      }
+    },
+    {
+      "id": "optional_manager",
+      "kind": "read",
+      "related": false,
+      "description": "OPTIONAL MATCH manager and device",
+      "ops": 1312,
+      "errors": 0,
+      "statements": 1312,
+      "latency_ns": {
+        "min": 1097379,
+        "max": 21488651,
+        "mean": 6265358.620426829,
+        "p50": 6663758,
+        "p95": 12245075,
+        "p99": 16837319
+      }
+    },
+    {
+      "id": "detect_nested_admin",
+      "kind": "read",
+      "related": true,
+      "description": "IAM: admin via nested MEMBER_OF* from planted nested-admin",
+      "ops": 810,
+      "errors": 0,
+      "statements": 810,
+      "latency_ns": {
+        "min": 1107235,
+        "max": 20993215,
+        "mean": 6230001.267901234,
+        "p50": 6610123,
+        "p95": 12126711,
+        "p99": 16347334
+      }
+    },
+    {
+      "id": "detect_sod",
+      "kind": "read",
+      "related": true,
+      "description": "IAM: EXISTS requester and approver on planted sod-user",
+      "ops": 817,
+      "errors": 0,
+      "statements": 817,
+      "latency_ns": {
+        "min": 1132497,
+        "max": 20124854,
+        "mean": 6299954.079559363,
+        "p50": 6798391,
+        "p95": 12154892,
+        "p99": 17405788
+      }
+    },
+    {
+      "id": "stale_grants",
+      "kind": "read",
+      "related": true,
+      "description": "IAM: HAS_ROLE.until before a cutoff on planted stale-grant",
+      "ops": 827,
+      "errors": 0,
+      "statements": 827,
+      "latency_ns": {
+        "min": 662294,
+        "max": 18171721,
+        "mean": 4676020.776299879,
+        "p50": 3408909,
+        "p95": 10025162,
+        "p99": 14688245
+      }
+    },
+    {
+      "id": "search_directory",
+      "kind": "read",
+      "related": false,
+      "description": "Directory search: User.email CONTAINS a user number",
+      "ops": 1147,
+      "errors": 0,
+      "statements": 1147,
+      "latency_ns": {
+        "min": 310996,
+        "max": 18400289,
+        "mean": 2543665.1115954663,
+        "p50": 1419631,
+        "p95": 8054445,
+        "p99": 10004582
+      }
+    },
+    {
+      "id": "group_roster",
+      "kind": "read",
+      "related": false,
+      "description": "Group members: ORDER BY name SKIP/LIMIT",
+      "ops": 1047,
+      "errors": 0,
+      "statements": 1047,
+      "latency_ns": {
+        "min": 258170,
+        "max": 10018128,
+        "mean": 1220420.6618911175,
+        "p50": 622658,
+        "p95": 5494344,
+        "p99": 7991528
+      }
+    },
+    {
+      "id": "access_review",
+      "kind": "read",
+      "related": false,
+      "description": "Review: CASE on User.status",
+      "ops": 801,
+      "errors": 0,
+      "statements": 801,
+      "latency_ns": {
+        "min": 1186035,
+        "max": 19382230,
+        "mean": 6143109.093632959,
+        "p50": 6519636,
+        "p95": 12360374,
+        "p99": 16782825
+      }
+    },
+    {
+      "id": "reporting_path",
+      "kind": "read",
+      "related": false,
+      "description": "shortestPath between two users over REPORTS_TO",
+      "ops": 794,
+      "errors": 0,
+      "statements": 794,
+      "latency_ns": {
+        "min": 2063069,
+        "max": 31095451,
+        "mean": 10242912.869017633,
+        "p50": 9937865,
+        "p95": 18754494,
+        "p99": 23019860
+      }
+    },
+    {
+      "id": "disable_user",
+      "kind": "write",
+      "related": false,
+      "description": "Offboard: SET User.status",
+      "ops": 644,
+      "errors": 0,
+      "statements": 644,
+      "latency_ns": {
+        "min": 1172670,
+        "max": 20007352,
+        "mean": 6961781.214285715,
+        "p50": 7529438,
+        "p95": 12082397,
+        "p99": 17144913
+      }
+    },
+    {
+      "id": "add_alias",
+      "kind": "write",
+      "related": false,
+      "description": "Alias: SET emails list append",
+      "ops": 710,
+      "errors": 0,
+      "statements": 710,
+      "latency_ns": {
+        "min": 1137635,
+        "max": 19976785,
+        "mean": 6788878.5,
+        "p50": 7237365,
+        "p95": 11916510,
+        "p99": 16616278
+      }
+    },
+    {
+      "id": "revoke_membership",
+      "kind": "write",
+      "related": false,
+      "description": "Revoke: DELETE a MEMBER_OF edge",
+      "ops": 674,
+      "errors": 0,
+      "statements": 674,
+      "latency_ns": {
+        "min": 208407,
+        "max": 10267800,
+        "mean": 1152012.356083086,
+        "p50": 432509,
+        "p95": 5727014,
+        "p99": 7950303
+      }
+    },
+    {
+      "id": "detach_device",
+      "kind": "write",
+      "related": false,
+      "description": "Lost device: DELETE OWNS and Device",
+      "ops": 538,
+      "errors": 0,
+      "statements": 538,
+      "latency_ns": {
+        "min": 339070,
+        "max": 18618033,
+        "mean": 3805145.382899628,
+        "p50": 2654070,
+        "p95": 9410667,
+        "p99": 12556327
+      }
+    },
+    {
+      "id": "clear_expiry",
+      "kind": "write",
+      "related": true,
+      "description": "Renew: REMOVE HAS_ROLE.until on stale-grant",
+      "ops": 449,
+      "errors": 0,
+      "statements": 449,
+      "latency_ns": {
+        "min": 1138509,
+        "max": 20293093,
+        "mean": 5935298.510022271,
+        "p50": 6239581,
+        "p95": 10818007,
+        "p99": 16628202
+      }
+    }
+  ],
+  "environment": {
+    "class": "relate-loadtest-baseline/v1",
+    "arch": "x86_64",
+    "os": "linux",
+    "build_image": "rust:1.88-bookworm@sha256:af306cfa71d987911a781c37b59d7d67d934f49684058f96cf72079c3626bfe0",
+    "run_image": "debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc",
+    "cpus": 2,
+    "cpu_period_us": 10000,
+    "cpu_quota_us": 20000,
+    "memory": "2g",
+    "ops": 20000,
+    "warmup": 8,
+    "workers": 4,
+    "runner": "github-actions:linux-4-core-x86"
+  },
+  "ops_omitted": true,
+  "ops_count": 20008,
+  "baseline_envelope": {
+    "policy": "worst-of-n",
+    "runs": 5,
+    "sources": [
+      "identity-loadtest-envelope-run1.json",
+      "identity-loadtest-envelope-run2.json",
+      "identity-loadtest-envelope-run3.json",
+      "identity-loadtest-envelope-run4.json",
+      "identity-loadtest-envelope-run5.json"
+    ],
+    "throughput_ops_per_sec": "min",
+    "usecase_latency_ns": "max",
+    "logical_used_bytes": "max"
+  }
+}

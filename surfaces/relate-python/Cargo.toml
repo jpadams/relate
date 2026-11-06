@@ -1,0 +1,33 @@
+[package]
+name = "relate-python"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+
+[lib]
+# Compiled extension module, imported by the Python package as `relate._native`.
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+relate = { workspace = true, features = ["parquet"] }
+relate-model = { workspace = true }
+# The binding's own dependency (not through `relate`) for the engine's IANA
+# zone classifier: deciding whether a temporal's stdlib type is lossless needs
+# the engine's rule, not a second copy of it.
+relate-core = { workspace = true }
+relate-arrow = { workspace = true }
+# Deliberately not the workspace pyo3 (which force-enables extension-module):
+# `cargo test` needs to link libpython, while maturin wheel builds enable
+# extension-module via [tool.maturin] features in pyproject.toml.
+pyo3 = { version = "0.23", features = ["abi3-py39"] }
+indexmap = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }
+# arrow-ipc is named directly (`execute_arrow`'s IPC StreamWriter); the other
+# arrow crates surface only through `relate-arrow`'s types and need no
+# direct dependency here.
+arrow-ipc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

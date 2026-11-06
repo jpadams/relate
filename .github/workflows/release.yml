@@ -1,0 +1,1234 @@
+name: Release
+
+# Manual dispatch only: tags are created mid-run, AFTER green builds, so a
+# failed build never publishes a tag or a release.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump to apply"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: read
+
+# Two dispatches must not race the version bump / tag creation.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# CI is not a user session: the CLI's anonymous usage metrics
+# (ADR-0079) are opted out on every relate spawn a lane of this
+# workflow can reach. Workflow-level — the ADR-0255 single-source
+# placement, so every lane inherits the identical value — and
+# DO_NOT_TRACK is not a CARGO* var, so the Swatinem/rust-cache
+# environment hash is untouched.
+env:
+  DO_NOT_TRACK: "1"
+
+jobs:
+  release-owner:
+    name: Canonical release owner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - name: Reject releases outside the canonical repository
+        if: github.repository != 'relatedb/relate'
+        run: |
+          echo "Official Relate tags and releases are owned by relatedb/relate; refusing ${GITHUB_REPOSITORY}." >&2
+          exit 1
+
+      - uses: actions/checkout@v4
+
+  version:
+    name: Bump version
+    needs: release-owner
+    # macOS (ADR-0433 §6): this job also builds the Swift XCFramework and
+    # stamps its checksum into Package.swift, so the one release commit the
+    # `tag` job tags pins exactly the zip attached to the release.
+    # scripts/release-bump.sh is BSD-sed safe.
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release-next-version.sh needs full tag history
+
+      - name: Compute next version
+        id: version
+        run: |
+          tag="$(scripts/release-next-version.sh "${{ inputs.bump }}")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      # Self-contained step: the script self-checks consistency and restores
+      # the files on failure, so a failed bump means no commit ever happens.
+      - name: Bump version surfaces
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/release-bump.sh
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0").
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin,aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+
+      # Built after the bump so the binary carries the release version; the
+      # stamp edits Package.swift, which the commit below stages with the
+      # bump's files (`git add -u`).
+      - name: Build and stamp the Swift XCFramework
+        run: |
+          bash scripts/build-xcframework.sh --zip
+          bash scripts/stamp-swift-package.sh "${{ steps.version.outputs.tag }}" \
+            target/apple/RelateFFI.xcframework.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swift-xcframework
+          path: target/apple/RelateFFI.xcframework.zip
+
+      - name: Commit and push version bump
+        id: commit
+        run: |
+          git config user.name "release-bot"
+          git config user.email "actions@github.com"
+          # scripts/release-bump.sh is the single source of truth for which
+          # files a bump touches; stage whatever it modified so a new version
+          # surface can never be left out of the release commit.
+          git add -u
+          # The bump script is idempotent: a re-dispatch after a fail-before-tag
+          # can produce an empty diff; skip the commit but still emit HEAD.
+          if git diff --cached --quiet; then
+            echo "No version changes to commit; reusing HEAD."
+          else
+            git commit -m "chore(release): ${{ steps.version.outputs.tag }}"
+            git push origin HEAD:main
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  cli:
+    name: CLI (${{ matrix.target }})
+    needs: [release-owner, version]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu,  runner: ubuntu-latest,  artifact: relate-linux-amd64 }
+          - { target: aarch64-unknown-linux-gnu,  runner: ubuntu-latest,  artifact: relate-linux-arm64 }
+          - { target: x86_64-apple-darwin,        runner: macos-15-intel, artifact: relate-darwin-amd64 }
+          - { target: aarch64-apple-darwin,       runner: macos-latest,   artifact: relate-darwin-arm64 }
+          - { target: x86_64-pc-windows-msvc,     runner: windows-latest, artifact: relate-windows-amd64 }
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # Build from the versioned commit so artifacts carry the release version.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0"):
+      # the action installs the toolchain named by @rev, including any
+      # components/targets; @stable would put them on a toolchain nothing
+      # uses because cargo resolves rust-toolchain.toml instead.
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build -p relate-cli --release --target ${{ matrix.target }}
+
+      - name: Rename binary
+        shell: bash
+        run: |
+          EXT=""
+          if [ "${{ matrix.runner }}" = "windows-latest" ]; then EXT=".exe"; fi
+          cp "target/${{ matrix.target }}/release/relate${EXT}" "${{ matrix.artifact }}${EXT}"
+
+      # Sign and notarize the darwin binaries with the shared composite action
+      # (ADR-0123) so Gatekeeper accepts the downloaded CLI. Runs after the
+      # rename and before upload so only signed bytes leave the runner; this
+      # step is skipped on the linux and windows legs.
+      - name: Sign and notarize (macOS)
+        if: runner.os == 'macOS'
+        uses: ./.github/actions/macos-notarize
+        with:
+          binary: ${{ matrix.artifact }}
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}*
+
+  ffi:
+    name: FFI (${{ matrix.target }})
+    needs: [release-owner, version]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu,  runner: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu,  runner: ubuntu-latest }
+          - { target: x86_64-apple-darwin,        runner: macos-15-intel }
+          - { target: aarch64-apple-darwin,       runner: macos-latest }
+          - { target: x86_64-pc-windows-msvc,     runner: windows-latest }
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # Build from the versioned commit so artifacts carry the release version.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0"):
+      # the action installs the toolchain named by @rev, including any
+      # components/targets; @stable would put them on a toolchain nothing
+      # uses because cargo resolves rust-toolchain.toml instead.
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build FFI
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build -p relate-ffi --release --target ${{ matrix.target }}
+
+      - name: Package FFI artifacts
+        shell: bash
+        run: |
+          mkdir -p ffi-package/include
+          cp surfaces/relate-ffi/include/relate.h ffi-package/include/
+          # Copy staticlib and cdylib
+          find target/${{ matrix.target }}/release -maxdepth 1 \
+            \( -name "librelate_ffi.*" -o -name "relate_ffi.*" \) \
+            ! -name "*.d" ! -name "*.rlib" \
+            -exec cp {} ffi-package/ \;
+          tar czf relate-ffi-${{ matrix.target }}.tar.gz -C ffi-package .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relate-ffi-${{ matrix.target }}
+          path: relate-ffi-${{ matrix.target }}.tar.gz
+
+  # maturin builds the `relate-db` wheel and sdist from
+  # surfaces/relate-python/pyproject.toml ([project].name; the import
+  # module is `relate`).
+  python:
+    name: PyPI wheels (relate-db, ${{ matrix.target }})
+    needs: [release-owner, version]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest,  target: x86_64, extra: "--sdist" }
+          - { runner: ubuntu-latest,  target: aarch64, extra: "" }
+          - { runner: macos-15-intel, target: x86_64, extra: "" }
+          - { runner: macos-latest,   target: aarch64, extra: "" }
+          - { runner: windows-latest, target: x64, extra: "" }
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # Build from the versioned commit so artifacts carry the release version.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: surfaces/relate-python
+          target: ${{ matrix.target }}
+          args: --release --out dist ${{ matrix.extra }}
+          manylinux: auto
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-wheels-${{ matrix.runner }}-${{ matrix.target }}
+          path: |
+            surfaces/relate-python/dist/*.whl
+            surfaces/relate-python/dist/*.tar.gz
+
+  # Assemble the five @relate/<platform>-<arch> packages
+  # (ADR-0278) from the ffi job's artifacts: each package is its checked-in
+  # package.json plus the target's dynamic library in lib/. Packing needs no
+  # target toolchain, so every leg runs on ubuntu-latest.
+  java:
+    name: Java client jars (fat + the five platform classifiers, ADR-0490)
+    needs: [release-owner, version, ffi]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+      # Package from the versioned commit so the jars carry the release
+      # version stamped by scripts/release-bump.sh (the pom is a sweep
+      # surface).
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-aarch64-apple-darwin
+          path: ffi/darwin-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-x86_64-apple-darwin
+          path: ffi/darwin-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-aarch64-unknown-linux-gnu
+          path: ffi/linux-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-x86_64-unknown-linux-gnu
+          path: ffi/linux-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-x86_64-pc-windows-msvc
+          path: ffi/win32-x64
+
+      # Stage the five tarballs into ADR-0490's natives layout and package:
+      # the fat jar plus one classifier jar per platform, with the client's
+      # test suite running against the packaged linux-x64 native (this
+      # runner's platform) — a broken client blocks the tag like every
+      # other artifact.
+      - name: Stage natives and package the jars
+        run: |
+          set -euo pipefail
+          mkdir -p natives
+          for pair in \
+            "darwin-arm64:librelate_ffi.dylib" \
+            "darwin-x64:librelate_ffi.dylib" \
+            "linux-arm64:librelate_ffi.so" \
+            "linux-x64:librelate_ffi.so" \
+            "win32-x64:relate_ffi.dll"; do
+            key="${pair%%:*}"; lib="${pair##*:}"
+            tar xzf "ffi/$key/relate-ffi-"*.tar.gz -C "ffi/$key"
+            mkdir -p "natives/$key"
+            cp "ffi/$key/$lib" "natives/$key/$lib"
+            test -s "natives/$key/$lib"
+          done
+          mvn -B -f clients/java/pom.xml package -Drelate.natives.dir="$PWD/natives"
+          ls clients/java/target/*.jar
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: java-jars
+          path: clients/java/target/*.jar
+
+  # Maven Central publication (dormant). Off unless the repository variable
+  # MAVEN_CENTRAL_ENABLED is 'true'; until then this job is skipped and the
+  # jars land only on the GitHub release. When enabled it needs the secrets
+  # MAVEN_GPG_KEY (base64 armored), MAVEN_GPG_PASSPHRASE, and
+  # MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_TOKEN (the Central Portal
+  # credentials for the settings.xml server id `central` - the pom's
+  # central-publishing-maven-plugin publishingServerId). The pom's
+  # `central-publish` profile does the real work (sources, javadoc, GPG,
+  # upload with autoPublish=false); see clients/java/README.md,
+  # "Publishing to Maven Central".
+  java-central:
+    name: Maven Central publish (dormant until MAVEN_CENTRAL_ENABLED)
+    needs: [release-owner, version, ffi]
+    if: vars.MAVEN_CENTRAL_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-aarch64-apple-darwin
+          path: ffi/darwin-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-x86_64-apple-darwin
+          path: ffi/darwin-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-aarch64-unknown-linux-gnu
+          path: ffi/linux-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-x86_64-unknown-linux-gnu
+          path: ffi/linux-x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-x86_64-pc-windows-msvc
+          path: ffi/win32-x64
+
+      - name: Stage natives, import the signing key, deploy
+        env:
+          MAVEN_GPG_KEY: ${{ secrets.MAVEN_GPG_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p natives
+          for pair in \
+            "darwin-arm64:librelate_ffi.dylib" \
+            "darwin-x64:librelate_ffi.dylib" \
+            "linux-arm64:librelate_ffi.so" \
+            "linux-x64:librelate_ffi.so" \
+            "win32-x64:relate_ffi.dll"; do
+            key="${pair%%:*}"; lib="${pair##*:}"
+            tar xzf "ffi/$key/relate-ffi-"*.tar.gz -C "ffi/$key"
+            mkdir -p "natives/$key"
+            cp "ffi/$key/$lib" "natives/$key/$lib"
+            test -s "natives/$key/$lib"
+          done
+          # The Central Portal credentials ride a settings.xml server entry
+          # (the pom's publishingServerId is `central`); the GPG key is
+          # imported into the runner's keyring for maven-gpg-plugin.
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml <<SETTINGS
+          <settings>
+            <servers>
+              <server>
+                <id>central</id>
+                <username>\${MAVEN_CENTRAL_USERNAME}</username>
+                <password>\${MAVEN_CENTRAL_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          SETTINGS
+          echo "$MAVEN_GPG_KEY" | base64 --decode | gpg --batch --import
+          mvn -B -f clients/java/pom.xml deploy -Pcentral-publish \
+            -Drelate.natives.dir="$PWD/natives"
+
+  npm-platform:
+    name: npm platform package (${{ matrix.npm_name }})
+    needs: [release-owner, version, ffi]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, npm_name: linux-x64,    lib: librelate_ffi.so }
+          - { target: aarch64-unknown-linux-gnu, npm_name: linux-arm64,  lib: librelate_ffi.so }
+          - { target: x86_64-apple-darwin,       npm_name: darwin-x64,   lib: librelate_ffi.dylib }
+          - { target: aarch64-apple-darwin,      npm_name: darwin-arm64, lib: librelate_ffi.dylib }
+          - { target: x86_64-pc-windows-msvc,    npm_name: win32-x64,    lib: relate_ffi.dll }
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # Pack from the versioned commit so the manifest carries the release
+      # version stamped by scripts/release-bump.sh.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-${{ matrix.target }}
+          path: ffi
+
+      - name: Assemble the platform package
+        run: |
+          set -euo pipefail
+          tar xzf ffi/relate-ffi-${{ matrix.target }}.tar.gz -C ffi
+          pkg="clients/javascript/platforms/${{ matrix.npm_name }}"
+          mkdir -p "$pkg/lib"
+          cp "ffi/${{ matrix.lib }}" "$pkg/lib/"
+          test -s "$pkg/lib/${{ matrix.lib }}"
+
+      - name: npm pack
+        run: |
+          mkdir -p dist
+          npm pack "./clients/javascript/platforms/${{ matrix.npm_name }}" --pack-destination dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-platform-${{ matrix.npm_name }}
+          path: dist/*.tgz
+
+  # Build and pack @relate/relate-wasm (ADR-0278). build-wasm.sh
+  # stamps pkg/package.json from the workspace Cargo.toml, so checking out
+  # the versioned commit makes the package version equal the release tag.
+  npm-wasm:
+    name: npm wasm package
+    needs: [release-owner, version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      # Keep @rev in sync with rust-toolchain.toml (channel = "1.88.0"):
+      # the action installs the toolchain named by @rev, including any
+      # components/targets; @stable would put them on a toolchain nothing
+      # uses because cargo resolves rust-toolchain.toml instead.
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install wasm-bindgen-cli (matches Cargo.lock)
+        run: bash scripts/install-wasm-bindgen.sh
+
+      # Pinned release, not apt: Ubuntu's binaryen 108 breaks the bundle's
+      # externref table (see scripts/install-binaryen.sh).
+      - name: Install binaryen (wasm-opt)
+        run: bash scripts/install-binaryen.sh "$RUNNER_TEMP/binaryen" >> "$GITHUB_PATH"
+
+      - name: Build the wasm bundle
+        run: bash scripts/build-wasm.sh --mode release
+
+      - name: npm pack
+        run: |
+          mkdir -p dist
+          npm pack ./surfaces/relate-wasm/pkg --pack-destination dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-wasm
+          path: dist/*.tgz
+
+  # Pack @relate/relate (pure JS; the five platform packages are its
+  # optionalDependencies, so the manifest's pins must already carry the
+  # release version — they do, from the versioned commit).
+  npm-main:
+    name: npm main package
+    needs: [release-owner, version]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: npm pack
+        run: |
+          mkdir -p dist
+          npm pack ./clients/javascript --pack-destination dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-main
+          path: dist/*.tgz
+
+  tag:
+    name: Tag release
+    # Tag only after all builds are green so a failed build never leaves a
+    # published tag pointing at a release commit. The npm pack jobs are part
+    # of the invariant: a broken npm package blocks the tag like every other
+    # artifact, so the published npm version always equals the tag.
+    needs: [version, cli, ffi, python, java, npm-platform, npm-wasm, npm-main]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Create and push annotated tag
+        run: |
+          git config user.name "release-bot"
+          git config user.email "actions@github.com"
+          git tag -a "${{ needs.version.outputs.tag }}" \
+            -m "Release ${{ needs.version.outputs.tag }}"
+          git push origin "${{ needs.version.outputs.tag }}"
+
+  create-release:
+    name: Create Release
+    needs: [version, tag]
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      # Check out the tag the `tag` job just pushed so the release is cut from
+      # exactly the tagged commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "relate-*" -o -name "*.whl" -o -name "*.tar.gz" \
+            -o -name "*.jar" -o -name "RelateFFI.xcframework.zip" \) \
+            -exec cp {} release/ \;
+
+      # Publish SHA256 checksums for the downloadable CLI binaries so users can
+      # verify downloads against the SHA256SUMS asset referenced from the README.
+      # The first line names the release (ADR-0457): it sits inside the bytes
+      # the signature covers, so `upgrade` and install.sh can bind the version
+      # they requested to the artifact they verify. Write it before the
+      # manifest is signed, with the exact published tag.
+      - name: Generate SHA256SUMS for CLI binaries
+        working-directory: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          shopt -s nullglob
+          binaries=(relate-linux-* relate-darwin-* relate-windows-*)
+          if [ ${#binaries[@]} -eq 0 ]; then
+            echo "No CLI binaries found to checksum" >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tag '$RELEASE_TAG' is not vX.Y.Z" >&2
+            exit 1
+          fi
+          printf '# relate-release-version: %s\n' "$RELEASE_TAG" > SHA256SUMS
+          shasum -a 256 "${binaries[@]}" >> SHA256SUMS
+          cat SHA256SUMS
+
+      # SSHSIG signature (namespace relate-release) over SHA256SUMS, so one
+      # signature covers every CLI artifact. The matching public key is pinned
+      # in the CLI (upgrade_cmd.rs) and install.sh.
+      - name: Sign SHA256SUMS
+        working-directory: release
+        shell: bash
+        env:
+          PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRIVATE_KEY:-}" ]; then
+            echo "RELEASE_SIGNING_PRIVATE_KEY is not set" >&2
+            exit 1
+          fi
+          umask 077
+          keyfile="$(mktemp "${RUNNER_TEMP:-/tmp}/relate-signing-key.XXXXXX")"
+          trap 'rm -f "$keyfile"' EXIT
+          printf '%s\n' "$PRIVATE_KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          ssh-keygen -Y sign -f "$keyfile" -n relate-release SHA256SUMS
+          test -s SHA256SUMS.sig
+
+      # tag_name is explicit: on workflow_dispatch there is no tag context for
+      # action-gh-release to infer, so we pass the tag created by the tag job.
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          files: release/*
+          generate_release_notes: true
+
+  # Smoke-gate the actual packed release tarballs before anything publishes:
+  # install them into fresh projects and run a query through each surface.
+  # Runs on linux x64 so the staged linux-x64 platform package matches the
+  # host; the ffi linux-x64 artifact provides the RELATE_LIB fallback.
+  npm-smoke-gate:
+    name: npm smoke gate
+    needs: [version, npm-platform, npm-wasm, npm-main]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-main
+          path: smoke/main
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-wasm
+          path: smoke/wasm
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-platform-linux-x64
+          path: smoke/platform
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: relate-ffi-x86_64-unknown-linux-gnu
+          path: smoke/ffi
+
+      - name: Run the npm smoke tests against the release tarballs
+        env:
+          RELATE_LIB: ${{ github.workspace }}/smoke/ffi/librelate_ffi.so
+          NPM_SMOKE_MAIN_TGZ: ${{ github.workspace }}/smoke/main/relate-relate-${{ needs.version.outputs.version }}.tgz
+          NPM_SMOKE_WASM_TGZ: ${{ github.workspace }}/smoke/wasm/relate-relate-wasm-${{ needs.version.outputs.version }}.tgz
+          NPM_SMOKE_PLATFORM_TGZ: ${{ github.workspace }}/smoke/platform/relate-linux-x64-${{ needs.version.outputs.version }}.tgz
+        run: |
+          set -euo pipefail
+          tar xzf smoke/ffi/relate-ffi-x86_64-unknown-linux-gnu.tar.gz -C smoke/ffi
+          test -s "$RELATE_LIB"
+          test -f "$NPM_SMOKE_MAIN_TGZ"
+          test -f "$NPM_SMOKE_WASM_TGZ"
+          test -f "$NPM_SMOKE_PLATFORM_TGZ"
+          bash scripts/npm-smoke-test.sh
+
+  # Publish via npm trusted publishing (OIDC): id-token: write, no
+  # NODE_AUTH_TOKEN anywhere (ADR-0278). Fail-closed by design — until the
+  # npmjs.com trusted-publishing setup in docs/PUBLISHING.md is done, these
+  # jobs fail loudly. Platform packages and the wasm bundle go first; the
+  # main package publishes last so its optionalDependencies already exist on
+  # the registry. The shared publish body (setup-node, pinned npm upgrade,
+  # download, count-check, publish loop) lives in the npm-publish composite
+  # action; npm >= 11.5.1 is required for trusted publishing.
+  npm-publish:
+    name: Publish platform + wasm packages to npm
+    needs: [version, tag, npm-smoke-gate]
+    # Disabled until the project licensing decision lands (see the npm
+    # section of docs/PUBLISHING.md); re-enable by removing this line.
+    if: false
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # Local composite actions resolve from the checkout; use the versioned
+      # commit so the published release runs the action it shipped with.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      # One minimatch pattern (brace expansion) matches the five platform
+      # artifacts plus the wasm bundle — but not npm-main, which publishes
+      # only after its optionalDependencies exist on the registry.
+      - uses: ./.github/actions/npm-publish
+        with:
+          pattern: npm-{platform-*,wasm}
+          expected-count: 6
+
+  npm-publish-main:
+    name: Publish @relate/relate to npm
+    needs: [version, tag, npm-smoke-gate, npm-publish]
+    # Disabled until the project licensing decision lands (see the npm
+    # section of docs/PUBLISHING.md); re-enable by removing this line.
+    if: false
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - uses: ./.github/actions/npm-publish
+        with:
+          pattern: npm-main
+          expected-count: 1
+
+  # Chained explicitly because the `release: published` event fired by
+  # action-gh-release (GITHUB_TOKEN) never triggers downstream workflows
+  # (ADR-0265) — release-notes.yml must be called as a reusable workflow.
+  release-notes:
+    name: Generate release notes
+    needs: [version, create-release]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release-notes.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      publish: true
+      # ADR-0465: the generate run posts nothing inline — it uploads
+      # slack-payload.json as an artifact and the release run's final
+      # slack-announce job posts it after the whole pipeline is green.
+      slack: false
+    # Reusable workflows receive no secrets unless asked (the v0.9.2 run
+    # failed fast on the empty FIREWORKS_API_KEY check).
+    secrets: inherit
+  # ADR-0129: chain the website update explicitly — the release: published
+  # event fired by action-gh-release (GITHUB_TOKEN) never triggers downstream
+  # workflows (ADR-0265); update-website.yml's release trigger was dead.
+  update-website:
+    name: Update website from the release
+    needs: [version, create-release]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/update-website.yml
+    secrets: inherit
+
+  docs:
+    name: Sync installer to gh-pages
+    needs: [version, tag]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # The website lives on gh-pages as static files (no build step) and is
+      # kept in sync with releases by update-website.yml. This job owns
+      # install.sh — the documented install entry point; the
+      # publish-releases-json job below owns releases.json. Those jobs push
+      # to gh-pages concurrently with this one, so the push goes through
+      # push-gh-pages.sh, which rebases onto a concurrent writer and retries.
+      - name: Checkout release tag (installer)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+          sparse-checkout: |
+            distribution
+            .github/scripts
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+
+      - name: Publish install.sh to gh-pages
+        env:
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd gh-pages
+          cp ../distribution/install.sh ./install.sh
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add install.sh
+          if git diff --cached --quiet; then
+            echo "install.sh unchanged for ${RELEASE_TAG}; nothing to publish."
+            exit 0
+          fi
+          git commit -m "chore(website): publish install.sh for ${RELEASE_TAG}"
+          ../.github/scripts/push-gh-pages.sh .
+
+  # ADR-0250: publish releases.json, the release-discovery document
+  # `relate upgrade` / `update` reads from the website (the second
+  # pipeline-owned file the release pipeline writes to gh-pages, after
+  # install.sh). Chained as a reusable workflow — a `release: published`
+  # trigger would never fire for a GITHUB_TOKEN-published release (ADR-0265)
+  # — and gated on `release-notes` so the narrative notes are already
+  # prepended to the release body when the generator copies it: that ordering
+  # is what makes the published notes the ones releases.json carries.
+  # `create-release` is in `needs` so the asset list is complete.
+  publish-releases-json:
+    name: Publish releases.json to gh-pages
+    needs: [version, create-release, release-notes]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish-releases-json.yml
+    with:
+      tag: ${{ needs.version.outputs.tag }}
+    secrets: inherit
+
+  # Pages deploys are paused (2026-11-05, maintainer direction):
+  # deploy-pages.yml runs on manual dispatch only, so this release no
+  # longer deploys the website — ADR-0330's chain is suspended, not
+  # replaced. The gh-pages writers above still run: releases.json,
+  # install.sh and the website page still land on the branch, and go
+  # live only on a manual deploy-pages.yml dispatch. Un-pause by
+  # restoring the job exactly as ADR-0330 wrote it — needs
+  # [create-release, docs, update-website, publish-releases-json], if
+  # ${{ !cancelled() && needs.create-release.result == 'success' }},
+  # permissions contents: read / pages: write / id-token: write, uses
+  # ./.github/workflows/deploy-pages.yml — together with the
+  # workflow_call trigger in deploy-pages.yml and the
+  # release-extensions.yml caller.
+
+  # Canary the user-facing self-update path (ADR-0358): download the
+  # previous stable release's linux-amd64 binary, run `relate upgrade`
+  # on that isolated copy, and assert it reports this release's version.
+  # Needs create-release because the inner upgrade downloads the new
+  # release's assets (the probe-then-fallback route, ADR-0358 §3), so
+  # the assets must already exist. It used to be chained after the Pages
+  # deploy because the inner upgrade reads the live website releases.json
+  # (ADR-0250), which must already list the new version as latest; Pages
+  # deploys are paused (2026-11-05), so the smoke now checks that
+  # currency itself before downloading anything and skips with a stated
+  # reason while the live site lags the release list
+  # (self-update-smoke.sh, the live-site currency gate).
+  # contents: read covers every read the smoke makes: the release list,
+  # the previous release's asset, and the inner upgrade's authenticated API
+  # asset route (ADR-0358 §3, required while the repository is internal).
+  # A previous release below the v0.12.6 floor (the first release carrying
+  # the API-fallback route) cannot self-update while the repository is
+  # internal; the script skips that case with a stated reason and exits 0.
+  self-update-smoke:
+    name: Self-update smoke
+    needs: [version, create-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # The smoke script at the versioned commit (the release verifies the
+      # script it shipped with), plus scripts/lib: the script
+      # unconditionally sources the shared TOML reader for the
+      # EXPECTED_VERSION default.
+      - name: Checkout the smoke script (sparse)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          sparse-checkout: |
+            .github/scripts
+            scripts/lib
+      # ASSET pins the linux-amd64 release asset -- what the ubuntu-latest
+      # x86_64 host maps to by default -- so the canary's target is part of
+      # the wiring; PREV_TAG stays unset and resolves live to the newest
+      # stable CORE tag (vX.Y.Z -- extension-channel releases are never
+      # candidates) that is not the expected version.
+      - name: Run the self-update smoke
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EXPECTED_VERSION: ${{ needs.version.outputs.version }}
+          ASSET: relate-linux-amd64
+        run: bash .github/scripts/self-update-smoke.sh
+
+  # ADR-0465: the Slack announcement is the release pipeline's final step.
+  # The release-notes run generates the payload early — publish-releases-json
+  # and the live site need the prepended notes (ADR-0250, ADR-0330) — but
+  # posts nothing inline (slack: false): it uploads the payload as the
+  # release-notes-slack-payload artifact, and this job posts it only after
+  # the whole tail, publish-releases-json and the self-update canary
+  # (ADR-0358) included, is green — the payload's message is
+  # `relate upgrade`, and the canary is what proves that path. Pages
+  # deploys are paused (2026-11-05, maintainer direction): deploy-pages
+  # is no longer in the tail, so the announcement can outrun the live
+  # site — releases.json is on gh-pages, but `relate upgrade` picks the
+  # new version up only after the next manual deploy-pages.yml dispatch,
+  # and the canary skips (self-update-smoke.sh's currency gate) while
+  # the site lags. It re-uses the one Slack-leg policy
+  # script (ADR-0125 amendment 2) unchanged: graceful skip when
+  # SLACK_WEBHOOK_URL is unset, fail-closed payload validation, and the
+  # API-key exfiltration scan. The `release-notes-v<tag>` concurrency group —
+  # the same string release-notes.yml serializes its posters on — keeps this
+  # POST from overlapping an inline-posting standalone run for the same tag;
+  # cancel-in-progress: false because a queued announce must never be
+  # cancelled.
+  slack-announce:
+    name: Announce release on Slack
+    needs: [version, release-notes, publish-releases-json, self-update-smoke]
+    runs-on: ubuntu-latest
+    # The announce leg is a CA patch, a sparse checkout, one artifact
+    # download and one curl — minutes at most. The bound exists for the
+    # group below: a hung job must not hold the repo-global
+    # release-notes-v<tag> group (cancel-in-progress: false) away from an
+    # inline-posting standalone run for the same tag.
+    timeout-minutes: 10
+    concurrency:
+      group: release-notes-v${{ needs.version.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - name: Patch CVE-2026-111943 (eMudhra CA compromise)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --only-upgrade -y ca-certificates
+          sudo update-ca-certificates --fresh
+          # Post-condition (remediation assurance): the compromised root
+          # must be absent from the rebuilt store -- an on-path attacker
+          # replaying validly-signed metadata could otherwise make the
+          # upgrade a silent no-op behind a green check. A fixed runner
+          # image satisfies this too, so it never false-fails the lane.
+          if find /usr/share/ca-certificates /etc/ssl/certs -iname '*emudhra*' -print -quit | grep -q .; then
+            echo "::error::eMudhra root still trusted after CA rebuild (CVE-2026-111943)"
+            exit 1
+          fi
+          dpkg-query -W -f='ca-certificates ${Version}' ca-certificates
+      # The Slack policy script at the versioned commit — the release
+      # announces with the script it shipped with (the self-update-smoke
+      # precedent). Sparse checkout: release-notes-slack.sh is self-contained.
+      - name: Checkout the Slack policy script (sparse)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          sparse-checkout: |
+            .github/scripts
+      # The payload artifact the release-notes run uploaded instead of
+      # posting. Restored under target/release-notes so the script is
+      # invoked on the exact path release-notes.yml uses.
+      - name: Download the generated Slack payload
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes-slack-payload
+          path: target/release-notes
+      - name: Post the announcement to Slack
+        env:
+          # The announce leg is the active leg by definition: PUBLISH stays
+          # true so only a missing SLACK_WEBHOOK_URL can skip the post.
+          PUBLISH: 'true'
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+        run: .github/scripts/release-notes-slack.sh target/release-notes/slack-payload.json

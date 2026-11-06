@@ -1,0 +1,20 @@
+# Baseline B-23 (F-50): a one-hop path matched against its relationship's
+# direction encodes as the Bolt 4.4 Path structure 0x50 starting at the
+# end node, with the sequence [-1, 1]. The graph is seeded by the first
+# query. "*" is a wildcard only as a map value, not as a structure field,
+# so the ids are pinned: they are the ones this script's own fresh
+# :memory: server assigns.
+!: BOLT 4.4
+!: AUTO HELLO
+!: AUTO GOODBYE
+
+C: RUN "CREATE (a:BoltProbe {name: 'a', k: 1})-[:BOLT_PROBE {since: 2020}]->(b:BoltProbe {name: 'b'})" {} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   SUCCESS {}
+
+C: RUN "MATCH p = (:BoltProbe {name: 'b'})<-[:BOLT_PROBE]-() RETURN p" {} {}
+   PULL {"n": -1}
+S: SUCCESS {}
+   RECORD [{"#50": [[{"#4E": [1, ["BoltProbe"], {"name": "b"}]}, {"#4E": [0, ["BoltProbe"], {"k": 1, "name": "a"}]}], [{"#72": [0, "BOLT_PROBE", {"since": 2020}]}], [-1, 1]]}]
+   SUCCESS {}
