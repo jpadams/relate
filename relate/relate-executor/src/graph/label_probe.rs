@@ -221,9 +221,9 @@ impl Graph {
     /// `None` when the rel is not visible: the overlay's shared type
     /// read resolves the batch layer first, so this is the base half.
     pub(crate) fn rel_type_name_shared(&self, id: RelId, ts: u64) -> Option<Arc<str>> {
-        self.rels.get(&id).and_then(|vers| {
-            visible_version(vers.as_slice(), ts).map(|ver| ver.live.type_name_shared())
-        })
+        self.rels
+            .get(&id)
+            .and_then(|vers| visible_version(&vers, ts).map(|ver| ver.live.type_name_shared()))
     }
 
     /// At most `cap` ids of label `lid`'s `label_index` set, copied under one
@@ -251,7 +251,7 @@ impl Graph {
             vers.iter()
                 .rev()
                 .find(|v| visible(v.xmin, v.xmax, ts))
-                .map(|v| f(&v.live))
+                .map(|v| f(v.live))
         })
     }
 
@@ -304,19 +304,17 @@ impl Graph {
         let Some(type_id) = self.rel_type_id(rel_type) else {
             return Vec::new();
         };
-        let mut ids: Vec<_> = self
-            .rels
-            .iter()
-            .filter(|entry| {
-                entry
-                    .value()
-                    .iter()
-                    .rev()
-                    .find(|v| visible(v.xmin, v.xmax, ts))
-                    .is_some_and(|v| v.live.type_id == type_id)
-            })
-            .map(|entry| *entry.key())
-            .collect();
+        let mut ids = Vec::new();
+        self.rels.for_each(|id, vers| {
+            let matches = vers
+                .iter()
+                .rev()
+                .find(|v| visible(v.xmin, v.xmax, ts))
+                .is_some_and(|v| v.live.type_id == type_id);
+            if matches {
+                ids.push(id);
+            }
+        });
         ids.sort_unstable();
         ids
     }

@@ -8,9 +8,13 @@ connection refusals. Those checks have no improvement.
 
 Numeric checks are lower-is-better. A regression clears the top of the
 envelope by both a band and a floor. An improvement clears the bottom
-the same way. RSS uses 15% and 1 MiB. Calibration ratios and slopes use
-20%. Workload limited counts use a band of 0 and a floor of 2: fewer
-refusals is an improvement and needs a fresh envelope.
+the same way. RSS uses 15% and 1 MiB. Each family is gated on its RSS
+ratio and its cgroup ratio: the frozen min and max, and 5% outside that
+range. Slopes in an older envelope are ignored. Workload limited counts
+use a band of 0 and a floor of 2: fewer refusals is an improvement and
+needs a fresh envelope. An envelope miss warns and exits 0 (ADR-0544).
+A behavioural regression still exits 1, as does an incompatible class
+in CI.
 
 An environment-class or knob mismatch is incompatible. With CI_COMPARE=1
 or inside GitHub Actions that is a hard failure. A local run skips the
@@ -37,10 +41,20 @@ _spec.loader.exec_module(_env)
 
 RSS_BAND = float(os.environ.get("MEMORY_CONTROLS_RSS_BAND", "0.15"))
 RSS_FLOOR = float(os.environ.get("MEMORY_CONTROLS_RSS_FLOOR_BYTES", str(1024 * 1024)))
-CALIBRATION_BAND = float(os.environ.get("MEMORY_CONTROLS_CALIBRATION_BAND", "0.20"))
+CALIBRATION_BAND = float(os.environ.get("MEMORY_CONTROLS_CALIBRATION_BAND", "0.05"))
 LIMITED_BAND = float(os.environ.get("MEMORY_CONTROLS_LIMITED_BAND", "0"))
 LIMITED_FLOOR = float(os.environ.get("MEMORY_CONTROLS_LIMITED_FLOOR", "2"))
 IDLE_RESIDUE = 8 * 1024 * 1024
+
+
+def format_mem(value: float) -> str:
+    """1024-based. GB once the magnitude reaches 1024 MB."""
+    number = float(value)
+    mb = abs(number) / (1024 * 1024)
+    sign = "-" if number < 0 else ""
+    if mb >= 1024.0:
+        return f"{sign}{mb / 1024:.2f} GB"
+    return f"{sign}{mb:.2f} MB"
 
 RSS_METRICS = {
     "graph_rss_bytes",
@@ -50,10 +64,13 @@ RSS_METRICS = {
 }
 LIMITED_METRICS = {"reads_limited", "writes_limited"}
 CALIBRATION_METRICS = {
-    "rss_single_holder_slope",
     "max_rss_to_logical_ratio",
     "max_cgroup_to_logical_ratio",
-    "rss_per_holder_bytes",
+}
+# Observation field that produced the family ratio, then the bytes it retained.
+RATIO_BYTES = {
+    "max_rss_to_logical_ratio": ("rss_to_logical_ratio", "rss_delta_bytes"),
+    "max_cgroup_to_logical_ratio": ("cgroup_to_logical_ratio", "cgroup_delta_bytes"),
 }
 KNOB_FIELDS = (
     "graph_scale",
@@ -72,6 +89,10 @@ KNOB_FIELDS = (
 IMPROVEMENT_NOTE = (
     "Investigate whether this improvement is a false positive. "
     "When it is real, re-freeze the envelope with the create-loadtest-baselines workflow."
+)
+ENVELOPE_REGRESSION_NOTE = (
+    "This reading is above the frozen envelope. The compare warns and the "
+    "job stays green until a new envelope is taken."
 )
 
 
@@ -111,6 +132,51 @@ def scenario_of(report: dict, name: str) -> dict:
         }:
             return (calibration or {}).get("scenario") or {}
     return (case or {}).get("scenario") or {}
+
+
+def band_text() -> str:
+    percent = CALIBRATION_BAND * 100.0
+    if abs(percent - round(percent)) < 1e-9:
+        return f"{int(round(percent))}%"
+    return f"{percent:.1f}%"
+
+
+def retained_bytes(report: dict, family: str, metric: str) -> int | None:
+    """Bytes retained by the observation that set this family's ratio."""
+    spec = RATIO_BYTES.get(metric)
+    if spec is None:
+        return None
+    ratio_key, byte_key = spec
+    best_ratio = None
+    best_bytes = None
+    observations = (report.get("workspace_memory_calibration") or {}).get("observations") or []
+    for row in observations:
+        if family != "overall" and row.get("family") != family:
+            continue
+        ratio = row.get(ratio_key)
+        size = row.get(byte_key)
+        if ratio is None or size is None:
+            continue
+        ratio = float(ratio)
+        if best_ratio is None or ratio > best_ratio:
+            best_ratio = ratio
+            best_bytes = int(size)
+    return best_bytes
+
+
+def ratio_sentence(row: dict) -> str:
+    label = "cgroup" if "cgroup" in str(row.get("metric")) else "RSS"
+    bounds = f"{float(row['min']):.3f}x–{float(row['max']):.3f}x"
+    measured = f"{float(row['value']):.3f}x"
+    sentence = (
+        f"Expected {label} ratio {bounds}. "
+        f"A reading may sit {band_text()} outside that range. "
+    )
+    if row.get("retained_bytes") is not None:
+        sentence += f"Measured {format_mem(row['retained_bytes'])}, ratio {measured}."
+    else:
+        sentence += f"Measured ratio {measured}."
+    return sentence
 
 
 def band_for(metric: str) -> tuple[float, float]:
@@ -310,6 +376,8 @@ def numeric_checks(baseline: dict, report: dict) -> list[dict]:
             rows.append(check(family, "presence", "regression", detail="report is missing the calibration family"))
             continue
         for metric, bounds in metrics.items():
+            if metric not in CALIBRATION_METRICS:
+                continue
             value = summary.get(metric)
             if value is None:
                 rows.append(check(family, metric, "regression", detail="report is missing the metric"))
@@ -322,6 +390,7 @@ def numeric_checks(baseline: dict, report: dict) -> list[dict]:
                     value=value,
                     min=bounds["min"],
                     max=bounds["max"],
+                    retained_bytes=retained_bytes(report, family, metric),
                     scenario=calibration_case.get("scenario") or {},
                 )
             )
@@ -359,7 +428,7 @@ def render(status: str, rows: list[dict], note: str) -> str:
                 seen.append(row["name"])
         for name in seen:
             lines.append(f"- {name}")
-        lines.append("")
+        lines.extend(calibration_lines(rows))
         return "\n".join(lines)
     failing = [row for row in rows if row["verdict"] != "ok"]
     if not failing and status == "no-baseline":
@@ -383,27 +452,67 @@ def render(status: str, rows: list[dict], note: str) -> str:
             lines.append("")
             lines.append(f"**Then:** {scenario.get('then', '')}")
             lines.append("")
+        metric = str(row.get("metric") or "")
+        if metric in CALIBRATION_METRICS and "min" in row:
+            lines.append(f"**Outcome:** {ratio_sentence(row)}")
+            lines.append("")
+            if row["verdict"] == "improvement":
+                lines.append(IMPROVEMENT_NOTE)
+                lines.append("")
+            elif row["verdict"] == "regression":
+                lines.append(ENVELOPE_REGRESSION_NOTE)
+                lines.append("")
+            continue
+        if scenario:
             lines.append(f"**Outcome:** {scenario.get('outcome', '')}")
             lines.append("")
+        size = metric.endswith("_bytes") or metric == "idle-residue"
         if "min" in row:
-            lines.append(
-                f"Measured {row.get('value')} against the envelope {row.get('min')} – {row.get('max')}."
-            )
+            if size:
+                shown = (
+                    f"Measured {format_mem(row['value'])} against the envelope "
+                    f"{format_mem(row['min'])} – {format_mem(row['max'])}."
+                )
+            else:
+                shown = (
+                    f"Measured {row.get('value')} against the envelope "
+                    f"{row.get('min')} – {row.get('max')}."
+                )
+            lines.append(shown)
         elif row.get("detail"):
             lines.append(str(row["detail"]))
         elif "expected" in row:
-            lines.append(f"Measured {row.get('value')!r} against {row.get('expected')!r}.")
+            if size:
+                lines.append(
+                    f"Measured {format_mem(row['value'])} against {format_mem(row['expected'])}."
+                )
+            else:
+                lines.append(f"Measured {row.get('value')!r} against {row.get('expected')!r}.")
         lines.append("")
         if row["verdict"] == "improvement":
             lines.append(IMPROVEMENT_NOTE)
             lines.append("")
+        elif row["verdict"] == "regression" and "min" in row:
+            lines.append(ENVELOPE_REGRESSION_NOTE)
+            lines.append("")
     return "\n".join(lines)
+
+
+def calibration_lines(rows: list[dict]) -> list[str]:
+    chosen = [row for row in rows if row.get("metric") in CALIBRATION_METRICS and "min" in row]
+    if not chosen:
+        return []
+    lines = ["", "Workspace memory calibration", ""]
+    for row in chosen:
+        lines.append(f"- {row['name']}: {ratio_sentence(row)}")
+    lines.append("")
+    return lines
 
 
 def verdict(baseline: dict, report: dict) -> tuple[str, list[dict], str]:
     if not baseline or not baseline.get("frozen"):
         return "no-baseline", [], "No frozen envelope is on this branch yet."
-    if baseline.get("schema_version") != 1 or report.get("schema_version") != 3:
+    if baseline.get("schema_version") != 1 or report.get("schema_version") != 4:
         return (
             "regression",
             [check("report", "schema", "regression", detail="the report or the envelope schema is not the one this gate reads")],
@@ -427,12 +536,27 @@ def verdict(baseline: dict, report: dict) -> tuple[str, list[dict], str]:
     return status, rows, note.strip()
 
 
-def exit_code(status: str) -> int:
-    if status in {"regression", "improvement", "mixed"}:
+def envelope_reading(row: dict) -> bool:
+    return "min" in row and "max" in row
+
+
+def exit_code(status: str, rows: list[dict]) -> int:
+    if any(row["verdict"] == "regression" and not envelope_reading(row) for row in rows):
         return 1
     if status == "incompatible" and ci_hard_fail():
         return 1
     return 0
+
+
+def emit_checks(prefix: str, rows: list[dict]) -> None:
+    for row in rows:
+        if row["verdict"] == "ok":
+            continue
+        message = f"{prefix}: {row['name']} {row['metric']} {row['verdict']}"
+        if envelope_reading(row) and row["verdict"] in {"improvement", "regression"} and _env.in_github_actions():
+            print(f"::warning::{message}", file=sys.stderr, flush=True)
+        else:
+            print(message, file=sys.stderr, flush=True)
 
 
 def main() -> int:
@@ -462,10 +586,8 @@ def main() -> int:
         json.dumps({"status": status, "checks": rows}, indent=2) + "\n"
     )
     print(f"compare-memory-controls: {status}")
-    for row in rows:
-        if row["verdict"] != "ok":
-            print(f"compare-memory-controls: {row['name']} {row['metric']} {row['verdict']}", file=sys.stderr)
-    return exit_code(status)
+    emit_checks("compare-memory-controls", rows)
+    return exit_code(status, rows)
 
 
 if __name__ == "__main__":

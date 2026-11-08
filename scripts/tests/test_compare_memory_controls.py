@@ -121,7 +121,7 @@ def report(**overrides):
         "the displayed observation held 1 logical bytes and retained 1 RSS bytes (1 RSS bytes per logical byte).",
     )
     body = {
-        "schema_version": 3,
+        "schema_version": 4,
         "name": "memory-controls",
         "environment": dict(ENV),
         "controls": dict(KNOBS),
@@ -201,10 +201,18 @@ class CompareMemoryControlsTests(unittest.TestCase):
         current = report()
         current["cases"][0]["baseline_rss_bytes"] = 20_000_000
         current["cases"][0]["floor_rss_bytes"] = 20_000_000
-        result = self.run_compare(payload, current)
-        self.assertEqual(result.returncode, 1)
+        result = self.run_compare(payload, current, env={"GITHUB_ACTIONS": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.payload["status"], "regression")
         self.assertIn("**Given:**", result.document)
+        self.assertIn("38.15 MB", result.document)
+        self.assertIn("9.54 MB", result.document)
+        self.assertIn("job stays green", result.document)
+        self.assertNotIn("::warning::", result.stderr)
+        warned = self.run_compare(payload, current, env={"GITHUB_ACTIONS": "true"})
+        self.assertEqual(warned.returncode, 0, warned.stderr)
+        self.assertIn("::warning::compare-memory-controls:", warned.stderr)
+        self.assertIn("regression", warned.stderr)
 
     def test_improvement(self):
         _, payload = self.freeze([report(), report()])
@@ -214,10 +222,16 @@ class CompareMemoryControlsTests(unittest.TestCase):
         current["cases"][0]["processing_rss_min_bytes"] = 1_000_000
         current["cases"][0]["processing_rss_max_bytes"] = 1_000_000
         current["cases"][0]["session_cost_bytes"] = 100_000
-        result = self.run_compare(payload, current)
-        self.assertEqual(result.returncode, 1)
+        result = self.run_compare(payload, current, env={"GITHUB_ACTIONS": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.payload["status"], "improvement")
         self.assertIn("create-loadtest-baselines", result.document)
+        self.assertIn("improvement", result.stderr)
+        self.assertNotIn("::warning::", result.stderr)
+        warned = self.run_compare(payload, current, env={"GITHUB_ACTIONS": "true"})
+        self.assertEqual(warned.returncode, 0, warned.stderr)
+        self.assertIn("::warning::compare-memory-controls:", warned.stderr)
+        self.assertIn("improvement", warned.stderr)
 
     def test_mixed(self):
         _, payload = self.freeze([report(), report()])
@@ -226,9 +240,10 @@ class CompareMemoryControlsTests(unittest.TestCase):
         current["cases"][0]["floor_rss_bytes"] = 20_000_000
         current["workloads"][0]["reads_limited"] = 0
         current["workloads"][0]["writes_limited"] = 0
-        result = self.run_compare(payload, current)
-        self.assertEqual(result.returncode, 1)
+        result = self.run_compare(payload, current, env={"GITHUB_ACTIONS": "true"})
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.payload["status"], "mixed")
+        self.assertIn("::warning::", result.stderr)
 
     def test_incompatible_is_local_skip_and_ci_failure(self):
         _, payload = self.freeze([report(), report()])
@@ -259,6 +274,35 @@ class CompareMemoryControlsTests(unittest.TestCase):
         self.assertTrue(
             any(row["name"] == "concurrent-logical-workspace-limit" and row["verdict"] == "regression" for row in result.payload["checks"])
         )
+
+    def test_ratio_regression_states_bounds_and_measured_size(self):
+        _, payload = self.freeze([report(), report()])
+        current = report()
+        current["workspace_memory_calibration"]["summaries"][0]["max_rss_to_logical_ratio"] = 3.2
+        current["workspace_memory_calibration"]["observations"] = [
+            {
+                "family": "sort",
+                "rss_delta_bytes": 16_000_000,
+                "rss_to_logical_ratio": 3.2,
+                "cgroup_delta_bytes": 12_000_000,
+                "cgroup_to_logical_ratio": 3.0,
+            }
+        ]
+        result = self.run_compare(payload, current)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.payload["status"], "regression")
+        self.assertIn("Expected RSS ratio 3.000x–3.000x.", result.document)
+        self.assertIn("A reading may sit 5% outside that range.", result.document)
+        self.assertIn("Measured 15.26 MB, ratio 3.200x.", result.document)
+        self.assertNotIn("rss_per_holder", result.document)
+
+    def test_a_slope_outside_the_envelope_is_not_a_regression(self):
+        _, payload = self.freeze([report(), report()])
+        payload["calibration"]["sort"]["rss_per_holder_bytes"] = {"min": -1, "max": 1}
+        result = self.run_compare(payload, report())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.payload["status"], "ok")
+        self.assertIn("Expected RSS ratio 3.000x–3.000x.", result.document)
 
     def test_freeze_refuses_a_drifting_limit(self):
         drifted = report()
