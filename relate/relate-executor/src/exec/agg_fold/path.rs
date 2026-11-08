@@ -14,7 +14,8 @@ use crate::pattern_walk::{binding, node_candidates, rel_props_ok, Binding, NodeB
 use crate::row::Row;
 use crate::store::RelTypes;
 
-use super::super::candidates::node_ok;
+use super::super::candidates::node_ok_prepared;
+use super::super::candidates::InternedLabels;
 use super::super::WalkTallies;
 use super::plan::{compile_path, CountSeat, KeyPlan, PathPlan, PathPred};
 use super::{
@@ -42,6 +43,16 @@ struct HopEnd {
 struct FoldCaches {
     props: rustc_hash::FxHashMap<NodeId, HashMap<String, Value>>,
     keys: rustc_hash::FxHashMap<NodeId, CachedKey>,
+}
+
+/// What one hop step resolves once per fold, beside the plan — never per
+/// row, anchor or candidate.
+struct StepFacts {
+    /// The step's rel-type filter (LABS-801).
+    types: RelTypes,
+    /// The start and end endpoints' label conjunctions.
+    start: InternedLabels<'static>,
+    end: InternedLabels<'static>,
 }
 
 struct FoldEnv<'a> {
@@ -73,15 +84,16 @@ struct FoldEnv<'a> {
     tallies: &'a WalkTallies,
     /// The steps' resolved rel-type filters (LABS-801), one per plan
     /// step, resolved once beside the plan — never per row or anchor.
-    step_types: &'a [RelTypes],
+    steps: &'a [StepFacts],
 }
 
 struct HopWalk<'a> {
     path: &'a PathPattern,
     rel_idx: usize,
-    /// The step's resolved rel-type filter (LABS-801) — resolved once per
-    /// fold beside the plan, read by every anchor's neighbor collection.
-    types: &'a RelTypes,
+    /// The step's facts, resolved once per fold beside the plan: the
+    /// rel-type filter every anchor's neighbor collection reads and the
+    /// endpoints' label conjunctions.
+    step: &'a StepFacts,
     start_slot: usize,
     end_slot: usize,
     bound_start: Option<NodeId>,
@@ -127,8 +139,7 @@ fn slot_preds_hold(env: &mut FoldEnv<'_>, slot: usize, id: NodeId) -> Result<boo
 
 fn accept_slot(
     env: &mut FoldEnv<'_>,
-    node: &NodePattern,
-    slot: usize,
+    side: &HopSide<'_>,
     binding: NodeBinding<'_>,
     id: NodeId,
 ) -> Result<bool> {
@@ -141,10 +152,18 @@ fn accept_slot(
     if !binding.accepts(&id) {
         return Ok(false);
     }
-    if !node_ok(env.graph, id, node, env.row, env.params, env.cypher_version)? {
+    if !node_ok_prepared(
+        env.graph,
+        id,
+        side.node,
+        side.labels,
+        env.row,
+        env.params,
+        env.cypher_version,
+    )? {
         return Ok(false);
     }
-    slot_preds_hold(env, slot, id)
+    slot_preds_hold(env, side.slot, id)
 }
 
 /// Fills `out` with this origin's accepted neighbors (cleared at entry,
@@ -218,10 +237,12 @@ fn expand_hop(env: &mut FoldEnv<'_>, walk: &HopWalk<'_>) -> Result<Vec<HopEnd>> 
     // reads the target side's filter: a free target filters nothing.
     let start_side = HopSide {
         node: start_node,
+        labels: &walk.step.start,
         slot: walk.start_slot,
     };
     let end_side = HopSide {
         node: end_node,
+        labels: &walk.step.end,
         slot: walk.end_slot,
     };
     let (anchors, orientation) = match (start_binding, end_binding) {
@@ -267,7 +288,7 @@ fn expand_hop(env: &mut FoldEnv<'_>, walk: &HopWalk<'_>) -> Result<Vec<HopEnd>> 
         env,
         HopRel {
             pattern: rel,
-            types: walk.types,
+            types: &walk.step.types,
             skip: walk.skip_rel,
         },
         anchors,
@@ -278,6 +299,9 @@ fn expand_hop(env: &mut FoldEnv<'_>, walk: &HopWalk<'_>) -> Result<Vec<HopEnd>> 
 /// One side of an oriented hop expansion: the pattern and its slot.
 struct HopSide<'a> {
     node: &'a NodePattern,
+    /// The node's label conjunction, resolved once per step beside the
+    /// plan (`FoldEnv::steps`) — never per row or per candidate.
+    labels: &'a InternedLabels<'static>,
     slot: usize,
 }
 
@@ -381,7 +405,7 @@ fn walk_hop(
     let anchor_binding = binding(anchor.node, env.row);
     for anchor_id in anchors {
         env.graph.cancel_tick()?;
-        if !accept_slot(env, anchor.node, anchor.slot, anchor_binding, anchor_id)? {
+        if !accept_slot(env, anchor, anchor_binding, anchor_id)? {
             continue;
         }
         // The target side's admission: a repeated variable's second
@@ -411,7 +435,7 @@ fn walk_hop(
             )
         })?;
         for &(rid, other_id) in &found {
-            if accept_slot(env, target.node, target.slot, target_binding, other_id)? {
+            if accept_slot(env, target, target_binding, other_id)? {
                 // The orientation names the roles once: reversed, the
                 // anchor is the hop's end.
                 let (start, end) = orientation.roles(anchor_id, other_id);
@@ -627,7 +651,7 @@ fn fold_steps(
         &HopWalk {
             path: &patterns[step.pattern],
             rel_idx: step.rel,
-            types: &env.step_types[step_idx],
+            step: &env.steps[step_idx],
             start_slot: step.start_slot,
             end_slot: step.end_slot,
             bound_start: bindings[step.start_slot],
@@ -685,20 +709,25 @@ pub(crate) fn try_fold_path_aggs(
     // ADR-0463 (LABS-781): the group table is one retaining container;
     // its guard starts empty and grows with every landing below.
     let mut group_retained = graph.retain_bytes(0)?;
-    // LABS-801: the steps' rel-type filters resolve once beside the plan
-    // — every row's env reads them, never a per-row or per-anchor
-    // re-resolution.
-    // Text render: the adjacency type resolver reads name text.
-    let step_types: Vec<RelTypes> = plan
+    // LABS-801: the steps' rel-type filters and endpoint label
+    // conjunctions resolve once beside the plan, in one pass — every row's
+    // env reads them, never a per-row or per-anchor re-resolution.
+    let steps: Vec<StepFacts> = plan
         .steps
         .iter()
         .map(|step| {
-            let types: Vec<String> = patterns[step.pattern].rels[step.rel]
+            let path = &patterns[step.pattern];
+            // Text render: the adjacency type resolver reads name text.
+            let types: Vec<String> = path.rels[step.rel]
                 .types
                 .iter()
                 .map(|ty| ty.to_string())
                 .collect();
-            graph.rel_types(&types)
+            StepFacts {
+                types: graph.rel_types(&types),
+                start: InternedLabels::resolve(graph, &path.nodes[step.rel].labels),
+                end: InternedLabels::resolve(graph, &path.nodes[step.rel + 1].labels),
+            }
         })
         .collect();
     for row in rows {
@@ -716,7 +745,7 @@ pub(crate) fn try_fold_path_aggs(
             group_retained: &mut group_retained,
             preds: rustc_hash::FxHashMap::default(),
             tallies: &tallies,
-            step_types: &step_types,
+            steps: &steps,
         };
         let mut bindings = vec![None; plan.nslots];
         fold_steps(&mut env, patterns, 0, None, &mut bindings)?;

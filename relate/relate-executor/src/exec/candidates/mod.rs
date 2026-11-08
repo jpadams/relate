@@ -10,6 +10,8 @@
 //! walk tier ([`crate::pattern_walk::node_candidates`]). Relationship
 //! expansion lives in `expand`.
 
+mod interned_labels;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -25,6 +27,8 @@ use crate::pattern_walk::{id_fn_conversion, map_from_expr, static_rel_type_ok, I
 use crate::redo::{IndexDetailSpec, IndexKindSpec};
 use crate::row::Row;
 use crate::store::RelTypes;
+
+pub(crate) use interned_labels::InternedLabels;
 
 /// The relationship twin of the node ids seek (`crate::pattern_walk`'s
 /// `ids_seek_expr`, LABS-161): `id(r) = <expr>`
@@ -193,6 +197,30 @@ pub(crate) fn node_ok(
     params: &BTreeMap<String, Value>,
     cypher_version: Option<u32>,
 ) -> Result<bool> {
+    node_ok_prepared(
+        graph,
+        id,
+        np,
+        &InternedLabels::unresolved(&np.labels),
+        row,
+        params,
+        cypher_version,
+    )
+}
+
+/// [`node_ok`] with the pattern's static label conjunction supplied as an
+/// [`InternedLabels`]: a loop that resolved the ids once checks by id
+/// instead of paying one interner lookup per (candidate, label). `labels`
+/// must be built from `np.labels`; `node_ok` passes the unresolved form.
+pub(crate) fn node_ok_prepared(
+    graph: &ExecGraph<'_>,
+    id: NodeId,
+    np: &NodePattern,
+    labels: &InternedLabels<'_>,
+    row: &Row,
+    params: &BTreeMap<String, Value>,
+    cypher_version: Option<u32>,
+) -> Result<bool> {
     // Cypher keeps a deleted-but-bound entity addressable for the rest of
     // the query: when the row already binds this candidate's variable to
     // the node a DELETE removed, the checks below read that binding's
@@ -231,7 +259,7 @@ pub(crate) fn node_ok(
         // builds `And([])`), so the guard needs no labels cross-check —
         // the same single criterion `label_index_seekable` uses.
         Some(expr) if expr.is_static_conjunction() => {
-            if !np.labels.iter().all(|want| view.has_label(graph, id, want)) {
+            if !view.admits_labels(graph, id, &np.labels, labels) {
                 return Ok(false);
             }
         }
@@ -282,18 +310,21 @@ enum ReadView<'a> {
 }
 
 impl ReadView<'_> {
-    /// One label check: the tombstone's own string list, or the
-    /// interning check — whose `None` (an invisible node) fails the
-    /// check exactly like an absent label.
-    fn has_label(&self, graph: &ExecGraph<'_>, id: NodeId, want: &SmallName) -> bool {
+    /// The static label conjunction: the tombstone's own string list, or
+    /// the per-fold resolved check — whose `false` for an invisible node
+    /// fails the check exactly like an absent label.
+    fn admits_labels(
+        &self,
+        graph: &ExecGraph<'_>,
+        id: NodeId,
+        names: &[SmallName],
+        labels: &InternedLabels<'_>,
+    ) -> bool {
         match self {
-            Self::Tombstone(node) => node.labels.iter().any(|have| want == have.as_str()),
-            Self::Store => {
-                matches!(
-                    want.with_str(|text| graph.node_has_label(id, text)),
-                    Some(true)
-                )
-            }
+            Self::Tombstone(node) => names
+                .iter()
+                .all(|want| node.labels.iter().any(|have| want == have.as_str())),
+            Self::Store => labels.admits(graph, id),
         }
     }
 

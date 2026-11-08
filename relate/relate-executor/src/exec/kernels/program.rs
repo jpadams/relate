@@ -27,7 +27,7 @@ use relate_names::SmallName;
 
 use crate::ctx::ExecCtx;
 use crate::eval::{binary_pure, eval, expr_vars, is_nondeterministic, orient, var_prop};
-use crate::overlay::ExecGraph;
+use crate::exec::candidates::InternedLabels;
 use crate::row::Row;
 
 use super::super::agg_fold::is_pred_op;
@@ -57,64 +57,6 @@ pub(crate) enum Prog {
 pub(crate) struct NodeTarget<'a> {
     pub(crate) pattern: &'a NodePattern,
     pub(crate) prog: Prog,
-}
-
-/// The interned form of a pattern's static label conjunction, resolved
-/// once per stage ([`NodePred::prepare`]): one interner lookup per label,
-/// never per candidate (ADR-0473 — the per-candidate string interning was
-/// the measured gap between the first kernel cut and the speed-of-light
-/// kernels). A label nothing in the committed store ever carried has no
-/// id — no committed node can carry it either, so its check fails without
-/// a store read; a write scratch's overlay is the exception (write-path
-/// labels stay strings there, interned only at commit), and its nodes
-/// answer through the string arm instead.
-pub(crate) struct InternedLabels<'a> {
-    labels: &'a [SmallName],
-    ids: Vec<Option<u32>>,
-}
-
-impl InternedLabels<'_> {
-    fn resolve<'a>(ctx: ExecCtx<'_>, labels: &'a [SmallName]) -> InternedLabels<'a> {
-        InternedLabels {
-            labels,
-            ids: labels
-                .iter()
-                .map(|label| label.with_str(|text| ctx.graph.base().interned_label_id(text)))
-                .collect(),
-        }
-    }
-
-    /// The static label conjunction and visibility check — `node_ok`'s two
-    /// label arms for an unbound variable: every pattern label present
-    /// (`None` for an invisible node fails exactly like an absent label),
-    /// and a pattern with no labels at all checking bare visibility.
-    fn admits(&self, graph: &ExecGraph<'_>, node: NodeId) -> bool {
-        if self.labels.is_empty() {
-            return graph.node_exists(node);
-        }
-        self.labels
-            .iter()
-            .zip(&self.ids)
-            .all(|(label, id)| match id {
-                Some(id) => matches!(
-                    label.with_str(|text| graph.node_has_label_id(node, *id, text)),
-                    Some(true)
-                ),
-                // A label the base interner never recorded can still ride
-                // a write scratch: write-path labels stay strings in the
-                // overlay, interned only at commit, so the string arm of
-                // `node_has_label` serves them. Without a scratch nothing
-                // can carry an uninterned label, so the check fails
-                // without a store read.
-                None => {
-                    graph.has_write_overlay()
-                        && matches!(
-                            label.with_str(|text| graph.node_has_label(node, text)),
-                            Some(true)
-                        )
-                }
-            })
-    }
 }
 
 /// The per-candidate admission check, monomorphized (ADR-0473). A kernel
@@ -177,7 +119,7 @@ impl<'a> NodePred for LabelsOnly<'a> {
     type Prepared = InternedLabels<'a>;
 
     fn prepare(&self, ctx: ExecCtx<'_>) -> Result<Self::Prepared> {
-        Ok(InternedLabels::resolve(ctx, self.labels))
+        Ok(InternedLabels::resolve(ctx.graph, self.labels))
     }
 
     fn admits(
@@ -242,7 +184,7 @@ impl<'a> NodePred for PropCmp<'a> {
             ctx.cypher_version,
         )?;
         Ok(CmpPrepared {
-            labels: InternedLabels::resolve(ctx, self.labels),
+            labels: InternedLabels::resolve(ctx.graph, self.labels),
             key: self.key,
             op: self.op,
             value,
@@ -268,7 +210,7 @@ impl<'a> NodePred for PropNull<'a> {
 
     fn prepare(&self, ctx: ExecCtx<'_>) -> Result<Self::Prepared> {
         Ok(PreparedNull {
-            labels: InternedLabels::resolve(ctx, self.labels),
+            labels: InternedLabels::resolve(ctx.graph, self.labels),
             key: self.key,
             is_null: self.is_null,
         })
