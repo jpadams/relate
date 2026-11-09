@@ -70,7 +70,7 @@ relate --version
 ```
 
 ```text
-Relate v0.1.1
+Relate v0.1.2
 License: Apache 2.0 (binary)
 ```
 
@@ -79,7 +79,7 @@ relate --version --json
 ```
 
 ```text
-{"arch":"aarch64","license":"Apache 2.0 (binary)","name":"relate","os":"macos","version":"0.1.1"}
+{"arch":"aarch64","license":"Apache 2.0 (binary)","name":"relate","os":"macos","version":"0.1.2"}
 ```
 
 `arch` and `os` report the machine the binary runs on; `version` is the

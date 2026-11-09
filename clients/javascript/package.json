@@ -1,6 +1,6 @@
 {
   "name": "@relate/relate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Relate Node.js client (C ABI via koffi)",
   "main": "index.js",
   "license": "Apache-2.0",
@@ -25,11 +25,11 @@
     "koffi": "^2.9.0"
   },
   "optionalDependencies": {
-    "@relate/darwin-arm64": "0.1.1",
-    "@relate/darwin-x64": "0.1.1",
-    "@relate/linux-arm64": "0.1.1",
-    "@relate/linux-x64": "0.1.1",
-    "@relate/win32-x64": "0.1.1"
+    "@relate/darwin-arm64": "0.1.2",
+    "@relate/darwin-x64": "0.1.2",
+    "@relate/linux-arm64": "0.1.2",
+    "@relate/linux-x64": "0.1.2",
+    "@relate/win32-x64": "0.1.2"
   },
   "scripts": {
     "test": "node test.js && node loadtest/test.js"
