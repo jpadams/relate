@@ -53,7 +53,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.16.1"
+version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/relatedb/relate"
 rust-version = "1.88"

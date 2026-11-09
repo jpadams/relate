@@ -353,11 +353,11 @@ the binary — never the license text:
 
 ```bash
 $ relate -version
-Relate v0.16.1
+Relate v0.1.0
 License: Apache 2.0 (binary)
 
 $ relate --version --json
-{"arch":"aarch64","license":"Apache 2.0 (binary)","name":"relate","os":"macos","version":"0.16.1"}
+{"arch":"aarch64","license":"Apache 2.0 (binary)","name":"relate","os":"macos","version":"0.1.0"}
 ```
 
 ### Output safety
