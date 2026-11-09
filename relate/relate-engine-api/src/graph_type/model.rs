@@ -702,7 +702,7 @@ impl OptionValueModel {
     /// for every other value — the model's own vocabulary, so the resolver
     /// never re-spells the match (`Expr::from(&OptionValueModel::from_value(v))`
     /// renders the canonical `?`).
-    pub(crate) fn from_value(value: &Value) -> Self {
+    pub fn from_value(value: &Value) -> Self {
         match value {
             Value::Null => Self::Null,
             Value::Bool(b) => Self::Bool(*b),

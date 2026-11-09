@@ -4,6 +4,7 @@
 //! and the sizes come from the same sum.
 
 use relate_core::{Error, Result};
+#[cfg(test)]
 use relate_executor::Graph;
 
 use crate::snapshot::Kind;
@@ -29,7 +30,12 @@ impl Kind {
     /// the fixed Int64 columns plus the executor's variable payload (labels
     /// or type name, and tagged property JSON). Only [`DecodedBudget`]
     /// measures rows.
-    fn checkpoint_bytes(self, graph: &Graph, id: i64, ts: u64) -> Result<Option<u64>> {
+    fn checkpoint_bytes(
+        self,
+        graph: &dyn relate_engine_api::GraphImport,
+        id: i64,
+        ts: u64,
+    ) -> Result<Option<u64>> {
         let variable = match self {
             Self::Node => graph.node_checkpoint_bytes(id, ts)?,
             Self::Rel => graph.rel_checkpoint_bytes(id, ts)?,
@@ -48,7 +54,7 @@ impl Kind {
 /// make rows, not bytes, the binding bound), and the ADR-0086 row and
 /// decoded envelopes.
 pub(crate) struct DecodedBudget<'g> {
-    graph: &'g Graph,
+    graph: &'g dyn relate_engine_api::GraphImport,
     ts: u64,
     kind: Kind,
     /// The most rows one file of this kind holds within ADR-0086's
@@ -69,7 +75,13 @@ fn add(bytes: u64, row: u64) -> Result<u64> {
 }
 
 impl<'g> DecodedBudget<'g> {
-    pub(crate) fn new(graph: &'g Graph, ts: u64, kind: Kind, target: u64, wide: bool) -> Self {
+    pub(crate) fn new(
+        graph: &'g dyn relate_engine_api::GraphImport,
+        ts: u64,
+        kind: Kind,
+        target: u64,
+        wide: bool,
+    ) -> Self {
         Self {
             graph,
             ts,
@@ -163,7 +175,12 @@ impl<'g> DecodedBudget<'g> {
 /// Decoded bytes of the live rows of `ids`, which must fit the ADR-0086
 /// decoded envelope together.
 #[cfg(test)]
-pub(crate) fn decoded_preflight(graph: &Graph, ts: u64, ids: &[i64], kind: Kind) -> Result<u64> {
+pub(crate) fn decoded_preflight(
+    graph: &dyn relate_engine_api::GraphImport,
+    ts: u64,
+    ids: &[i64],
+    kind: Kind,
+) -> Result<u64> {
     let mut budget = DecodedBudget::new(graph, ts, kind, u64::MAX, false);
     if !budget.cut(ids)?.is_empty() {
         return Err(invalid("actual decoded bytes"));

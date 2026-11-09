@@ -32,7 +32,7 @@ use arrow::array::{Array, Int64Array, ListArray, StringArray};
 use arrow::record_batch::RecordBatch;
 use bytes::Bytes;
 use relate_core::{Error, Node, Relationship, Result, Value};
-use relate_executor::{props_from_json, Graph};
+use relate_engine_api::props_from_json;
 
 use crate::snapshot::Kind;
 use crate::storage_context;
@@ -262,18 +262,31 @@ impl Decoded {
 /// Preflighting entry point kept for tests that assert a direct encode
 /// rejects a decoded-envelope overage before allocating.
 #[cfg(test)]
-pub(crate) fn nodes_parquet_ids(graph: &Graph, ts: u64, keys: &[i64]) -> Result<Vec<u8>> {
+pub(crate) fn nodes_parquet_ids(
+    graph: &dyn relate_engine_api::GraphImport,
+    ts: u64,
+    keys: &[i64],
+) -> Result<Vec<u8>> {
     encode_ids(graph, ts, keys, Kind::Node)
 }
 
 /// Relationship sibling of [`nodes_parquet_ids`], kept for direct-encode tests.
 #[cfg(test)]
-pub(crate) fn rels_parquet_ids(graph: &Graph, ts: u64, rids: &[i64]) -> Result<Vec<u8>> {
+pub(crate) fn rels_parquet_ids(
+    graph: &dyn relate_engine_api::GraphImport,
+    ts: u64,
+    rids: &[i64],
+) -> Result<Vec<u8>> {
     encode_ids(graph, ts, rids, Kind::Rel)
 }
 
 #[cfg(test)]
-fn encode_ids(graph: &Graph, ts: u64, ids: &[i64], kind: Kind) -> Result<Vec<u8>> {
+fn encode_ids(
+    graph: &dyn relate_engine_api::GraphImport,
+    ts: u64,
+    ids: &[i64],
+    kind: Kind,
+) -> Result<Vec<u8>> {
     decoded_preflight(graph, ts, ids, kind)?;
     let (bytes, _) = with_wide_shard_writer(kind, &[], file_ceiling(), |writer| {
         encode_wide_rows(writer, graph, ts, kind, ids, &[])
@@ -284,7 +297,7 @@ fn encode_ids(graph: &Graph, ts: u64, ids: &[i64], kind: Kind) -> Result<Vec<u8>
 /// Loads one shard file into the graph ([`load_nodes`] or [`load_rels`]):
 /// the file's bytes, and what wrote it, which decides the rules it is held
 /// to.
-pub(crate) type Loader = fn(&Graph, Vec<u8>, Origin) -> Result<()>;
+pub(crate) type Loader = fn(&dyn relate_engine_api::GraphImport, Vec<u8>, Origin) -> Result<()>;
 
 /// What wrote a loaded file, which decides the rules it is held to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -386,7 +399,11 @@ impl<'a> Properties<'a> {
     }
 }
 
-pub(crate) fn load_nodes(graph: &Graph, bytes: Vec<u8>, origin: Origin) -> Result<()> {
+pub(crate) fn load_nodes(
+    graph: &dyn relate_engine_api::GraphImport,
+    bytes: Vec<u8>,
+    origin: Origin,
+) -> Result<()> {
     load_batches(
         bytes,
         Kind::Node,
@@ -401,7 +418,7 @@ pub(crate) fn load_nodes(graph: &Graph, bytes: Vec<u8>, origin: Origin) -> Resul
 /// a manifest part refuses a null label list or item, only a pre-shard
 /// monolith's writer is tolerated (fail-closed for everything else).
 fn wide_node_rows(
-    graph: &Graph,
+    graph: &dyn relate_engine_api::GraphImport,
     origin: &Origin,
     batch: &RecordBatch,
     ids: &Int64Array,
@@ -462,7 +479,11 @@ fn wide_node_rows(
     Ok(())
 }
 
-pub(crate) fn load_rels(graph: &Graph, bytes: Vec<u8>, origin: Origin) -> Result<()> {
+pub(crate) fn load_rels(
+    graph: &dyn relate_engine_api::GraphImport,
+    bytes: Vec<u8>,
+    origin: Origin,
+) -> Result<()> {
     load_batches(bytes, Kind::Rel, &origin, |batch, ids, decoded, columns| {
         wide_rel_rows(graph, &origin, batch, ids, decoded, columns)
     })
@@ -473,7 +494,7 @@ pub(crate) fn load_rels(graph: &Graph, bytes: Vec<u8>, origin: Origin) -> Result
 /// promoted key, the residual tail. A manifest part refuses a null type
 /// slot, only a pre-shard monolith's writer is tolerated.
 fn wide_rel_rows(
-    graph: &Graph,
+    graph: &dyn relate_engine_api::GraphImport,
     origin: &Origin,
     batch: &RecordBatch,
     ids: &Int64Array,
@@ -595,7 +616,7 @@ pub(super) fn source_error(path: &str, error: Error) -> Error {
 /// ids — promote and the carried set does not already hold.
 pub(crate) fn part_columns(
     kind: Kind,
-    graph: &Graph,
+    graph: &dyn relate_engine_api::GraphImport,
     ts: u64,
     ids: &[i64],
     carried: &[(String, ColumnType)],

@@ -260,6 +260,9 @@ pub(crate) struct ServeLimits {
     pub(crate) peak_hold_family: Option<&'static str>,
 }
 
+/// The one engine pair the memory-controls child runs.
+const ENGINE_PAIR: &str = "in-memory,local";
+
 impl Server {
     /// Reset `store` and start a child on it.
     pub(crate) fn start(bin: &Path, store: &Path, limits: ServeLimits) -> Result<Self, String> {
@@ -281,6 +284,7 @@ impl Server {
         let bolt_port = ports[0];
         let http_port = ports.get(1).copied();
         let mut cmd = serve_command(bin, store, bolt_port);
+        cmd.env("RELATE_ENGINE_PAIR", ENGINE_PAIR);
         if let Some(port) = http_port {
             cmd.arg("--http").arg(port.to_string());
         }

@@ -24,20 +24,13 @@
 //! path, so `uuid()` and the temporal constructors behave exactly as
 //! they do in queries).
 
-use std::collections::BTreeMap;
-
-use relate_core::{Error, Result, Value};
+use relate_core::{Error, Result};
 use relate_error::EngineError;
 use relate_model::identifier::quote_identifier_always;
 use relate_names::SmallName;
 use relate_parser::type_normalize::{type_expr_to_canon, CanonKind, CanonType};
 use relate_parser::{Expr, FunctionCallExpr, LiteralValue, MapPair, PredefinedKind, TypeExpr};
 use serde::{Deserialize, Serialize};
-
-use crate::eval::eval;
-use crate::row::Row;
-
-use crate::overlay::ExecGraph;
 
 /// The restricted `<value expression>` of a `DEFAULT ON COMMIT` clause
 /// (CIP-262 Ap1): one typed form for validation, rendering, persistence,
@@ -292,7 +285,7 @@ impl DefaultValue {
     /// inverse of [`DefaultValue::from_expr`], used only to hand the
     /// value to the engine's own evaluator (and, from the persisted
     /// model, to rebuild the body's parser form).
-    pub(crate) fn to_expr(&self) -> Expr {
+    pub fn to_expr(&self) -> Expr {
         match self {
             Self::Bool(b) => Expr::Literal(LiteralValue::Bool(*b)),
             Self::Integer(i) => Expr::Literal(LiteralValue::Integer(*i)),
@@ -328,7 +321,7 @@ fn default_shape_error(message: String) -> EngineError {
 /// property's type and its `DEFAULT ON COMMIT` value -- the one spelling
 /// both the renderer and the constraint-validation type-prefix split
 /// consult (the round-6 Low: the literal was spelled twice).
-pub(crate) const DEFAULT_ON_COMMIT_SEPARATOR: &str = " DEFAULT ON COMMIT ";
+pub const DEFAULT_ON_COMMIT_SEPARATOR: &str = " DEFAULT ON COMMIT ";
 
 /// The canonical `DEFAULT ON COMMIT <CVE>` clause of a property type,
 /// rendered from the parsed expression: the one rendering every
@@ -338,7 +331,7 @@ pub(crate) const DEFAULT_ON_COMMIT_SEPARATOR: &str = " DEFAULT ON COMMIT ";
 /// caller (the body validator and the model capture reject a
 /// non-allowed shape before anything renders), so the capture here
 /// fails loud on its invariant instead of inventing a rendering.
-pub(crate) fn canonical_default_clause(expr: &Expr) -> Result<String> {
+pub fn canonical_default_clause(expr: &Expr) -> Result<String> {
     // Total: the DROP path restates a default in a body that never runs
     // the graph-type body validator (apply_drop), so the shape invariant
     // does not hold at every caller -- an unrenderable restatement is a
@@ -347,19 +340,6 @@ pub(crate) fn canonical_default_clause(expr: &Expr) -> Result<String> {
     let default =
         DefaultValue::from_expr(expr).map_err(|error| Error::syntax(error.to_string()))?;
     Ok(format!(" DEFAULT ON COMMIT {}", default.render()))
-}
-
-/// The default's lowered expression, captured once per statement per
-/// property -- only the evaluation runs per entity (the round-10
-/// Medium: the re-clone and re-lowering ran on every per-entity call).
-pub fn lowered_default(default: &DefaultValue) -> Result<relate_ir::Expr> {
-    relate_front::lower_expr(&default.to_expr())
-}
-
-/// The per-entity half of [`eval_default`]: evaluate the pre-lowered
-/// default through the engine's own evaluator.
-pub fn eval_lowered_default(graph: &ExecGraph<'_>, lowered: &relate_ir::Expr) -> Result<Value> {
-    eval(graph, &Row::new(), lowered, &BTreeMap::new(), None)
 }
 
 #[cfg(test)]

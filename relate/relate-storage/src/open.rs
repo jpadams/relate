@@ -4,26 +4,32 @@
 //! checkpoint publication — stays with the facade in `lib.rs`.
 
 use relate_core::{Error, Result};
-use relate_executor::{Graph, OntologyOp};
+use relate_engine_api::{OntologyOp, SnapshotGraph};
 
 use crate::snapshot::{self, LoadedSnapshot};
 use crate::wal::Wal;
 use crate::{codec, version, SnapshotCodecKind, StoreTarget};
 
-/// The codec vocabulary's one behavioral surface: which loader reads the
-/// snapshot, what the codec does at the open tail — the dirty-WAL guard
-/// plus the load's deferred open-time action — whether it sweeps orphaned
-/// store objects after open, how it writes a checkpoint, and how it sizes
-/// its snapshot objects. One fn table per codec ([`codec_ops`]), so a
-/// codec's behavior is spelled once instead of one arm bolted onto every
-/// dispatch the open walk, the write path and the sizing path pass; a
-/// new codec lands in that table alone.
+/// One codec's checkpoint writer. The graph is the export surface, so the
+/// pointer does not name a concrete engine.
+type CheckpointDump =
+    fn(&StoreTarget, &dyn relate_engine_api::GraphImport, u64, u64, Option<&str>) -> Result<()>;
+
+/// The codec vocabulary's one behavioral surface: what the codec does at
+/// the open tail — the dirty-WAL guard plus the load's deferred open-time
+/// action — whether it sweeps orphaned store objects after open, how it
+/// writes a checkpoint, and how it sizes its snapshot objects. One fn
+/// table per codec ([`codec_ops`]), so a codec's behavior is spelled once
+/// instead of one arm bolted onto every dispatch the open walk, the write
+/// path and the sizing path pass. The loader stays a generic match in
+/// [`load_with_checkpoint_lsn`]: the graph type is a type parameter, and a
+/// fn pointer in this table cannot carry it. A new codec lands in this
+/// table and in that match.
 pub(crate) struct CodecOps {
-    pub(crate) load: fn(&StoreTarget) -> Result<LoadedSnapshot>,
     pub(crate) finish_open:
         fn(&StoreTarget, u64, u64, Option<snapshot::DeferredOpenAction>) -> Result<()>,
     pub(crate) sweep_after_open: fn(&StoreTarget) -> Result<()>,
-    pub(crate) dump: fn(&StoreTarget, &Graph, u64, u64, Option<&str>) -> Result<()>,
+    pub(crate) dump: CheckpointDump,
     pub(crate) snapshot_data_bytes: fn(&StoreTarget) -> Result<u64>,
 }
 
@@ -49,34 +55,30 @@ fn nothing_to_sweep(_target: &StoreTarget) -> Result<()> {
 /// The one codec → ops mapping: Parquet overrides the sweep (it retires
 /// objects its newest manifest orphaned, ADR-0089), markdown overrides the
 /// open tail (the dirty-WAL guard and the deferred re-baseline, ADR-0406
-/// §5), and every codec names its own loader, writer and sizer — an
-/// uncompiled codec's stub module fails closed, so the table needs no cfg
-/// arms.
+/// §5), and every codec names its own writer and sizer. The loader is the
+/// generic match in [`load_with_checkpoint_lsn`]. An uncompiled codec's
+/// stub module fails closed, so neither dispatch needs a cfg arm.
 pub(crate) fn codec_ops(codec: SnapshotCodecKind) -> CodecOps {
     match codec {
         SnapshotCodecKind::Parquet => CodecOps {
-            load: snapshot::load_with_checkpoint_lsn,
             finish_open: admit_every_replay,
             sweep_after_open: snapshot::sweep_orphans,
             dump: snapshot::checkpoint_at,
             snapshot_data_bytes: snapshot::snapshot_data_bytes,
         },
         SnapshotCodecKind::Json => CodecOps {
-            load: codec::json::load_with_checkpoint_lsn,
             finish_open: admit_every_replay,
             sweep_after_open: nothing_to_sweep,
             dump: codec::json::dump,
             snapshot_data_bytes: codec::json::snapshot_data_bytes,
         },
         SnapshotCodecKind::Markdown => CodecOps {
-            load: codec::markdown::load_with_checkpoint_lsn,
             finish_open: codec::markdown::finish_open,
             sweep_after_open: nothing_to_sweep,
             dump: codec::markdown::checkpoint_at,
             snapshot_data_bytes: codec::markdown::snapshot_data_bytes,
         },
         SnapshotCodecKind::Rkyv => CodecOps {
-            load: codec::rkyv::load_with_checkpoint_lsn,
             finish_open: admit_every_replay,
             sweep_after_open: nothing_to_sweep,
             dump: codec::rkyv::dump,
@@ -88,7 +90,7 @@ pub(crate) fn codec_ops(codec: SnapshotCodecKind) -> CodecOps {
 /// A fresh snapshot load of a store — the guarded preamble
 /// ([`load_snapshot_with_schema_guard`]) included, like every other
 /// fresh load: a drifted `.cypherlite/schema/` mirror refuses here too.
-pub fn load(target: &StoreTarget) -> Result<Graph> {
+pub fn load<G: SnapshotGraph>(target: &StoreTarget) -> Result<G> {
     Ok(load_snapshot_with_schema_guard(target)?.graph)
 }
 
@@ -97,8 +99,13 @@ pub fn load(target: &StoreTarget) -> Result<Graph> {
 /// loader decoded (ADR-0127 Decision 2: detection costs no extra I/O) and
 /// the ontology document the snapshot carries (ADR-0120; `None` when the
 /// store holds none).
-fn load_with_checkpoint_lsn(target: &StoreTarget) -> Result<LoadedSnapshot> {
-    (codec_ops(target.codec).load)(target)
+fn load_with_checkpoint_lsn<G: SnapshotGraph>(target: &StoreTarget) -> Result<LoadedSnapshot<G>> {
+    match target.codec {
+        SnapshotCodecKind::Parquet => snapshot::load_with_checkpoint_lsn::<G>(target),
+        SnapshotCodecKind::Json => codec::json::load_with_checkpoint_lsn::<G>(target),
+        SnapshotCodecKind::Markdown => codec::markdown::load_with_checkpoint_lsn::<G>(target),
+        SnapshotCodecKind::Rkyv => codec::rkyv::load_with_checkpoint_lsn::<G>(target),
+    }
 }
 
 /// The guarded open preamble every fresh snapshot load shares — the two
@@ -110,8 +117,10 @@ fn load_with_checkpoint_lsn(target: &StoreTarget) -> Result<LoadedSnapshot> {
 /// the guard's rationale. [`load_with_wal`] deliberately skips this
 /// preamble: it re-loads a base for a WAL the caller already holds, not
 /// a fresh open.
-fn load_snapshot_with_schema_guard(target: &StoreTarget) -> Result<LoadedSnapshot> {
-    let loaded = load_with_checkpoint_lsn(target)?;
+fn load_snapshot_with_schema_guard<G: SnapshotGraph>(
+    target: &StoreTarget,
+) -> Result<LoadedSnapshot<G>> {
+    let loaded = load_with_checkpoint_lsn::<G>(target)?;
     crate::schema_files::verify_open_schema_files(
         target,
         &loaded.graph,
@@ -157,7 +166,7 @@ fn sweep_after_open(target: &StoreTarget) -> Result<()> {
 /// A supported-older store is migrated to the current format before the
 /// first query is served (ADR-0127: migrate-on-open, hands-off,
 /// forward-only); see [`open_store_with_report`].
-pub fn open_store(target: &StoreTarget) -> Result<(Graph, Wal)> {
+pub fn open_store<G: SnapshotGraph>(target: &StoreTarget) -> Result<(G, Wal)> {
     let (graph, wal, _, _) = open_store_with_report(target)?;
     Ok((graph, wal))
 }
@@ -167,7 +176,9 @@ pub fn open_store(target: &StoreTarget) -> Result<(Graph, Wal)> {
 /// replay walked (the last op wins), so a set that no checkpoint covered
 /// yet survives the reopen. `None` when the store holds no ontology.
 #[doc(hidden)]
-pub fn open_store_with_ontology(target: &StoreTarget) -> Result<(Graph, Wal, Option<String>)> {
+pub fn open_store_with_ontology<G: SnapshotGraph>(
+    target: &StoreTarget,
+) -> Result<(G, Wal, Option<String>)> {
     let (graph, wal, ontology, _) = open_store_with_report(target)?;
     Ok((graph, wal, ontology))
 }
@@ -176,17 +187,17 @@ pub fn open_store_with_ontology(target: &StoreTarget) -> Result<(Graph, Wal, Opt
 ///
 /// Skips migrate-on-open, orphan sweep, and torn-tail trim. Retries when the
 /// manifest changes during the load.
-pub fn open_store_readonly(target: &StoreTarget) -> Result<(Graph, Wal)> {
-    let (graph, wal, _) = open_store_readonly_with_ontology(target)?;
+pub fn open_store_readonly<G: SnapshotGraph>(target: &StoreTarget) -> Result<(G, Wal)> {
+    let (graph, wal, _) = open_store_readonly_with_ontology::<G>(target)?;
     Ok((graph, wal))
 }
 
 /// [`open_store_readonly`] plus the store's current ontology document
 /// (ADR-0120), folded exactly as in [`open_store_with_ontology`].
 #[doc(hidden)]
-pub fn open_store_readonly_with_ontology(
+pub fn open_store_readonly_with_ontology<G: SnapshotGraph>(
     target: &StoreTarget,
-) -> Result<(Graph, Wal, Option<String>)> {
+) -> Result<(G, Wal, Option<String>)> {
     const ATTEMPTS: u32 = 8;
     let mut last_err = None;
     for attempt in 0..ATTEMPTS {
@@ -242,13 +253,15 @@ fn manifest_stamp(target: &StoreTarget) -> Result<Option<Vec<u8>>> {
     snapshot::get_object_opt(target, target.codec.checkpoint_image())
 }
 
-fn open_store_readonly_once(target: &StoreTarget) -> Result<(Graph, Wal, Option<String>)> {
-    let LoadedSnapshot {
+fn open_store_readonly_once<G: SnapshotGraph>(
+    target: &StoreTarget,
+) -> Result<(G, Wal, Option<String>)> {
+    let LoadedSnapshot::<G> {
         graph,
         checkpoint_lsn,
         ontology,
         ..
-    } = load_snapshot_with_schema_guard(target)?;
+    } = load_snapshot_with_schema_guard::<G>(target)?;
     let (wal_vfs, wal_prefix) = target.wal_vfs();
     let wal = Wal::open_readonly(wal_vfs, wal_prefix, checkpoint_lsn)?;
     // The read-only open tail: the one call with no deferred action —
@@ -277,16 +290,16 @@ fn open_store_readonly_once(target: &StoreTarget) -> Result<(Graph, Wal, Option<
 /// `:memory:` never migrates (Decision 7). A store with an unreadable
 /// marker (newer binary, unknown magic) fails at the ADR-0114 gate inside
 /// the load, before any byte mutates.
-pub(crate) fn open_store_with_report(
+pub(crate) fn open_store_with_report<G: SnapshotGraph>(
     target: &StoreTarget,
-) -> Result<(Graph, Wal, Option<String>, version::MigrationReport)> {
-    let LoadedSnapshot {
+) -> Result<(G, Wal, Option<String>, version::MigrationReport)> {
+    let LoadedSnapshot::<G> {
         graph,
         checkpoint_lsn,
         ontology,
         marker,
         deferred,
-    } = load_snapshot_with_schema_guard(target)?;
+    } = load_snapshot_with_schema_guard::<G>(target)?;
     let (wal_vfs, wal_prefix) = target.wal_vfs();
     let mut wal = Wal::open(wal_vfs, wal_prefix, checkpoint_lsn)?;
     // The writable-open tail (ADR-0406 §5), codec-owned through the ops
@@ -323,17 +336,21 @@ pub(crate) fn open_store_with_report(
 }
 
 /// Materialize the live graph: snapshot + streamed WAL records after `checkpoint_lsn`.
-pub fn load_with_wal(target: &StoreTarget, wal: &Wal) -> Result<Graph> {
-    let LoadedSnapshot {
+pub fn load_with_wal<G: SnapshotGraph>(target: &StoreTarget, wal: &Wal) -> Result<G> {
+    let LoadedSnapshot::<G> {
         graph,
         checkpoint_lsn,
         ..
-    } = load_with_checkpoint_lsn(target)?;
+    } = load_with_checkpoint_lsn::<G>(target)?;
     replay_after(&graph, wal, checkpoint_lsn)?;
     Ok(graph)
 }
 
-fn replay_after(graph: &Graph, wal: &Wal, checkpoint_lsn: u64) -> Result<()> {
+fn replay_after(
+    graph: &dyn relate_engine_api::GraphImport,
+    wal: &Wal,
+    checkpoint_lsn: u64,
+) -> Result<()> {
     replay_after_ontology(graph, wal, checkpoint_lsn, None).map(|_| ())
 }
 
@@ -343,7 +360,7 @@ fn replay_after(graph: &Graph, wal: &Wal, checkpoint_lsn: u64) -> Result<()> {
 /// one). The ops themselves are graph no-ops; the document lives with the
 /// store layer.
 fn replay_after_ontology(
-    graph: &Graph,
+    graph: &dyn relate_engine_api::GraphImport,
     wal: &Wal,
     checkpoint_lsn: u64,
     snapshot: Option<String>,

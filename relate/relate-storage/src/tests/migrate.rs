@@ -7,6 +7,8 @@
 
 use super::*;
 use crate::version::Subsystem;
+#[cfg(parquet_codec)]
+use relate_executor::Graph;
 
 #[cfg(parquet_codec)]
 fn commit_node(graph: &Graph, wal: &mut Wal, label: &str) -> u64 {
@@ -62,7 +64,8 @@ fn open_migrates_v1_and_v2_manifest_stores_then_takes_zero_hops() {
             let target = parse_uri(uri.to_str().unwrap()).unwrap();
             legacy_monolith_store(&target, version);
 
-            let (graph, wal, _, report) = open_store_with_report(&target).unwrap();
+            let (graph, wal, _, report) =
+                open_store_with_report::<relate_executor::Graph>(&target).unwrap();
             assert_eq!(
                 report.migrations(),
                 &[(Subsystem::Manifest, u64::from(version))],
@@ -90,7 +93,8 @@ fn open_migrates_v1_and_v2_manifest_stores_then_takes_zero_hops() {
 
             // Second open: current format detected, zero hops.
             let target = parse_uri(uri.to_str().unwrap()).unwrap();
-            let (graph, _wal, _, report) = open_store_with_report(&target).unwrap();
+            let (graph, _wal, _, report) =
+                open_store_with_report::<relate_executor::Graph>(&target).unwrap();
             assert!(report.is_empty(), "second open must not migrate: {report}");
             assert_eq!(graph.live_node_count(), 2);
             assert_eq!(
@@ -109,7 +113,8 @@ fn memory_open_performs_no_migration_writes() {
         legacy_monolith_store(&store, version);
         let before = snapshot::get_object(&store, "manifest.json").unwrap();
 
-        let (graph, _wal, _, report) = open_store_with_report(&store).unwrap();
+        let (graph, _wal, _, report) =
+            open_store_with_report::<relate_executor::Graph>(&store).unwrap();
         // The legacy reader still serves the old store...
         assert_eq!(graph.live_node_count(), 2, "v{version}");
         // ...but :memory: never migrates (ADR-0127 Decision 7): no hops,
@@ -144,7 +149,9 @@ fn corrupt_legacy_store_error_names_the_detected_version() {
     )
     .unwrap();
 
-    let err = open_store(&target).err().expect("corrupt store must fail");
+    let err = open_store::<relate_executor::Graph>(&target)
+        .err()
+        .expect("corrupt store must fail");
     assert!(matches!(err, Error::Storage(_)), "{err}");
     // The failure names the monolith object, then the detected version.
     assert_eq!(
@@ -166,7 +173,8 @@ fn open_migrates_legacy_json_value_encoding_then_takes_zero_hops() {
                 .unwrap();
         snapshot::put_object(&target, "graph.json", LEGACY_JSON_GRAPH.as_bytes()).unwrap();
 
-        let (graph, wal, _, report) = open_store_with_report(&target).unwrap();
+        let (graph, wal, _, report) =
+            open_store_with_report::<relate_executor::Graph>(&target).unwrap();
         assert_eq!(report.migrations(), &[(Subsystem::ValueEncoding, 1)]);
         assert_eq!(graph.live_node_count(), 1);
         assert_eq!(
@@ -185,7 +193,8 @@ fn open_migrates_legacy_json_value_encoding_then_takes_zero_hops() {
         let target =
             parse_uri_with_options(uri.to_str().unwrap(), None, Some(SnapshotCodecKind::Json))
                 .unwrap();
-        let (graph, _wal, _, report) = open_store_with_report(&target).unwrap();
+        let (graph, _wal, _, report) =
+            open_store_with_report::<relate_executor::Graph>(&target).unwrap();
         assert!(report.is_empty(), "second open must not migrate: {report}");
         assert_eq!(graph.live_node_count(), 1);
     }
@@ -199,7 +208,8 @@ fn memory_json_open_performs_no_migration_writes() {
     snapshot::put_object(&store, "graph.json", LEGACY_JSON_GRAPH.as_bytes()).unwrap();
     let before = snapshot::get_object(&store, "graph.json").unwrap();
 
-    let (graph, _wal, _, report) = open_store_with_report(&store).unwrap();
+    let (graph, _wal, _, report) =
+        open_store_with_report::<relate_executor::Graph>(&store).unwrap();
     assert_eq!(graph.live_node_count(), 1);
     assert!(report.is_empty(), ":memory: must not migrate: {report}");
     assert_eq!(
@@ -233,7 +243,7 @@ fn crash_between_payload_write_and_manifest_publish_remigrates_identically() {
         // so a real crash here leaves them intact).
         let (wv, prefix) = target.wal_vfs();
         let wal = Wal::open(wv, prefix, 0).unwrap();
-        let graph = load_with_wal(&target, &wal).unwrap();
+        let graph = load_with_wal::<relate_executor::Graph>(&target, &wal).unwrap();
         assert_eq!(graph.live_node_count(), 2);
         checkpoint_with_lsn(&target, &graph, wal.lsn, None).unwrap();
         snapshot::put_object(&target, "nodes.parquet", &old_nodes).unwrap();
@@ -250,7 +260,8 @@ fn crash_between_payload_write_and_manifest_publish_remigrates_identically() {
         // the crashed attempt's orphan payloads are swept and the contents
         // are identical to a clean migration.
         let target = parse_uri(uri.to_str().unwrap()).unwrap();
-        let (graph, wal, _, report) = open_store_with_report(&target).unwrap();
+        let (graph, wal, _, report) =
+            open_store_with_report::<relate_executor::Graph>(&target).unwrap();
         assert_eq!(report.migrations(), &[(Subsystem::Manifest, 2)]);
         assert_eq!(graph.live_node_count(), 2, "checkpoint row plus WAL tail");
         assert!(graph.node(0).is_some() && graph.node(1).is_some());
@@ -268,7 +279,8 @@ fn crash_between_payload_write_and_manifest_publish_remigrates_identically() {
 
         // The re-migrated store is current: a further open takes zero hops.
         let target = parse_uri(uri.to_str().unwrap()).unwrap();
-        let (graph, _wal, _, report) = open_store_with_report(&target).unwrap();
+        let (graph, _wal, _, report) =
+            open_store_with_report::<relate_executor::Graph>(&target).unwrap();
         assert!(
             report.is_empty(),
             "post-crash re-open must not migrate: {report}"
@@ -295,7 +307,9 @@ fn corrupt_legacy_json_store_error_names_the_detected_version() {
     let target =
         parse_uri_with_options(uri.to_str().unwrap(), None, Some(SnapshotCodecKind::Json)).unwrap();
 
-    let err = open_store(&target).err().expect("corrupt store must fail");
+    let err = open_store::<relate_executor::Graph>(&target)
+        .err()
+        .expect("corrupt store must fail");
     assert!(matches!(err, Error::Storage(_)), "{err}");
     assert!(
         err.to_string().contains("value_encoding 1"),
@@ -387,7 +401,8 @@ fn current_json_open_reads_graph_json_exactly_once() {
     let counting = Arc::new(ReadCountingVfs::new(store.vfs()));
     let mut counted = store.clone();
     counted.vfs = counting.clone();
-    let (graph, _wal, _, report) = open_store_with_report(&counted).unwrap();
+    let (graph, _wal, _, report) =
+        open_store_with_report::<relate_executor::Graph>(&counted).unwrap();
     assert_eq!(graph.live_node_count(), 1);
     assert!(
         report.is_empty(),

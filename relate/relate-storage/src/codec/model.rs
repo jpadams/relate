@@ -6,11 +6,10 @@
 
 use relate_catalog::{ConstraintDef, IndexDef};
 use relate_core::{Node, Relationship, Result};
-use relate_executor::Graph;
 
 use super::catalog::{self, CatalogWire};
 use relate_core::Error;
-use relate_executor::CheckpointTheater;
+use relate_engine_api::{CheckpointTheater, SnapshotGraph};
 
 pub(crate) struct SnapshotContents {
     pub nodes: Vec<Node>,
@@ -32,7 +31,10 @@ impl SnapshotContents {
     /// own dump paths and their own copies of the guard (see
     /// `snapshot::native`); unifying those onto one shared check is a
     /// follow-up, not this change.
-    pub(crate) fn from_graph(graph: &Graph, snapshot_ts: u64) -> Result<Self> {
+    pub(crate) fn from_graph(
+        graph: &dyn relate_engine_api::GraphImport,
+        snapshot_ts: u64,
+    ) -> Result<Self> {
         if snapshot_ts == u64::MAX {
             return Err(Error::storage("snapshot timestamp exhausted"));
         }
@@ -52,7 +54,11 @@ impl SnapshotContents {
 
     /// Nodes for a Parquet id window. Missing ids are skipped, matching the
     /// previous direct `node_at` loop.
-    pub(crate) fn nodes_in(graph: &Graph, snapshot_ts: u64, ids: &[i64]) -> Result<Vec<Node>> {
+    pub(crate) fn nodes_in(
+        graph: &dyn relate_engine_api::GraphImport,
+        snapshot_ts: u64,
+        ids: &[i64],
+    ) -> Result<Vec<Node>> {
         let mut nodes = Vec::new();
         for id in ids {
             let Some(n) = graph.node_at(*id, snapshot_ts) else {
@@ -65,7 +71,7 @@ impl SnapshotContents {
     }
 
     pub(crate) fn rels_in(
-        graph: &Graph,
+        graph: &dyn relate_engine_api::GraphImport,
         snapshot_ts: u64,
         ids: &[i64],
     ) -> Result<Vec<Relationship>> {
@@ -101,12 +107,12 @@ impl SnapshotRows {
     /// catalog restore. Takes `self` and moves the rows out: no caller
     /// needs them afterwards, and a shared tail must not add a clone per
     /// row to the load path.
-    pub(crate) fn into_graph(
+    pub(crate) fn into_graph<G: SnapshotGraph>(
         mut self,
         wire: CatalogWire,
         envelope_commit_ts: Option<u64>,
         theater: Option<CheckpointTheater>,
-    ) -> Result<Graph> {
+    ) -> Result<G> {
         if self.next_node_id < 0 || self.next_rel_id < 0 {
             return Err(Error::storage("snapshot has unsupported next ID"));
         }
@@ -114,7 +120,7 @@ impl SnapshotRows {
         // each row through `load_checkpoint_node`/`load_checkpoint_rel`,
         // which validate the identical ids (one pass per row type, not
         // two).
-        let graph = Graph::default();
+        let graph = G::default();
         graph.set_next_node_id(self.next_node_id);
         graph.set_next_rel_id(self.next_rel_id);
         let rows = self.nodes.len() + self.relationships.len();
@@ -175,7 +181,9 @@ mod tests {
         graph
     }
 
-    fn signature(graph: &Graph) -> Vec<(i64, Vec<String>, i64, i64, String)> {
+    fn signature(
+        graph: &dyn relate_engine_api::GraphImport,
+    ) -> Vec<(i64, Vec<String>, i64, i64, String)> {
         let mut rows = Vec::new();
         for id in graph.all_node_ids_at(graph.commit_ts()) {
             let n = graph.node_at(id, graph.commit_ts()).unwrap();
@@ -197,7 +205,7 @@ mod tests {
 
         let json = memory_store_with_codec(SnapshotCodecKind::Json).unwrap();
         checkpoint(&json, &graph, None).unwrap();
-        let from_json = load(&json).unwrap();
+        let from_json = load::<relate_executor::Graph>(&json).unwrap();
 
         #[cfg(parquet_codec)]
         let from_parquet = {

@@ -18,7 +18,6 @@
 use std::sync::Arc;
 
 use relate_core::{Error, Node, PropertyMap, Relationship, Result};
-use relate_executor::Graph;
 use rkyv::{Archive, Deserialize, Serialize};
 
 use super::catalog;
@@ -294,7 +293,7 @@ fn decode_props(
 
 pub fn dump(
     target: &StoreTarget,
-    graph: &Graph,
+    graph: &dyn relate_engine_api::GraphImport,
     checkpoint_lsn: u64,
     snapshot_ts: u64,
     ontology: Option<&str>,
@@ -490,7 +489,9 @@ pub(crate) fn has_store_files(target: &StoreTarget) -> Result<bool> {
 
 /// The load path: zero-copy access (validation only) into the archive, then
 /// the shared rebuild tail.
-pub(crate) fn load_with_checkpoint_lsn(target: &StoreTarget) -> Result<LoadedSnapshot> {
+pub(crate) fn load_with_checkpoint_lsn<G: relate_engine_api::SnapshotGraph>(
+    target: &StoreTarget,
+) -> Result<LoadedSnapshot<G>> {
     let Some((manifest, marker)) = super::read_codec_manifest(target)? else {
         return Ok(LoadedSnapshot::empty(0));
     };

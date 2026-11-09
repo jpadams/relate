@@ -67,7 +67,7 @@ fn open_wide(uri: &std::path::Path) -> (StoreTarget, Graph, Wal, crate::version:
         Some(crate::CodecOpenConfig::ParquetWide),
     )
     .unwrap();
-    let (graph, wal, _, report) = open_store_with_report(&target).unwrap();
+    let (graph, wal, _, report) = open_store_with_report::<Graph>(&target).unwrap();
     (target, graph, wal, report)
 }
 
@@ -88,7 +88,7 @@ fn wide_opt_in_re_encodes_a_legacy_store_once_and_sticks() {
     legacy_v3_shard_store(&plain);
     {
         let target = parse_uri(plain.to_str().unwrap()).unwrap();
-        let (opened, wal, _, report) = open_store_with_report(&target).unwrap();
+        let (opened, wal, _, report) = open_store_with_report::<Graph>(&target).unwrap();
         assert!(
             report.is_empty(),
             "a current v3 store does not migrate: {report}"
@@ -148,7 +148,7 @@ fn wide_opt_in_re_encodes_a_legacy_store_once_and_sticks() {
     // The wide store stays wide without the opt-in.
     {
         let target = parse_uri(optin.to_str().unwrap()).unwrap();
-        let (opened, wal, _, report) = open_store_with_report(&target).unwrap();
+        let (opened, wal, _, report) = open_store_with_report::<Graph>(&target).unwrap();
         assert!(report.is_empty(), "{report}");
         let before = on_disk_manifest(&target).node_parts[0].path.clone();
         checkpoint_with_lsn(&target, &opened, wal.lsn, None).unwrap();
@@ -212,7 +212,7 @@ fn a_wide_checkpoint_copies_clean_rows_and_keeps_every_property() {
     // Reopened, every row carries exactly the properties it had before
     // the copying checkpoint.
     let target = parse_uri(uri.to_str().unwrap()).unwrap();
-    let (opened, _wal, _, _) = open_store_with_report(&target).unwrap();
+    let (opened, _wal, _, _) = open_store_with_report::<Graph>(&target).unwrap();
     let after: Vec<Vec<(String, relate_core::Value)>> =
         (0..6).map(|i| node_properties(&opened, i)).collect();
     assert_eq!(after, before, "every row keeps every property");

@@ -29,13 +29,20 @@ pub(crate) mod rkyv {
     use super::{codec_unavailable, SnapshotCodecKind};
     use crate::snapshot::LoadedSnapshot;
     use crate::{Result, StoreTarget};
-    use relate_executor::Graph;
 
-    pub fn dump(_: &StoreTarget, _: &Graph, _: u64, _: u64, _: Option<&str>) -> Result<()> {
+    pub fn dump(
+        _: &StoreTarget,
+        _: &dyn relate_engine_api::GraphImport,
+        _: u64,
+        _: u64,
+        _: Option<&str>,
+    ) -> Result<()> {
         Err(codec_unavailable(SnapshotCodecKind::Rkyv))
     }
 
-    pub(crate) fn load_with_checkpoint_lsn(_: &StoreTarget) -> Result<LoadedSnapshot> {
+    pub(crate) fn load_with_checkpoint_lsn<G: relate_engine_api::SnapshotGraph>(
+        _: &StoreTarget,
+    ) -> Result<LoadedSnapshot<G>> {
         Err(codec_unavailable(SnapshotCodecKind::Rkyv))
     }
 
@@ -79,6 +86,18 @@ pub(crate) struct Envelope {
     pub(crate) checkpoint_lsn: u64,
     #[serde(default)]
     pub(crate) commit_ts: u64,
+    #[serde(default = "default_query_engine")]
+    pub(crate) query_engine: String,
+    #[serde(default = "default_write_engine")]
+    pub(crate) write_engine: String,
+}
+
+fn default_query_engine() -> String {
+    relate_engine_api::MEMORY_QUERY_ENGINE.to_owned()
+}
+
+fn default_write_engine() -> String {
+    relate_engine_api::LOCAL_WRITE_ENGINE.to_owned()
 }
 
 impl Envelope {
@@ -211,6 +230,7 @@ pub(crate) fn read_envelope(target: &StoreTarget) -> Result<Option<Envelope>> {
     if env.codec == SnapshotCodecKind::Markdown {
         return Err(root_envelope_names_markdown());
     }
+    crate::manifest::reject_foreign_engine(&env.query_engine, &env.write_engine)?;
     Ok(Some(env))
 }
 

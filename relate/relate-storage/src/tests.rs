@@ -1,5 +1,6 @@
 use super::*;
 use relate_catalog::ConstraintDef;
+use relate_executor::Graph;
 use std::sync::Arc;
 
 mod bundle;
@@ -92,6 +93,8 @@ pub(crate) fn bare_manifest(
         constraints: vec![],
         theater: None,
         ontology_path: None,
+        query_engine: relate_engine_api::MEMORY_QUERY_ENGINE.to_owned(),
+        write_engine: relate_engine_api::LOCAL_WRITE_ENGINE.to_owned(),
     }
 }
 
@@ -169,7 +172,7 @@ fn snapshot_is_wal_applied_state() {
     checkpoint_with_lsn(&store, &g, wal.lsn, None).unwrap();
     let cut = wal.rotate().unwrap();
     wal.recycle(cut).unwrap();
-    let loaded = load_with_wal(&store, &wal).unwrap();
+    let loaded = load_with_wal::<relate_executor::Graph>(&store, &wal).unwrap();
     assert_eq!(loaded.live_node_count(), 1);
     assert_eq!(
         loaded.node(0).unwrap().properties["name"],
@@ -195,12 +198,12 @@ fn legacy_wal_label_constraint_replays_with_typed_marker_after_recycle() {
         });
         wal.append_commit(1, &[old]).unwrap();
         wal.sync().unwrap();
-        let graph = load_with_wal(&store, &wal).unwrap();
+        let graph = load_with_wal::<relate_executor::Graph>(&store, &wal).unwrap();
         assert_eq!(graph.named_constraints().len(), 1);
         checkpoint_with_lsn(&store, &graph, wal.lsn, None).unwrap();
         let cut = wal.rotate().unwrap();
         wal.recycle(cut).unwrap();
-        let recovered = load_with_wal(&store, &wal).unwrap();
+        let recovered = load_with_wal::<relate_executor::Graph>(&store, &wal).unwrap();
         assert_eq!(recovered.named_constraints(), graph.named_constraints());
         assert_eq!(
             recovered.checkpoint_theater().enforced_label("old_rule"),
@@ -264,7 +267,10 @@ fn direct_graph_incomplete_label_constraint_fails_before_checkpoint_writes() {
                 "{codec:?}: the failed checkpoint rewrote {path}"
             );
         }
-        assert!(load(&store).unwrap().named_constraints().is_empty());
+        assert!(load::<relate_executor::Graph>(&store)
+            .unwrap()
+            .named_constraints()
+            .is_empty());
     }
 }
 
@@ -431,7 +437,10 @@ fn typed_checkpoint_rejects_forged_legacy_unknown_markers_in_compiled_codecs() {
             crate::snapshot::put_object(&store, image, &serde_json::to_vec(&forged).unwrap())
                 .unwrap();
             assert!(
-                matches!(load(&store), Err(Error::Storage(_))),
+                matches!(
+                    load::<relate_executor::Graph>(&store),
+                    Err(Error::Storage(_))
+                ),
                 "{codec:?}: {name}"
             );
         }
@@ -442,7 +451,7 @@ fn typed_checkpoint_rejects_forged_legacy_unknown_markers_in_compiled_codecs() {
 fn materialize_replays_wal_without_snapshot() {
     let store = memory_store();
     let (_g, wal) = person_ada();
-    let loaded = load_with_wal(&store, &wal).unwrap();
+    let loaded = load_with_wal::<relate_executor::Graph>(&store, &wal).unwrap();
     assert_eq!(loaded.live_node_count(), 1);
 }
 
@@ -488,7 +497,7 @@ fn startup_streams_many_frames_across_segments_and_preserves_pull_redo() {
         }
         drop(wal);
 
-        let (loaded, mut reopened) = open_store(&store).unwrap();
+        let (loaded, mut reopened) = open_store::<relate_executor::Graph>(&store).unwrap();
         assert_eq!(reopened.lsn, 1_501);
         assert_eq!(reopened.commits, 750);
         assert_eq!(reopened.checkpoint_pin(), (751, 751));
@@ -548,13 +557,13 @@ fn streaming_recovery_trims_corrupt_active_tail_and_fails_without_publishing_int
 
         // Streaming recovery of the already-open handle tolerates the
         // bad-EOF frame and publishes the committed prefix.
-        let graph = load_with_wal(&store, &wal).unwrap();
+        let graph = load_with_wal::<relate_executor::Graph>(&store, &wal).unwrap();
         assert_eq!(graph.commit_ts(), 1);
         assert!(graph.node(0).is_some());
         drop(wal);
 
         // Reopen trims the damaged suffix; the committed prefix survives.
-        let (graph, reopened) = open_store(&store).unwrap();
+        let (graph, reopened) = open_store::<relate_executor::Graph>(&store).unwrap();
         assert_eq!(graph.commit_ts(), 1);
         assert!(graph.node(0).is_some());
         assert_eq!(reopened.lsn, 1);
@@ -591,12 +600,15 @@ fn streaming_recovery_trims_corrupt_active_tail_and_fails_without_publishing_int
         let before = vfs::read_to_vec(&*vfs, path).unwrap();
 
         assert!(matches!(
-            load_with_wal(&store, &wal),
+            load_with_wal::<relate_executor::Graph>(&store, &wal),
             Err(Error::Storage(_))
         ));
         assert_eq!(vfs::read_to_vec(&*vfs, path).unwrap(), before);
         drop(wal);
-        assert!(matches!(open_store(&store), Err(Error::Storage(_))));
+        assert!(matches!(
+            open_store::<relate_executor::Graph>(&store),
+            Err(Error::Storage(_))
+        ));
         assert_eq!(vfs::read_to_vec(&*vfs, path).unwrap(), before);
     }
 }
@@ -643,7 +655,7 @@ fn json_codec_full_rewrite_roundtrip() {
     let cut = wal.rotate().unwrap();
     wal.recycle(cut).unwrap();
     assert!(snapshot::object_exists(&store, "graph.json").unwrap());
-    let loaded = load_with_wal(&store, &wal).unwrap();
+    let loaded = load_with_wal::<relate_executor::Graph>(&store, &wal).unwrap();
     assert_eq!(loaded.live_node_count(), 1);
     assert_eq!(
         loaded.node(0).unwrap().properties["name"],
@@ -689,7 +701,7 @@ fn json_codec_mixed_types_match_relate_graphdata() {
     let props = &v["nodes"][0]["properties"];
     assert_eq!(props["n"], 7);
     assert_eq!(props["pt"]["__type"], "point");
-    let loaded = load(&store).unwrap();
+    let loaded = load::<relate_executor::Graph>(&store).unwrap();
     assert_eq!(
         loaded.node(0).unwrap().properties["n"],
         relate_core::Value::Int(7)
@@ -703,7 +715,7 @@ fn json_import_graphdata_without_manifest() {
     std::fs::write(dir.path().join("graph.json"), LEGACY_JSON_GRAPH).unwrap();
     let target = parse_uri_with_options(uri, None, Some(SnapshotCodecKind::Json)).unwrap();
     assert_eq!(target.snapshot_codec(), SnapshotCodecKind::Json);
-    let (g, _wal) = open_store(&target).unwrap();
+    let (g, _wal) = open_store::<relate_executor::Graph>(&target).unwrap();
     assert_eq!(g.live_node_count(), 1);
     assert_eq!(
         g.node(1).unwrap().properties["name"],

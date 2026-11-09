@@ -27,7 +27,7 @@ pub(crate) struct CodecManifest {
         deserialize_with = "crate::manifest::deserialize_checkpoint_theater",
         skip_serializing_if = "Option::is_none"
     )]
-    pub(crate) theater: Option<relate_executor::CheckpointTheater>,
+    pub(crate) theater: Option<relate_engine_api::CheckpointTheater>,
     #[serde(flatten)]
     pub(crate) catalog: catalog::CatalogWire,
     /// Whether the store selects an ontology document — the content flag
@@ -45,7 +45,7 @@ pub(crate) fn write_codec_manifest(
     codec: SnapshotCodecKind,
     checkpoint_lsn: u64,
     commit_ts: u64,
-    theater: Option<relate_executor::CheckpointTheater>,
+    theater: Option<relate_engine_api::CheckpointTheater>,
     wire: catalog::CatalogWire,
     ontology: Option<&str>,
 ) -> Result<()> {
@@ -57,6 +57,8 @@ pub(crate) fn write_codec_manifest(
             codec,
             checkpoint_lsn,
             commit_ts,
+            query_engine: relate_engine_api::MEMORY_QUERY_ENGINE.to_owned(),
+            write_engine: relate_engine_api::LOCAL_WRITE_ENGINE.to_owned(),
         },
         theater,
         catalog: wire,
@@ -165,12 +167,12 @@ pub(crate) fn publication_failure(error: Error, rollback: Result<()>) -> Error {
 /// flag and the decoded payload's document are cross-checked here: the
 /// content fact is written to both carriers, so a store where they
 /// disagree is a corrupt or forged image and fails closed.
-pub(crate) fn assemble_loaded(
+pub(crate) fn assemble_loaded<G: relate_engine_api::SnapshotGraph>(
     rows: SnapshotRows,
     manifest: &CodecManifest,
     ontology: Option<String>,
     marker: crate::version::SnapshotMarker,
-) -> Result<LoadedSnapshot> {
+) -> Result<LoadedSnapshot<G>> {
     if manifest.has_ontology != ontology.is_some() {
         return Err(Error::storage(format!(
             "manifest {} the ontology document the payload {}",

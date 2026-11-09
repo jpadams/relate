@@ -23,6 +23,7 @@ pub mod nested_eval;
 pub mod plan_rung;
 #[cfg(feature = "pokec")]
 pub mod pokec;
+pub mod recording_engine;
 pub mod rng;
 pub mod sampling;
 pub mod temporal;

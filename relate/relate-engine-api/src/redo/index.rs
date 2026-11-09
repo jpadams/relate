@@ -78,7 +78,7 @@ impl IndexKindSpec {
     /// The table lives beside [`IndexKindSpec::display_name`] and
     /// [`IndexKindSpec::provider_name`] so a new kind states its default
     /// here, never in a `_`-glued match one layer above.
-    pub(crate) fn default_config(&self) -> Option<fn(&mut BTreeMap<String, Value>)> {
+    pub fn default_config(&self) -> Option<fn(&mut BTreeMap<String, Value>)> {
         match self {
             IndexKindSpec::Point => Some(apply_point_defaults),
             IndexKindSpec::Fulltext => Some(apply_fulltext_defaults),
@@ -327,7 +327,8 @@ impl IndexFacts {
 /// backing-constraint joins done once, in the caller's order, for the
 /// statement-scoped index readers; the SHOW row resolves its own rows
 /// through the same [`backing_constraint_by_name`] join this shares.
-pub(crate) fn resolve_index_facts(
+#[doc(hidden)]
+pub fn resolve_index_facts(
     indexes: &[relate_catalog::IndexDef],
     details: &std::collections::BTreeMap<String, IndexDetailSpec>,
     constraints: &[relate_catalog::ConstraintDef],
@@ -346,7 +347,8 @@ pub(crate) fn resolve_index_facts(
 /// one owner-constraint join every index reader resolves through (moved
 /// from `exec::catalog` beside `IndexFacts`, its every consumer: the
 /// SHOW row, the graph-counts row, and [`resolve_index_facts`]).
-pub(crate) fn backing_constraint_by_name<'a>(
+#[doc(hidden)]
+pub fn backing_constraint_by_name<'a>(
     name: &str,
     constraints: &'a [relate_catalog::ConstraintDef],
 ) -> Option<&'a relate_catalog::ConstraintDef> {
@@ -406,7 +408,7 @@ impl IndexDetailSpec {
     /// so leading-only coverage would under-report it. A relationship index
     /// never yields a node pair, and a property name is never split on a
     /// comma.
-    pub(crate) fn range_seek_pairs(&self) -> Vec<(&str, &str)> {
+    pub fn range_seek_pairs(&self) -> Vec<(&str, &str)> {
         self.covered_pairs()
             .into_iter()
             .filter_map(|(label, property, kind)| {

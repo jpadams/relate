@@ -126,7 +126,7 @@ fn rkyv_ontology_checkpoint_reopens_current() {
     let graph = rich();
     let store = memory_store_with_codec(SnapshotCodecKind::Rkyv).unwrap();
     checkpoint(&store, &graph, Some("(:Person {name: 'Ada'})")).unwrap();
-    let loaded = crate::codec::rkyv::load_with_checkpoint_lsn(&store).unwrap();
+    let loaded = crate::codec::rkyv::load_with_checkpoint_lsn::<Graph>(&store).unwrap();
     assert!(
         matches!(loaded.marker, crate::version::SnapshotMarker::Current),
         "an ontology-bearing rkyv store must reopen as Current, got {:?}",
@@ -149,7 +149,7 @@ fn rkyv_corrupt_archive_fails_closed() {
     let last = bytes.len() - 1;
     bytes[last] ^= 0xff;
     crate::snapshot::put_object(&store, crate::codec::GRAPH_RKYV, &bytes).unwrap();
-    let error = load(&store).expect_err("a corrupt archive must not load");
+    let error = load::<Graph>(&store).expect_err("a corrupt archive must not load");
     assert!(
         error
             .to_string()
@@ -174,7 +174,7 @@ fn rkyv_declared_length_beyond_the_block_ceiling_fails_closed() {
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
     bytes.extend_from_slice(&[0u8; 16]);
     crate::snapshot::put_object(&store, crate::codec::GRAPH_RKYV, &bytes).unwrap();
-    let error = load(&store).expect_err("a bomb declaration must not load");
+    let error = load::<Graph>(&store).expect_err("a bomb declaration must not load");
     assert!(
         error.to_string().contains("beyond the"),
         "unexpected error: {error}"
@@ -195,7 +195,7 @@ fn rkyv_null_theater_fails_closed() {
     .unwrap();
     let forged = text.replacen('{', "{\"theater\": null,", 1);
     crate::snapshot::put_object(&store, crate::snapshot::MANIFEST_JSON, forged.as_bytes()).unwrap();
-    let error = load(&store).expect_err("a null theater must not load");
+    let error = load::<Graph>(&store).expect_err("a null theater must not load");
     // The refusal is the canonical theater decoder's (the one the Parquet
     // and markdown manifests share): an explicit null is not a
     // CheckpointTheater, so the manifest fails to parse.

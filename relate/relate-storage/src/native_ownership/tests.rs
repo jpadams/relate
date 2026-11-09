@@ -188,7 +188,7 @@ fn offline_adoption_recovers_pre_adr_snapshot_and_wal_without_lock_files() {
     assert_eq!(std::fs::read(&wal_path).unwrap(), frames);
     adopt_native_default_wal(&root).unwrap(); // stable, idempotent roles
     let target = parse_uri(root.to_str().unwrap()).unwrap();
-    let (restored, replayed) = open_store(&target).unwrap();
+    let (restored, replayed) = open_store::<relate_executor::Graph>(&target).unwrap();
     assert_eq!(replayed.lsn, 2);
     // ADR-0127: the legacy store (no `value_encoding` marker) migrated on
     // open — checkpointed at the current format, WAL rotated to a fresh
@@ -519,7 +519,7 @@ fn markerless_legacy_root_with_typed_default_wal_reopens() {
     // Windows. Directory metadata is unaffected by the byte-range lock and
     // proves the marker is the empty (not a typed) role.
     assert_eq!(std::fs::metadata(root.join(LOCK_MARKER)).unwrap().len(), 0);
-    let (_graph, replayed) = open_store(&target).unwrap();
+    let (_graph, replayed) = open_store::<relate_executor::Graph>(&target).unwrap();
     assert!(replayed.lsn > 0);
     drop((replayed, target));
     drop(parse_uri(root.to_str().unwrap()).unwrap());
@@ -729,7 +729,7 @@ fn default_wal_alias_retarget_does_not_redirect_open_replay_or_rotation() {
     std::fs::remove_file(&alias).unwrap();
     symlink(&wal_b, &alias).unwrap(); // between lease and open_store
 
-    let (graph, mut wal) = open_store(&target).unwrap();
+    let (graph, mut wal) = open_store::<relate_executor::Graph>(&target).unwrap();
     assert_eq!(graph.live_node_count(), 0);
     wal.append_commit(
         1,
@@ -760,7 +760,7 @@ fn default_wal_alias_retarget_does_not_redirect_open_replay_or_rotation() {
     std::fs::remove_file(&alias).unwrap();
     symlink(&wal_a, &alias).unwrap();
     let reopened = parse_uri(root.to_str().unwrap()).unwrap();
-    let (graph, wal) = open_store(&reopened).unwrap();
+    let (graph, wal) = open_store::<relate_executor::Graph>(&reopened).unwrap();
     assert_eq!(wal.lsn, 1);
     assert_eq!(graph.live_node_count(), 1);
     assert!(graph.node(0).is_some());
@@ -817,7 +817,12 @@ fn failed_reset_staging_restores_intact_root_and_external_wal() {
     assert_eq!(std::fs::read(root.join("old")).unwrap(), b"root");
     assert_eq!(std::fs::read(wal.join("old")).unwrap(), b"wal");
     let recovered = parse_uri_with_wal(root.to_str().unwrap(), Some(wal)).unwrap();
-    assert_eq!(load(&recovered).unwrap().live_node_count(), 1);
+    assert_eq!(
+        load::<relate_executor::Graph>(&recovered)
+            .unwrap()
+            .live_node_count(),
+        1
+    );
 }
 
 #[test]
@@ -864,12 +869,22 @@ fn failed_reset_does_not_replace_fresh_owner_and_retains_recoverable_tombstone()
         .to_string()
         .contains(&tombstone_canonical.display().to_string()));
     let recovered = parse_uri(tombstone.to_str().unwrap()).unwrap();
-    assert_eq!(load(&recovered).unwrap().live_node_count(), 1);
+    assert_eq!(
+        load::<relate_executor::Graph>(&recovered)
+            .unwrap()
+            .live_node_count(),
+        1
+    );
     drop(recovered);
     reset_uri(root.to_str().unwrap(), None).unwrap();
     std::fs::rename(&tombstone, &root).unwrap();
     let restored = parse_uri(root.to_str().unwrap()).unwrap();
-    assert_eq!(load(&restored).unwrap().live_node_count(), 1);
+    assert_eq!(
+        load::<relate_executor::Graph>(&restored)
+            .unwrap()
+            .live_node_count(),
+        1
+    );
 }
 
 #[cfg(unix)]

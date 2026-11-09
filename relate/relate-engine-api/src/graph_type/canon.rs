@@ -15,7 +15,7 @@ use relate_parser::PredefinedKind;
 /// nullable `inner` under a `NOT NULL` `outer`; `ANY` is the top; a union
 /// `inner` needs every member covered; a union `outer` covers through any
 /// member.
-pub(crate) fn canon_allows(outer: &CanonType, inner: &CanonType) -> bool {
+pub fn canon_allows(outer: &CanonType, inner: &CanonType) -> bool {
     if outer.not_null && !inner.not_null {
         return false;
     }
@@ -54,7 +54,7 @@ pub(crate) fn canon_allows(outer: &CanonType, inner: &CanonType) -> bool {
 /// rule): `ANY` is the identity; a shared predefined kind or list/vector
 /// element intersects recursively; everything else falls to `NULL` (the
 /// CIP's not-instantiable marker, `NOTHING` once nullability combines).
-pub(crate) fn canon_intersection(a: &CanonType, b: &CanonType) -> CanonType {
+pub fn canon_intersection(a: &CanonType, b: &CanonType) -> CanonType {
     let not_null = a.not_null || b.not_null;
     let kind = match (&a.kind, &b.kind) {
         (CanonKind::Predefined(PredefinedKind::Any), x)
