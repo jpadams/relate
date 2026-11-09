@@ -10,7 +10,7 @@ import PackageDescription
 // GitHub release. Never edit by hand. Between releases they name the previous
 // release.
 let releaseTag = "v0.1.1"
-let releaseChecksum = "7945e93a8d14aab0ff049090b2181fb80d4b6187272209f7861432478e000e76"
+let releaseChecksum = "3f465554101538bc2984d4718a4933abd7b0871060fba6565016b1bdd885b1bf"
 
 // RELATE_LOCAL_XCFRAMEWORK=1 links the locally built binary
 // (scripts/build-xcframework.sh) instead: a checkout that builds from source
