@@ -186,6 +186,7 @@ struct Measurement {
     load: Duration,
     engine_bytes: u64,
     dir_bytes: u64,
+    parts: usize,
 }
 
 fn measure(codec: SnapshotCodecKind, graph: &Graph, repeats: u32, root: &Path) -> Measurement {
@@ -193,6 +194,7 @@ fn measure(codec: SnapshotCodecKind, graph: &Graph, repeats: u32, root: &Path) -
     let mut best_load = Duration::MAX;
     let mut engine_bytes = 0u64;
     let mut on_disk = 0u64;
+    let mut parts = 0usize;
     let expected = signature(graph);
     for round in 0..repeats {
         let dir = root.join(format!("{}-{round}", codec.as_str()));
@@ -206,6 +208,9 @@ fn measure(codec: SnapshotCodecKind, graph: &Graph, repeats: u32, root: &Path) -
         // The public cold read's total: the same walk the engine's own
         // info path takes, bundle stores included.
         on_disk = store_info(&dir).expect("store info").total_bytes;
+        // The RCA's dominant write term is part multiplication, so the
+        // report carries the part-file count, not just the byte totals.
+        parts = count_part_files(&dir);
         let started = Instant::now();
         let reloaded = load(&target).expect("load");
         best_load = best_load.min(started.elapsed());
@@ -223,7 +228,29 @@ fn measure(codec: SnapshotCodecKind, graph: &Graph, repeats: u32, root: &Path) -
         load: best_load,
         engine_bytes,
         dir_bytes: on_disk,
+        parts,
     }
+}
+
+
+/// The store's Parquet part files: the write tax's dominant term.
+fn count_part_files(dir: &Path) -> usize {
+    fn walk(p: &Path, n: &mut usize) {
+        let Ok(entries) = std::fs::read_dir(p) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                walk(&path, n);
+            } else if path.extension().is_some_and(|x| x == "parquet") {
+                *n += 1;
+            }
+        }
+    }
+    let mut n = 0;
+    walk(dir, &mut n);
+    n
 }
 
 /// The one source parser: `fraud:<scale>` (a bare number is the same
@@ -294,17 +321,18 @@ fn main() {
 /// The measurement table and the parquet-relative size ratios.
 fn print_report(rows: &[Measurement]) {
     println!(
-        "\n{:<8} {:>12} {:>12} {:>14} {:>14}",
-        "codec", "checkpoint", "load", "snapshot bytes", "dir bytes"
+        "\n{:<8} {:>12} {:>12} {:>14} {:>14} {:>6}",
+        "codec", "checkpoint", "load", "snapshot bytes", "dir bytes", "parts"
     );
     for row in rows {
         println!(
-            "{:<8} {:>10.1}ms {:>10.1}ms {:>14} {:>14}",
+            "{:<8} {:>10.1}ms {:>10.1}ms {:>14} {:>14} {:>6}",
             row.codec.as_str(),
             row.checkpoint.as_secs_f64() * 1000.0,
             row.load.as_secs_f64() * 1000.0,
             row.engine_bytes,
-            row.dir_bytes
+            row.dir_bytes,
+            row.parts
         );
     }
     // The lab's own manifest compiles parquet and measures every

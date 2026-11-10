@@ -64,7 +64,7 @@ const MAX_DECODED: u64 = 2 << 30;
 
 /// Rows held and flushed together (ADR-0180). The old 64-row prefix sample
 /// used the same width; it is a row-group cap now, not a size estimate.
-pub(crate) const ROW_GROUP_CAP: usize = 64;
+pub(crate) const ROW_GROUP_CAP: usize = 1024;
 
 /// Pages a row group writes per leaf column while its values fit one data
 /// page: a dictionary page and a data page.
