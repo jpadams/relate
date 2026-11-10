@@ -55,13 +55,22 @@ actions:
   build-sonic-rust:
     runner: docker-cli
     docker_socket: true
+    # Docker Desktop exposes the socket as root:root 660, and a host gid does not
+    # match it. The socket is root-equivalent on the host, so these stages run as root
+    # as they did before the hardened runner.
+    user: root
     once: true
-    # The image downloads cargo-nextest from a GitHub release. The
-    # docker CLI container only sees mapped vars; the Dockerfile reads
-    # the token from a BuildKit secret, not from the layer history.
-    environment: &github-download-env
-      GITHUB_TOKEN: GITHUB_TOKEN
-      GITHUB_ACTIONS: GITHUB_ACTIONS
+    # The image downloads cargo-nextest from a GitHub release. secrets
+    # copies those host variables into the container. The Dockerfile
+    # reads the token from a BuildKit secret, not from the layer history.
+    # optional_secrets passes an empty value when the host has none.
+    optional_secrets: &github-download-secrets
+      - GITHUB_TOKEN
+      - GITHUB_ACTIONS
+    # The stage runs as the host uid, which has no home in this image.
+    # Point the docker CLI config at a writable path.
+    environment:
+      DOCKER_CONFIG: /tmp/docker-config
     commands:
       - |
         set -eu
@@ -76,7 +85,13 @@ actions:
   build-sonic-polyglot:
     runner: docker-cli
     docker_socket: true
+    # Docker Desktop exposes the socket as root:root 660, and a host gid does not
+    # match it. The socket is root-equivalent on the host, so these stages run as root
+    # as they did before the hardened runner.
+    user: root
     once: true
+    environment:
+      DOCKER_CONFIG: /tmp/docker-config
     commands:
       - docker build --pull=false -t localhost/relate-sonic-polyglot:1.88 -f .sonic/docker/sonic-polyglot.Dockerfile .sonic/docker
 
@@ -255,6 +270,11 @@ stages:
 
   python:
     runner: sonic-polyglot
+    # Runs as the host uid, like the cargo stages. The cargo cache volumes
+    # belong to that uid and root has no capabilities to override that, so
+    # a root stage cannot write them. Python packages go into a venv under
+    # /tmp instead of the system site-packages. The notebook stage shares
+    # this anchor.
     before: &before-polyglot
       - build-sonic-rust
       - build-sonic-polyglot
@@ -264,19 +284,22 @@ stages:
       CARGO_TARGET_DIR: /cargo-target/python
     volumes: *cargo-cache
     commands:
+      # --seed puts pip in the venv: a notebook cell runs `python -m pip install`.
+      - &python-venv uv venv --seed /tmp/venv && export VIRTUAL_ENV=/tmp/venv PATH="/tmp/venv/bin:$PATH"
       - cargo test -p relate-python
       - cd surfaces/relate-python
-      - uv pip install --system pytest pyarrow neo4j-viz
+      - uv pip install pytest pyarrow neo4j-viz
       # The dev-profile bindings install the notebook stage shares
       # (LABS-622): the --profile dev flag lives on this anchor once.
-      - &python-dev-install uv pip install --system . --config-settings="build-args=--profile dev"
+      - &python-dev-install uv pip install . --config-settings="build-args=--profile dev"
       - python -m pytest python/tests/ -v
 
   link-check:
     runner: sonic-rust
+    # install-lychee.sh writes /usr/local/bin.
+    user: root
     before: *before-rust
-    environment:
-      <<: *github-download-env
+    optional_secrets: *github-download-secrets
     commands:
       - bash scripts/install-lychee.sh
       - lychee --config lychee.toml --no-progress --root-dir "$(pwd)/docs" README.md docs/guides docs/reference
@@ -298,15 +321,17 @@ stages:
 
   notebook:
     runner: sonic-polyglot
+    # Host uid plus a venv, for the reason given on the python stage.
     before: *before-polyglot
     environment:
       <<: *cargo-env
       CARGO_TARGET_DIR: /cargo-target/notebook
     volumes: *cargo-cache
     commands:
+      - *python-venv
       - cd surfaces/relate-python
       # networkx + matplotlib: the obsidian vault demo's static-viz cell.
-      - uv pip install --system nbconvert ipykernel pyarrow pandas networkx matplotlib
+      - uv pip install nbconvert ipykernel pyarrow pandas networkx matplotlib
       - *python-dev-install
       - python -m ipykernel install --user --name python3
       - cd /workspace
@@ -431,9 +456,10 @@ stages:
     shell: bash
     before: *before-polyglot
     environment:
-      <<: [ *cargo-env, *github-download-env ]
+      <<: *cargo-env
       CARGO_TARGET_DIR: /cargo-target/npm-smoke
       RELATE_LIB: /cargo-target/npm-smoke/debug/librelate_ffi.so
+    optional_secrets: *github-download-secrets
     volumes: *cargo-cache
     commands:
       # The shared wasm toolchain setup (LABS-622): wasm-bindgen +
@@ -464,31 +490,29 @@ stages:
 
   loadtest-baselines:
     runner: sonic-rust
+    # Docker Desktop exposes the socket as root:root 660.
+    user: root
     docker_socket: true
     before: *before-rust
+    # Host values copied by name (LABS-627). Anchored once and reused by
+    # every Docker-baseline stage below. The workspace variable is the host
+    # checkout, so baseline-env.sh can bind-mount it through the host
+    # Docker daemon. The runner label is the ADR-0071 class the job
+    # sets. GITHUB_ACTIONS makes baseline-fingerprint stamp
+    # github-actions:ubuntu-24.04 and makes an in-stage compare hard-fail
+    # on a class mismatch. CI_COMPARE turns the memory compares into hard
+    # failures. optional_secrets passes each name as empty when the host
+    # has no value, which the stages treat as not provided. These stages
+    # mount the Docker socket, so they do not receive GITHUB_TOKEN. The
+    # CLI and buildx are installed in the sonic-rust image, and the token
+    # stays on that image build.
+    optional_secrets: &baseline-env-forwarding
+      - GITHUB_WORKSPACE
+      - BASELINE_RUNNER
+      - GITHUB_ACTIONS
+      - CI_COMPARE
     environment:
-      # The baseline env-forwarding trio, the single home (LABS-627):
-      # merged into every Docker-baseline stage's environment below.
-      # The gosonic container only receives explicitly mapped vars, so
-      # each forwarded name must be declared here. Host checkout path,
-      # so baseline-env.sh can bind-mount it through the host Docker
-      # daemon; the ADR-0071 class label the job sets (without it the
-      # fingerprint's hardcoded ubuntu-24.04 fallback stamps the wrong
-      # class); the host Actions flag, so baseline-fingerprint stamps
-      # runner as github-actions:ubuntu-24.04 and the in-stage compares
-      # hard-fail on a class mismatch instead of soft-skipping. All
-      # unset locally; the literals are ignored.
-      # The spec-sanctioned sequence form merges both maps: the
-      # forwarding trio (anchored here, its contract comments the single
-      # home), the shared cargo env, and the GitHub-download token
-      # (anchored on build-sonic-rust). buildx is a GitHub release.
-      <<:
-        - &baseline-env-forwarding
-          GITHUB_WORKSPACE: GITHUB_WORKSPACE
-          BASELINE_RUNNER: BASELINE_RUNNER
-          GITHUB_ACTIONS: GITHUB_ACTIONS
-        - *cargo-env
-        - *github-download-env
+      <<: *cargo-env
       CARGO_TARGET_DIR: /cargo-target/loadtest-baselines
     volumes: *cargo-cache
     commands:
@@ -506,12 +530,15 @@ stages:
   # ADR-0289).
   query-latency:
     runner: sonic-rust
+    # Docker Desktop exposes the socket as root:root 660.
+    user: root
     docker_socket: true
     before: *before-rust
+    # The baseline secrets and the Docker-baseline setup step, both
+    # anchored in loadtest-baselines (LABS-627).
+    optional_secrets: *baseline-env-forwarding
     environment:
-      # The baseline env-forwarding trio and the Docker-baseline setup
-      # step, both anchored in loadtest-baselines (LABS-627).
-      <<: [ *baseline-env-forwarding, *cargo-env, *github-download-env ]
+      <<: *cargo-env
       CARGO_TARGET_DIR: /cargo-target/query-latency
     volumes: *cargo-cache
     commands:
@@ -523,12 +550,14 @@ stages:
   # calibration. The full three-repeat matrix is memory-controls-full.
   memory-controls:
     runner: sonic-rust
+    # Docker Desktop exposes the socket as root:root 660.
+    user: root
     docker_socket: true
     before: *before-rust
+    optional_secrets: *baseline-env-forwarding
     environment:
-      <<: [ *baseline-env-forwarding, *cargo-env, *github-download-env ]
+      <<: *cargo-env
       CARGO_TARGET_DIR: /cargo-target/memory-controls
-      CI_COMPARE: CI_COMPARE
     volumes: *cargo-cache
     commands:
       - *baseline-docker-setup
@@ -537,12 +566,14 @@ stages:
 
   memory-controls-full:
     runner: sonic-rust
+    # Docker Desktop exposes the socket as root:root 660.
+    user: root
     docker_socket: true
     before: *before-rust
+    optional_secrets: *baseline-env-forwarding
     environment:
-      <<: [ *baseline-env-forwarding, *cargo-env, *github-download-env ]
+      <<: *cargo-env
       CARGO_TARGET_DIR: /cargo-target/memory-controls-full
-      CI_COMPARE: CI_COMPARE
     volumes: *cargo-cache
     commands:
       - *baseline-docker-setup
@@ -553,24 +584,26 @@ stages:
   # matrix; the freeze repeats it.
   memory-shape:
     runner: sonic-rust
+    # Docker Desktop exposes the socket as root:root 660.
+    user: root
     docker_socket: true
     before: *before-rust
+    optional_secrets: *baseline-env-forwarding
     environment:
-      <<: [ *baseline-env-forwarding, *cargo-env, *github-download-env ]
+      <<: *cargo-env
       CARGO_TARGET_DIR: /cargo-target/memory-shape
-      CI_COMPARE: CI_COMPARE
     volumes: *cargo-cache
     commands:
       - *baseline-docker-setup
       - make memory-shape-loadtest
       - make compare-memory-shape
 
-  # `make clean` as root. Stage outputs are root-owned, and the cargo
-  # caches are Docker volumes. Run this on its own, after the other stages
-  # have finished:
+  # apk and make clean need root. The cargo caches are Docker volumes.
+  # Run this on its own, after the other stages have finished:
   #   gosonic ci run clean
   clean:
     runner: docker-cli
+    user: root
     docker_socket: true
     commands:
       - apk add --no-cache make

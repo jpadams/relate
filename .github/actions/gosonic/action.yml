@@ -64,6 +64,10 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Check the Sonic socket policy
+      shell: bash
+      run: bash scripts/check-sonic-socket-policy.sh
+
     # Before the Sonic run so the restore lands on the host, and so the
     # rust-cache post step (the save) runs after the copy-back below.
     # Mold and sccache are passed through because both are hashed into the
@@ -89,12 +93,20 @@ runs:
       shell: bash
       run: bash scripts/sonic-cache-sync.sh seed "${{ inputs.cache-target }}"
 
+    # Root stages run with every capability dropped, so they cannot create
+    # files in a directory the runner owns. The memory reports, the
+    # compare doc, and the verdict are written into target/, which is
+    # also what the upload reads. Mode 1777 lets the stage create them.
+    - name: Make target writable for the stage
+      shell: bash
+      run: mkdir -p target && chmod 1777 target
+
     - name: Run Sonic stage
       shell: bash
       env:
-        # Stages that download a GitHub release map this into the
-        # container (.sonic/ci.yml). The public releases/download URL
-        # is anonymous even with a header, so the scripts use the API.
+        # Stages that download a GitHub release list this name under
+        # secrets (.sonic/ci.yml). The public releases/download URL is
+        # anonymous even with a header, so the scripts use the API.
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         install -m 0755 "${{ runner.temp }}/gosonic-bin/gosonic" /usr/local/bin/gosonic
