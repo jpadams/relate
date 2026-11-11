@@ -18,8 +18,25 @@ pub struct IndexDef {
 /// index_text`]'s own text, the plan tree's `AllNodesScan` suggestion,
 /// the `LabelDisjunctionScan` warning's per-label pairs), never a
 /// per-site `format!`.
+///
+/// Names are untrusted query text rendered into plain-text plan
+/// narration, so control characters (ESC, newline, tab, NUL, ...) render
+/// as `\u{..}` escapes and can never reach a terminal or log line raw.
+/// Printable text, non-ASCII included, is unchanged.
 pub fn index_schema_text(label: &str, property: &str) -> String {
-    format!(":{label}({property})")
+    format!(":{}({})", escape_control(label), escape_control(property))
+}
+
+fn escape_control(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if c.is_control() {
+            out.extend(c.escape_unicode());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 impl IndexDef {
@@ -468,6 +485,15 @@ impl Catalog {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn index_schema_text_escapes_control_characters() {
+        assert_eq!(index_schema_text("Person", "naïve"), ":Person(naïve)");
+        assert_eq!(
+            index_schema_text("A\x1b[2J", "p\n\tq\0"),
+            ":A\\u{1b}[2J(p\\u{a}\\u{9}q\\u{0})"
+        );
+    }
+
     use super::*;
 
     /// The canonical constraint fixture: one name/label/property, with the
