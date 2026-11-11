@@ -760,6 +760,8 @@ mod rel_list_binding_tests;
 #[cfg(test)]
 mod rel_seek_tests;
 #[cfg(test)]
+mod shortest_divergence_tests;
+#[cfg(test)]
 mod shortest_expression_tests;
 #[cfg(test)]
 mod shortest_path_tests;
