@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-11-11
+
 ### Changed
 
 - Opening an `s3://` URI reports that object storage belongs to clients
@@ -33,8 +35,9 @@ First release of Relate — the embedded, in-memory property graph engine
 with an openCypher query contract, WAL + snapshot durability, and Bolt
 serving. See the README for the full surface list.
 
-[Unreleased]: https://github.com/relatedb/relate/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/relatedb/relate/compare/v1.0.0...HEAD
 
+[1.0.0]: https://github.com/relatedb/relate/compare/v0.1.3...v1.0.0
 [0.1.3]: https://github.com/relatedb/relate/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/relatedb/relate/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/relatedb/relate/compare/v0.1.0...v0.1.1
