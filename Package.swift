@@ -9,8 +9,8 @@ import PackageDescription
 // (scripts/stamp-swift-package.sh) from the XCFramework zip it attaches to the
 // GitHub release. Never edit by hand. Between releases they name the previous
 // release.
-let releaseTag = "v0.1.2"
-let releaseChecksum = "9848a95d8da9bda261723506fd91546a3d749dc0a386d07d0a31c6f549e0224f"
+let releaseTag = "v0.1.3"
+let releaseChecksum = "56607f462a729f31282cd7cb27420b58752911bc95977291f326fe2b7144f6a0"
 
 // RELATE_LOCAL_XCFRAMEWORK=1 links the locally built binary
 // (scripts/build-xcframework.sh) instead: a checkout that builds from source
