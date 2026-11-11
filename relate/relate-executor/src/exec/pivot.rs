@@ -102,12 +102,11 @@ pub(super) fn cheapest_start_expansion(
         graph,
         path,
         params,
-        cypher_version,
         residual,
         ..
     } = *pm;
     let np = &path.nodes[k];
-    let candidates = node_candidates(graph, np, &row, params, cypher_version, residual.conjuncts)?;
+    let candidates = node_candidates(graph, np, &row, params, residual.conjuncts)?;
     // The residual's ready conjuncts, derived once for the whole candidate
     // loop (every candidate binds the same names before the residual
     // runs), not re-derived per scanned node — with the gate-settled
@@ -133,14 +132,14 @@ pub(super) fn cheapest_start_expansion(
         if !predicate_spec::candidate_ok(graph, gate, id)? {
             continue;
         }
-        if gate.is_none() && !node_ok(graph, id, np, &row, params, cypher_version)? {
+        if gate.is_none() && !node_ok(graph, id, np, &row, params)? {
             continue;
         }
         let mut row2 = row.clone();
         if !bind_pattern_node(graph, &mut row2, np, id, k, path.has_path_name(), node_rung) {
             continue;
         }
-        if !super::pushdown::conjuncts_hold(graph, &row2, &ready, params, cypher_version)? {
+        if !super::pushdown::conjuncts_hold(graph, &row2, &ready, params)? {
             continue;
         }
         // LABS-448: the walk phase, through the one wrapper — inclusive
@@ -477,7 +476,6 @@ fn backward_candidate(
         graph,
         path,
         params,
-        cypher_version,
         residual,
         ..
     } = *pm;
@@ -489,7 +487,6 @@ fn backward_candidate(
         graph,
         row,
         params,
-        cypher_version,
         RelHop {
             pattern: rp,
             filter: &pm.rel_filters[idx - 1],
@@ -552,7 +549,7 @@ fn backward_candidate(
     // (`(a {p: a.q})`) must evaluate identically in both walk
     // directions, and binding first would let the backward walk see
     // the candidate's own value where the forward walk sees unbound.
-    if gate.is_none() && !node_ok(graph, prev, np, &row2, params, cypher_version)? {
+    if gate.is_none() && !node_ok(graph, prev, np, &row2, params)? {
         return Ok(());
     }
     if !bind_pattern_node(
@@ -568,14 +565,7 @@ fn backward_candidate(
     }
     // The gate-settled conjuncts skip the re-run (predicate_spec.rs): the
     // gate evaluated them under the candidate's own read.
-    if !residual_ok_skipping(
-        graph,
-        &row2,
-        params,
-        cypher_version,
-        residual,
-        pm.spec.settled_conjuncts(),
-    )? {
+    if !residual_ok_skipping(graph, &row2, params, residual, pm.spec.settled_conjuncts())? {
         return Ok(());
     }
     if rel_idx == 0 {

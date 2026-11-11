@@ -72,10 +72,9 @@ fn eval_window_int(
     input: &Row,
     expr: &Expr,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     clause: &str,
 ) -> Result<usize> {
-    match eval(graph, input, expr, params, cypher_version)? {
+    match eval(graph, input, expr, params)? {
         Value::Int(value) if (0..=i32::MAX as i64).contains(&value) => Ok(value as usize),
         _ => Err(Error::syntax(format!(
             "NumberOutOfRange: SEARCH {clause} must be an INTEGER NOT NULL"
@@ -97,12 +96,7 @@ fn fulltext_index_candidates(
     offset: usize,
     limit: usize,
 ) -> Result<(EntityKind, Vec<(Value, f64)>)> {
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     // The shared SEARCH index resolution (stellar round 3, std-6): the
     // schema read, the missing-index policy, and the wrong-kind
     // rejection are the one spelling in `exec::candidates`, shared with
@@ -118,9 +112,7 @@ fn fulltext_index_candidates(
     // analyzer, and the value's own NULL/unknown-name/type rejections are
     // `Analyzer::from_value`'s.
     let analyzer = match &index.analyzer {
-        Some(expr) => {
-            fulltext::Analyzer::from_value(&eval(graph, input, expr, params, cypher_version)?)?
-        }
+        Some(expr) => fulltext::Analyzer::from_value(&eval(graph, input, expr, params)?)?,
         None => fulltext::Analyzer::Standard,
     };
     let kind = EntityKind::from_relationship_flag(detail.relationship);
@@ -193,38 +185,19 @@ fn search_index_candidates(
     index: &SearchIndexSpec,
     extra_candidates: usize,
 ) -> Result<Option<SpecCandidates>> {
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
-    let limit = eval_window_int(
-        graph,
-        input,
-        &index.limit_expr,
-        params,
-        cypher_version,
-        "LIMIT",
-    )?;
+    let ExecCtx { graph, params, .. } = ctx;
+    let limit = eval_window_int(graph, input, &index.limit_expr, params, "LIMIT")?;
     // The caller's growth demand widens the fetched window only; the
     // clause's LIMIT stays the number of survivors it keeps.
     let window = limit.saturating_add(extra_candidates);
     // CIP-225 `<offset clause>`, shared by both kinds.
     let offset = match &index.offset_expr {
-        Some(expr) => eval_window_int(
-            graph,
-            input,
-            expr.as_ref(),
-            params,
-            cypher_version,
-            "SKIP/OFFSET",
-        )?,
+        Some(expr) => eval_window_int(graph, input, expr.as_ref(), params, "SKIP/OFFSET")?,
         None => 0,
     };
     // The FOR expression is the query for both kinds — evaluated once,
     // each arm only interprets the resulting value.
-    let query = eval(graph, input, &index.for_expr, params, cypher_version)?;
+    let query = eval(graph, input, &index.for_expr, params)?;
     let (kind, candidates) = match index.kind {
         SearchKind::Vector => {
             let Some(query) = vector_operand(&query)? else {
@@ -341,14 +314,9 @@ fn search_combine_candidates(
     ranked.sort_by(|a, b| ranked_better_cmp(b.1, b.0, a.1, a.0));
     // Rule 7: the combined specification's own optional LIMIT keeps the n
     // highest-scoring fused results.
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     let limit = match &combine.limit_expr {
-        Some(expr) => eval_window_int(graph, input, expr, params, cypher_version, "LIMIT")?,
+        Some(expr) => eval_window_int(graph, input, expr, params, "LIMIT")?,
         None => usize::MAX,
     };
     let candidates = ranked
@@ -371,13 +339,8 @@ fn search_combine_candidates(
 /// at most Java's `Integer.MAX_VALUE` (2147483647). Any other value (NULL
 /// included) is the CIP's invalid-type error.
 fn eval_wrrf_number(ctx: ExecCtx<'_>, input: &Row, expr: &Expr, clause: &str) -> Result<f64> {
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
-    let value = eval(graph, input, expr, params, cypher_version)?;
+    let ExecCtx { graph, params, .. } = ctx;
+    let value = eval(graph, input, expr, params)?;
     let number = match &value {
         Value::Int(number) => *number as f64,
         Value::Float(number) => *number,
@@ -698,13 +661,7 @@ fn deferred_search_rows(
                 let mut scored = row.clone();
                 attach_score(&mut scored, search.score_var.as_ref(), Value::Float(score));
                 let holds = match where_clause {
-                    Some(predicate) => predicate_holds(
-                        ctx.graph,
-                        &scored,
-                        predicate,
-                        ctx.params,
-                        ctx.cypher_version,
-                    )?,
+                    Some(predicate) => predicate_holds(ctx.graph, &scored, predicate, ctx.params)?,
                     None => true,
                 };
                 where_ok[index] = Some(holds);

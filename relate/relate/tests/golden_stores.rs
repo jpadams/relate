@@ -470,11 +470,10 @@ fn assert_catalog_rows(conn: &mut Connection) {
 
 /// ADR-0116 §1/§8: exactly the three fixed namespaces. The fixture's
 /// `CREATE DATABASE analytics`/`CREATE DATABASE staging` theater rows
-/// (snapshot and WAL tail) are ignored on load.
+/// (snapshot and WAL tail) are ignored on load, and so is the fixture's
+/// `ALTER DATABASE … SET DEFAULT LANGUAGE CYPHER 5` catalog record:
+/// `defaultLanguage` is the constant `CYPHER 25` (ADR-0576 Decision 4/§5).
 fn assert_fixed_namespaces(conn: &mut Connection) {
-    // ADR-0116 §1/§8: exactly the three fixed namespaces. The fixture's
-    // `CREATE DATABASE analytics`/`CREATE DATABASE staging` theater rows
-    // (snapshot and WAL tail) are ignored on load.
     let r = conn
         .query(
             "SHOW DATABASES YIELD name, type, home, defaultLanguage \
@@ -501,7 +500,7 @@ fn assert_fixed_namespaces(conn: &mut Connection) {
                 "neo4j".to_string(),
                 "standard".to_string(),
                 true,
-                "CYPHER 5".to_string(),
+                "CYPHER 25".to_string(),
             ),
             (
                 "system".to_string(),

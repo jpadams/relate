@@ -241,7 +241,6 @@ fn prepare_vector_filters<'a>(
     graph: &ExecGraph<'_>,
     input: &Row,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Vec<PreparedVectorFilter<'a>>> {
     let additional: HashSet<_> = detail.with_properties.iter().map(String::as_str).collect();
     let invalid_rhs = || Error::ty("InvalidValueType: invalid vector search filter RHS type");
@@ -256,7 +255,7 @@ fn prepare_vector_filters<'a>(
         }
         let value = filter
             .rhs()
-            .map(|rhs| eval(graph, input, rhs, params, cypher_version))
+            .map(|rhs| eval(graph, input, rhs, params))
             .transpose()?;
         let prepared = match filter {
             SearchFilterPred::Comparison { property, op, .. } => {
@@ -313,20 +312,14 @@ pub(crate) fn vector_index_candidates(
     limit: usize,
     filter: VectorSearchFilter<'_>,
 ) -> Result<(EntityKind, Vec<(Value, f64)>)> {
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     let VectorSearchFilter { filters, input } = filter;
     let (detail, property, metric) = resolve_vector_index(graph, index_name, query)?;
     // The per-search query facts (ADR-0256 hoist, stellar round 2 bundle):
     // norm and zero-guard are shared by every candidate's cosine.
     let prepared = PreparedQuery::prepare(query);
     let kind = EntityKind::from_relationship_flag(detail.relationship);
-    let evaluated_filters =
-        prepare_vector_filters(filters, &detail, kind, graph, input, params, cypher_version)?;
+    let evaluated_filters = prepare_vector_filters(filters, &detail, kind, graph, input, params)?;
     // ADR-0256: the unfiltered path never materializes a `Value` per scored
     // candidate — only the ≤ offset+limit survivors become entities below.
     // Filtered (CIP-235 `WITH`) searches still evaluate properties per

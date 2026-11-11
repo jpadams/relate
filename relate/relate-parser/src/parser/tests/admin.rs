@@ -28,23 +28,11 @@ fn test_unsupported_administration_truncations_never_panic() {
     }
 }
 
-// ADR-0116 §2: the one supported form -- a sole `SET DEFAULT
-// LANGUAGE CYPHER <n>` item with no WAIT -- still parses to a real
-// `Clause::AlterDatabase`.
-#[test]
-fn test_alter_database_set_default_language_stays_supported() {
-    for q in [
-        "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
-        "ALTER DATABASE neo4j IF EXISTS SET DEFAULT LANGUAGE CYPHER 25",
-    ] {
-        let stmt = parse(q).unwrap_or_else(|e| panic!("{q:?} must parse: {e}"));
-        assert!(
-            matches!(stmt.clauses.as_slice(), [Clause::AlterDatabase(_)]),
-            "{q:?} must lower to Clause::AlterDatabase, got {:?}",
-            stmt.clauses
-        );
-    }
-}
+// ADR-0576 Decision 3: every `ALTER DATABASE` form — `SET DEFAULT
+// LANGUAGE` included — is a recognized-but-unsupported administration
+// command; the rejection is pinned by the shared TSV table above
+// (`unsupported_admin_commands`), which carries the formerly supported
+// forms as rows.
 
 // ADR-0116 §2: `START`/`STOP`/`ALIAS` are recognized as command
 // keywords only in the exact command shape; everywhere else they stay

@@ -1,17 +1,19 @@
 //! ADR-0116 §2/§6: fixed namespaces with Neo4j Community Edition database
 //! semantics. Every database administration command outside CE's
 //! supported set fails with `UnsupportedAdministrationCommand` (51N27),
-//! echoing the statement verbatim (without a leading `CYPHER n`);
-//! `ALTER DATABASE <name> [IF EXISTS] SET DEFAULT LANGUAGE CYPHER 5|25`
-//! is the one supported alteration, and `SHOW DATABASES` reports the
-//! three fixed namespaces. Amended 2026-11-04: a `USE` clause targeting a
-//! non-system namespace on an administration-command statement is
-//! rejected with CE's 42N79 auto-routing text, and a `WITH` composing an
-//! administration command on `system` is rejected with CE's
+//! echoing the statement verbatim; the supported set is the SHOW
+//! commands alone — `SHOW DATABASE[S]`, `SHOW DEFAULT/HOME DATABASE`
+//! (ADR-0576 Decision 3 moved every `ALTER DATABASE` form, `SET DEFAULT
+//! LANGUAGE` included, into the rejection) — and `SHOW DATABASES`
+//! reports the three fixed namespaces with the constant `defaultLanguage`
+//! `CYPHER 25` (ADR-0576 Decision 4). Amended 2026-11-04: a `USE` clause
+//! targeting a non-system namespace on an administration-command
+//! statement is rejected with CE's 42N79 auto-routing text, and a `WITH`
+//! composing an administration command on `system` is rejected with CE's
 //! composability text (the §4 whitelist completed) — both pinned against
 //! live CE 2026.09 (testdata/ce-errors/neo4j-ce.json).
 
-use relate::{Database, Namespace, Value};
+use relate::{Database, Value};
 
 mod common;
 
@@ -19,8 +21,7 @@ use common::{
     connection, err_text, error_class_literal, USE_WITH_ADMIN_SUFFIX, WITH_ON_SYSTEM_SUFFIX,
 };
 
-/// The statement is echoed verbatim; a leading `CYPHER n` preamble is
-/// stripped from the echo.
+/// The statement is echoed verbatim.
 fn assert_unsupported(src: &str, echoed: &str) {
     let err = connection().query(src).unwrap_err().to_string();
     let expected =
@@ -48,55 +49,6 @@ fn unsupported_administration_commands_echo_the_statement() {
     for (src, echoed) in unsupported_admin_commands() {
         assert_unsupported(src, echoed);
     }
-}
-
-#[test]
-fn alter_database_set_default_language_succeeds_on_every_fixed_namespace() {
-    let mut conn = connection();
-    for (name, version) in [
-        ("neo4j", 5),
-        ("system", 25),
-        ("system_ontologies", 5),
-        // Names match case-insensitively (ADR-0116 §1).
-        ("NEO4J", 25),
-    ] {
-        conn.query(&format!(
-            "ALTER DATABASE {name} SET DEFAULT LANGUAGE CYPHER {version}"
-        ))
-        .unwrap();
-        let shown = conn
-            .query(&format!("SHOW DATABASE {name} YIELD name, defaultLanguage"))
-            .unwrap();
-        assert_eq!(
-            shown.rows,
-            vec![vec![
-                Value::String(
-                    Namespace::parse(name)
-                        .unwrap_or_else(|| panic!("unexpected namespace {name}"))
-                        .as_str()
-                        .into(),
-                ),
-                Value::String(format!("CYPHER {version}").into()),
-            ]],
-            "wrong row after ALTER DATABASE {name}"
-        );
-    }
-}
-
-#[test]
-fn alter_database_unknown_name_fails_unless_if_exists() {
-    let mut conn = connection();
-    let err = conn
-        .query("ALTER DATABASE movies SET DEFAULT LANGUAGE CYPHER 5")
-        .unwrap_err()
-        .to_string();
-    assert!(
-        err.ends_with("Failed to alter the specified database 'movies': Database does not exist."),
-        "wrong error: {err}"
-    );
-    // `IF EXISTS` makes the same command a no-op.
-    conn.query("ALTER DATABASE movies IF EXISTS SET DEFAULT LANGUAGE CYPHER 5")
-        .unwrap();
 }
 
 #[test]
@@ -140,19 +92,17 @@ fn show_databases_reports_the_three_fixed_namespaces() {
     );
 }
 
-/// ADR-0116 §8/§10 regression: the databases catalog is store-level, so an
-/// `ALTER DATABASE` write (routed to the `neo4j` graph's catalog) and a
-/// `SHOW DATABASES ... RETURN ...` read on a `system` session — composed
-/// with RETURN, so the plan is not an all-Catalog admin command and runs on
-/// the `system` graph — can never diverge on `defaultLanguage`. Per-graph
-/// theater copies did: the `system` slot's statically seeded theater kept
-/// showing `CYPHER 25`.
+/// ADR-0116 §2 / ADR-0576 Decision 4: `SHOW DATABASES` reports the
+/// constant `CYPHER 25` on every fixed namespace, whichever spelling
+/// reads it — the all-Catalog routing and the RETURN-composed plan on a
+/// `system` session cannot disagree, because the column is a constant,
+/// never a stored fact (the former per-graph theater divergence the
+/// store-level catalog fixed is unreachable with nothing stored to
+/// diverge on).
 #[test]
-fn alter_and_system_session_show_databases_agree_on_default_language() {
+fn show_databases_agrees_across_sides_and_namespaces() {
     let db = Database::open(":memory:").unwrap();
     let mut conn = db.connect().unwrap();
-    conn.query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5")
-        .unwrap();
 
     // Column order varies with the projection (`RETURN *` sorts), so find
     // the columns by name and return neo4j's `defaultLanguage`.
@@ -183,12 +133,12 @@ fn alter_and_system_session_show_databases_agree_on_default_language() {
         .unwrap();
     assert_eq!(
         neo4j_language(admin),
-        Value::String("CYPHER 5".into()),
+        Value::String("CYPHER 25".into()),
         "admin-routed SHOW DATABASES"
     );
 
     // The RETURN-composed spelling runs on the session's own graph; on a
-    // `system` session it reads the same store-level catalog.
+    // `system` session it reports the same constant.
     let mut system = db.connect_namespace("system").unwrap();
     for src in [
         "SHOW DATABASES YIELD name, defaultLanguage RETURN *",
@@ -197,8 +147,8 @@ fn alter_and_system_session_show_databases_agree_on_default_language() {
         let result = system.query(src).unwrap_or_else(|e| panic!("{src}: {e}"));
         assert_eq!(
             neo4j_language(result),
-            Value::String("CYPHER 5".into()),
-            "{src}: system session disagrees with ALTER DATABASE"
+            Value::String("CYPHER 25".into()),
+            "{src}: the system session must report the constant"
         );
     }
     // A bare SHOW DATABASES on the same system session still runs (42N17
@@ -328,7 +278,6 @@ fn use_targeting_non_system_with_administration_command_is_rejected() {
         "USE neo4j SHOW DEFAULT DATABASE",
         "USE neo4j SHOW HOME DATABASE",
         "USE neo4j SHOW DATABASE neo4j",
-        "USE neo4j ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
         "USE neo4j SHOW DATABASES YIELD name RETURN name",
         // A UNION arm headed by the command is still a headed statement
         // (live CE 2026.09 answers 42N79 for this shape).
@@ -365,9 +314,8 @@ fn use_targeting_non_system_with_administration_command_is_rejected() {
 /// The complement the 42N79 rule keeps: `USE system` + administration
 /// command stays accepted — bare, composed, and the multi-command shape
 /// the harness's "SHOW DEFAULT DATABASE and SHOW DATABASES return the same
-/// database row" scenario pins. Live CE 2026.09 rejects even `USE system
-/// ALTER DATABASE …` with 42N79; Relate deliberately keeps the whole
-/// `USE system` + §2 surface runnable (ADR-0116 §2's Later references).
+/// database row" scenario pins (recorded in ADR-0116 §2's Later
+/// references).
 #[test]
 fn use_system_with_administration_command_stays_accepted() {
     let mut conn = connection();
@@ -376,10 +324,6 @@ fn use_system_with_administration_command_stays_accepted() {
         "USE system SHOW DATABASES YIELD name RETURN name",
         "USE system SHOW DEFAULT DATABASE YIELD name AS defaultDb \
          SHOW DATABASES YIELD name AS db, access WHERE defaultDb = db RETURN *",
-        "USE system ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25",
-        // A CYPHER 25 preamble rides along (the composable-SHOW contract
-        // is a Cypher 25 feature in Neo4j).
-        "CYPHER 25 USE system SHOW DATABASES",
     ] {
         conn.query(src)
             .unwrap_or_else(|e| panic!("{src} should stay accepted: {e}"));

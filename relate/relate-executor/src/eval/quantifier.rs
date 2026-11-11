@@ -76,13 +76,8 @@ pub(crate) fn eval_quantifier(
     list: &Expr,
     predicate: &Expr,
 ) -> Result<Value> {
-    let EvalCtx {
-        graph,
-        row,
-        params,
-        cypher_version,
-    } = ctx;
-    let list_v = eval(graph, row, list, params, cypher_version)?;
+    let EvalCtx { graph, row, params } = ctx;
+    let list_v = eval(graph, row, list, params)?;
     let items = match list_v {
         Value::List(xs) => xs,
         Value::Null => return Ok(Value::Null),
@@ -91,7 +86,7 @@ pub(crate) fn eval_quantifier(
     fold_quantifier(kind, into_items(items), |item| {
         let mut r = row.clone();
         r.insert(ident.to_string(), item);
-        let p = eval(graph, &r, predicate, params, cypher_version)?;
+        let p = eval(graph, &r, predicate, params)?;
         bool_or_null(&p, "quantifier WHERE")
     })
 }
@@ -104,14 +99,9 @@ pub(crate) fn eval_reduce(
     list: &Expr,
     expression: &Expr,
 ) -> Result<Value> {
-    let EvalCtx {
-        graph,
-        row,
-        params,
-        cypher_version,
-    } = ctx;
-    let mut acc = eval(graph, row, initial, params, cypher_version)?;
-    let items = match eval(graph, row, list, params, cypher_version)? {
+    let EvalCtx { graph, row, params } = ctx;
+    let mut acc = eval(graph, row, initial, params)?;
+    let items = match eval(graph, row, list, params)? {
         Value::List(items) => items,
         Value::Null => return Ok(Value::Null),
         _ => return Err(Error::ty("reduce() requires a list")),
@@ -138,7 +128,7 @@ pub(crate) fn eval_reduce(
         acc = if wrap_acc {
             wrap_acc_once(acc, &mut acc_depth)?
         } else {
-            eval(graph, &inner, expression, params, cypher_version)?
+            eval(graph, &inner, expression, params)?
         };
         charge_growth(graph, before, &acc)?;
     }
@@ -154,14 +144,9 @@ pub(crate) fn eval_all_reduce(
     expression: &Expr,
     predicate: &Expr,
 ) -> Result<Value> {
-    let EvalCtx {
-        graph,
-        row,
-        params,
-        cypher_version,
-    } = ctx;
-    let acc = eval(graph, row, initial, params, cypher_version)?;
-    let items = match eval(graph, row, list, params, cypher_version)? {
+    let EvalCtx { graph, row, params } = ctx;
+    let acc = eval(graph, row, initial, params)?;
+    let items = match eval(graph, row, list, params)? {
         Value::List(items) => items,
         Value::Null => return Ok(Value::Null),
         _ => return Err(Error::ty("allReduce() requires a list")),
@@ -184,7 +169,6 @@ pub(crate) fn eval_all_reduce(
             expression,
             predicate,
             params,
-            cypher_version,
         )? {
             // The deciding element ends the scan: the `1 / 0` element after
             // it is never evaluated (pinned by the quantifier tests below).
@@ -255,7 +239,6 @@ impl AllReduceFold {
         expression: &Expr,
         predicate: &Expr,
         params: &BTreeMap<String, Value>,
-        cypher_version: Option<u32>,
     ) -> Result<AllReduceStep> {
         // Bind before the expression (the predicate below reads these
         // bindings): the wrap fast path skips only the expression
@@ -275,7 +258,7 @@ impl AllReduceFold {
             let acc = std::mem::replace(&mut self.acc, Value::Null);
             wrap_acc_once(acc, &mut self.acc_depth)?
         } else {
-            eval(graph, inner, expression, params, cypher_version)?
+            eval(graph, inner, expression, params)?
         };
         charge_growth(graph, before, &next)?;
         if self.started_as_integer && matches!(next, Value::Float(_)) {
@@ -288,7 +271,7 @@ impl AllReduceFold {
         // the all-integer `/` raises DivisionByZero, inside `div` itself).
         self.acc = next;
         inner.insert(accumulator.to_string(), self.acc.clone());
-        match eval(graph, inner, predicate, params, cypher_version)? {
+        match eval(graph, inner, predicate, params)? {
             Value::Bool(false) => Ok(AllReduceStep::Failed),
             Value::Bool(true) => Ok(AllReduceStep::Holds),
             Value::Null => Ok(AllReduceStep::Null),

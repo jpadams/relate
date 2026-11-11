@@ -334,7 +334,7 @@ impl Resolver {
             Clause::CreateIndex(create_index) => {
                 self.visit_option_values(&mut create_index.options)
             }
-            Clause::DropIndex(_) | Clause::DropConstraint(_) | Clause::AlterDatabase(_) => Ok(()),
+            Clause::DropIndex(_) | Clause::DropConstraint(_) => Ok(()),
             Clause::CreateConstraint(constraint) => {
                 self.visit_option_values(&mut constraint.options)
             }

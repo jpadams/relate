@@ -51,41 +51,17 @@ pub fn plan_calls_write_procedure(
     calls_write
 }
 
-/// ADR-0116 §2: the database-administration `Catalog` vocabulary, matched
-/// once. [`is_database_admin_command`] asks whether a clause is one of the
-/// two commands; the `SHOW DATABASES` + `NEXT` rule
-/// ([`is_show_databases_with_next`]) asks for `ShowDatabases` specifically.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum DatabaseAdminCommand {
-    ShowDatabases,
-    AlterDatabase,
-}
-
-/// ADR-0116 §2: classify a parser `Catalog` command as one of the
-/// database-administration commands, or `None` for every other `Catalog`
-/// clause. Matched once here, lowered once per clause by
-/// [`admin_command_clause`] — every §2 classifier reads one of the two.
-fn database_admin_command(command: &relate_parser::Clause) -> Option<DatabaseAdminCommand> {
-    use relate_parser::Clause as C;
-    match command {
-        C::ShowDatabases(_) => Some(DatabaseAdminCommand::ShowDatabases),
-        C::AlterDatabase(_) => Some(DatabaseAdminCommand::AlterDatabase),
-        _ => None,
-    }
-}
-
-/// ADR-0116 §2: the §2 command a top-level IR clause is, or `None` for
-/// every other clause — the one clause-level lowering every §2 classifier
-/// reads: [`is_database_admin_command`]'s all-quantifier,
-/// [`is_show_databases_with_next`]'s `SHOW DATABASES` refinement,
-/// [`admin_command_heads_statement`]'s head probe and the §4 composability
-/// walk's containment test all go through it, so the vocabulary is matched
-/// once.
-fn admin_command_clause(clause: &Clause) -> Option<DatabaseAdminCommand> {
-    match clause {
-        Clause::Catalog(command) => database_admin_command(command.as_ref()),
-        _ => None,
-    }
+/// ADR-0116 §2, amended by ADR-0576 Decision 3: the database-administration
+/// `Catalog` vocabulary is the `SHOW DATABASES` family alone — every
+/// `ALTER DATABASE` form now fails the parse with 51N27, so no plan can
+/// carry one. [`is_database_admin_command`] asks whether a clause is one;
+/// the `SHOW DATABASES` + `NEXT` rule ([`is_show_databases_with_next`])
+/// and this predicate read the same single classification.
+fn is_database_admin_clause(clause: &Clause) -> bool {
+    matches!(
+        clause,
+        Clause::Catalog(command) if matches!(command.as_ref(), relate_parser::Clause::ShowDatabases(_))
+    )
 }
 
 /// ADR-0116 §2: database-administration commands run from any namespace and
@@ -94,11 +70,7 @@ fn admin_command_clause(clause: &Clause) -> Option<DatabaseAdminCommand> {
 pub fn is_database_admin_command(plan: &LogicalPlan) -> bool {
     !plan.parts.is_empty()
         && plan.next.is_none()
-        && plan
-            .parts
-            .iter()
-            .flatten()
-            .all(|clause| admin_command_clause(clause).is_some())
+        && plan.parts.iter().flatten().all(is_database_admin_clause)
 }
 
 /// ADR-0116 §2 / CIP-213 NE1.4: whether the plan combines `SHOW DATABASES`
@@ -111,31 +83,30 @@ pub fn is_database_admin_command(plan: &LogicalPlan) -> bool {
 /// in a `NEXT` chain.
 pub fn is_show_databases_with_next(plan: &LogicalPlan) -> bool {
     plan.next.is_some()
-        && plan.parts().any(|part| {
-            part.iter().any(|clause| {
-                admin_command_clause(clause) == Some(DatabaseAdminCommand::ShowDatabases)
-            })
-        })
+        && plan
+            .parts()
+            .any(|part| part.iter().any(is_database_admin_clause))
 }
 
 /// ADR-0116 §2, amended 2026-11-04: whether the statement's body is
 /// *headed* by a database-administration command — the first top-level
-/// clause after any leading `USE` clauses is one of the §2 commands. This
+/// clause after any leading `USE` clauses is one of the §2 commands (the
+/// `SHOW DATABASES` family; every `ALTER DATABASE` form fails the parse,
+/// ADR-0576 Decision 3). This
 /// is the head shape CE's front end guards with the 42N79 auto-routing
 /// rejection; an administration command later in the body (after e.g. a
 /// `MATCH`) is a plain catalog read, not an administration-command
 /// statement — live CE 2026.09 runs `USE neo4j MATCH (n) SHOW DATABASES
 /// YIELD name RETURN name`, while every headed spelling under a
-/// non-system `USE` (bare, `YIELD … RETURN …`, `UNION` arm, `ALTER
-/// DATABASE`) is 42N79. Part-granular on the head part only: a command
+/// non-system `USE` (bare, `YIELD … RETURN …`, `UNION` arm) is 42N79.
+/// Part-granular on the head part only: a command
 /// headed in a `NEXT` stage is already refused by the NEXT-chain rule
 /// ([`is_show_databases_with_next`]), and `USE` clauses never split parts.
 pub fn admin_command_heads_statement(plan: &LogicalPlan) -> bool {
     plan.parts.first().is_some_and(|head| {
         head.iter()
             .find(|clause| !matches!(clause, Clause::Use { .. }))
-            .and_then(admin_command_clause)
-            .is_some()
+            .is_some_and(is_database_admin_clause)
     })
 }
 
@@ -225,7 +196,6 @@ fn catalog_allowed_on_system(command: &relate_parser::Clause) -> bool {
             | C::ShowTransactions(_)
             | C::ShowGraphType(_)
             | C::ShowCurrentGraphType(_)
-            | C::AlterDatabase(_)
     )
 }
 
@@ -383,9 +353,6 @@ mod tests {
     #[test]
     fn database_admin_commands_classify() {
         assert!(is_database_admin_command(&plan_of("SHOW DATABASES")));
-        assert!(is_database_admin_command(&plan_of(
-            "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25"
-        )));
         assert!(!is_database_admin_command(&plan_of("MATCH (n) RETURN n")));
         assert!(!is_database_admin_command(&plan_of("SHOW INDEXES")));
         // A non-administrative clause disqualifies the statement.
@@ -425,11 +392,6 @@ mod tests {
         let mut plain = plan_of("RETURN 1 AS x");
         plain.parts[0] = vec![show_databases_clause()];
         assert!(!is_show_databases_with_next(&plain));
-
-        // ALTER DATABASE is §2 but not a SHOW DATABASES chain participant.
-        let mut alter = plan_of("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25");
-        alter.next = Some(Box::new(plan_of("RETURN 1 AS x")));
-        assert!(!is_show_databases_with_next(&alter));
 
         // An ordinary NEXT chain does not classify.
         assert!(!is_show_databases_with_next(&plan_of(
@@ -508,7 +470,6 @@ mod tests {
             "SHOW DATABASES",
             "SHOW DATABASES YIELD name RETURN name",
             "USE system SHOW DEFAULT DATABASE YIELD name AS defaultDb SHOW DATABASES YIELD name AS db, access WHERE defaultDb = db RETURN *",
-            "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25",
         ] {
             assert_eq!(
                 composed_show_disallowed_clause(&plan_of(cypher)),
@@ -530,7 +491,6 @@ mod tests {
             "USE neo4j SHOW DEFAULT DATABASE",
             "USE neo4j SHOW HOME DATABASE",
             "USE neo4j SHOW DATABASE neo4j",
-            "USE neo4j ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
             "USE neo4j SHOW DATABASES YIELD name RETURN name",
             // A UNION arm's head counts through the statement's own head
             // part (live CE 2026.09: 42N79 for this shape).

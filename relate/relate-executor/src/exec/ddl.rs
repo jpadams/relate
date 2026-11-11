@@ -261,7 +261,7 @@ impl IndexFacts {
 /// gate's own evidence (one policy, not a mirrored probe set).
 pub(crate) fn index_conflict_gate(graph: &ExecGraph<'_>, facts: &IndexFacts) -> Result<Gate> {
     // The one schema read the equivalence probe and the skip evidence share.
-    let details = graph.show_schema()?.data.index_details;
+    let details = graph.show_schema()?.index_details;
     let index_rule = |index: relate_catalog::IndexDef| {
         let detail = details.get(&index.name).cloned();
         ExistingRule::Index(ExistingIndexRule { index, detail })
@@ -641,7 +641,6 @@ mod tests {
         assert!(ExecGraph::read(&g)
             .show_schema()
             .unwrap()
-            .data
             .index_details
             .is_empty());
 
@@ -759,7 +758,7 @@ mod tests {
         )
         .unwrap();
         let view = ExecGraph::read(&g);
-        let details = view.show_schema().unwrap().data.index_details;
+        let details = view.show_schema().unwrap().index_details;
         let backing = details.values().any(|detail| {
             detail.kind == crate::redo::IndexKindSpec::Range
                 && !detail.relationship
@@ -903,7 +902,7 @@ mod tests {
         )
         .unwrap();
         let view = ExecGraph::read(&g);
-        let details = view.show_schema().unwrap().data.index_details;
+        let details = view.show_schema().unwrap().index_details;
         let fulltext = details.values().any(|detail| {
             detail.kind == crate::redo::IndexKindSpec::Fulltext
                 && detail.labels == ["Question"]

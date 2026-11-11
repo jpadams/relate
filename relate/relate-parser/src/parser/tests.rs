@@ -28,9 +28,9 @@ mod unicode_identifiers;
 // ADR-0116 §2: every database administration command outside CE's
 // supported set fails the parse with a `ParseError` tagged
 // `UNSUPPORTED_ADMINISTRATION_DETAIL` carrying the verbatim command
-// text (without a leading `CYPHER n` preamble), so the front-end can
-// reject it with CE's `UnsupportedAdministrationCommand` instead of a
-// syntax error -- and no executable clause is ever produced.
+// text, so the front-end can reject it with CE's
+// `UnsupportedAdministrationCommand` instead of a syntax error -- and no
+// executable clause is ever produced.
 /// The unsupported-administration command table (statement, echo), from
 /// the one shared home (testdata/unsupported-admin-commands.tsv).
 fn unsupported_admin_commands() -> impl Iterator<Item = (&'static str, &'static str)> {

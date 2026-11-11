@@ -23,12 +23,23 @@ use crate::error_kinds::{ErrorKind, TckErrorClass};
 use crate::Error;
 
 /// ADR-0116 §2: every database administration command other than the
-/// supported CE set. The statement is echoed verbatim, without a leading
-/// `CYPHER n`.
+/// supported CE set. The statement is echoed verbatim.
 pub fn unsupported_administration_command(statement: &str) -> Error {
     Error::semantic(format!(
         "{}: Unsupported administration command: {statement}",
         ErrorKind::UnsupportedAdministrationCommand.as_str()
+    ))
+}
+
+/// ADR-0576 Decision 2: a statement opening with a `CYPHER` preamble
+/// clause. The removal's authored text is normative — verbatim, with the
+/// trailing instruction intact — and lives only here; the parser tags its
+/// rejection with the kind's name and `relate-front` raises this on the
+/// tag, so no other layer restates the text.
+pub fn cypher_prefix_unsupported() -> Error {
+    Error::syntax(format!(
+        "{}: the CYPHER version prefix is no longer supported. Every statement runs the latest Cypher; please remove the prefix and resend the statement",
+        ErrorKind::UnsupportedCypherVersionPrefix.as_str()
     ))
 }
 
@@ -147,8 +158,9 @@ pub fn clauses_not_allowed_on_system_database(clauses: &str) -> Error {
 /// CE's auto-routing rejection (GQLSTATUS 42N79,
 /// `Neo.ClientError.Statement.SyntaxError`), pinned by
 /// `testdata/ce-errors/neo4j-ce.json` (`use_neo4j_show_databases`).
-/// `USE system` + administration command stays accepted: live CE rejects
-/// even that spelling for `ALTER DATABASE` (42N79), but Relate keeps
+/// `USE system` + administration command stays accepted (live CE rejected
+/// even that spelling for `ALTER DATABASE` before ADR-0576 removed the
+/// command): Relate keeps
 /// the whole `USE system` + §2-command surface runnable — the composable
 /// SHOW contract the Desktop/Browser compatibility row of ADR-0142 and the
 /// harness's `USE system SHOW DEFAULT DATABASE … SHOW DATABASES …`
@@ -185,15 +197,6 @@ pub fn read_only_write() -> Error {
     Error::semantic(format!(
         "{}: No write operations are allowed on this database. The database is in read-only mode on this Neo4j instance.",
         ErrorKind::WriteOnReadOnlyAccessDatabase.as_str()
-    ))
-}
-
-/// ADR-0116 §2: `ALTER DATABASE` of a name that is not a fixed namespace
-/// (without `IF EXISTS`).
-pub fn alter_unknown_database(name: &str) -> Error {
-    Error::semantic(format!(
-        "{}: Failed to alter the specified database '{name}': Database does not exist.",
-        ErrorKind::DatabaseNotFound.as_str()
     ))
 }
 
@@ -439,11 +442,14 @@ mod tests {
         );
     }
 
+    /// ADR-0576 Decision 2's normative text, pinned exactly (the engine
+    /// renders `syntax error: UnsupportedCypherVersionPrefix: the CYPHER
+    /// version prefix is no longer supported. …`).
     #[test]
-    fn alter_unknown_database_names_the_database() {
-        assert_ce_text(
-            &alter_unknown_database("movies"),
-            "DatabaseNotFound: Failed to alter the specified database 'movies': Database does not exist.",
+    fn cypher_prefix_unsupported_text_is_stable() {
+        assert_ce_syntax_text(
+            &cypher_prefix_unsupported(),
+            "UnsupportedCypherVersionPrefix: the CYPHER version prefix is no longer supported. Every statement runs the latest Cypher; please remove the prefix and resend the statement",
         );
     }
 

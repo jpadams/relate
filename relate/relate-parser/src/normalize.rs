@@ -39,8 +39,6 @@
 //! bound; a `String` that is a function call's first argument feeds the
 //! front-end's constant folding (a temporal constructor's literal folds
 //! to a constant at lowering — a parameter there stays a per-row call).
-//! `CYPHER <version>` integers need no guard — the rewritten parse fails
-//! closed.
 //!
 //! Deliberately NOT done (the 2026-10-31 session's constraints, §7): no
 //! variable renaming (variable names are structural), no size threshold,

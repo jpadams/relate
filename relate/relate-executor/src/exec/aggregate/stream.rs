@@ -125,7 +125,6 @@ impl SiteAcc<'_> {
         graph: &ExecGraph<'_>,
         row: &Row,
         params: &BTreeMap<String, Value>,
-        cypher_version: Option<u32>,
     ) -> Result<()> {
         match self {
             Self::CountStar(n) => *n += 1,
@@ -133,7 +132,7 @@ impl SiteAcc<'_> {
                 fold, call, seen, ..
             } => {
                 graph.cancel_tick()?;
-                let value = eval(graph, row, call.operand, params, cypher_version)?;
+                let value = eval(graph, row, call.operand, params)?;
                 if seen
                     .as_mut()
                     .map_or(Ok(true), |seen| seen.insert_value(&value))?
@@ -145,7 +144,7 @@ impl SiteAcc<'_> {
                 vals, seen, call, ..
             } => {
                 graph.cancel_tick()?;
-                let value = eval(graph, row, call.operand, params, cypher_version)?;
+                let value = eval(graph, row, call.operand, params)?;
                 if seen
                     .as_mut()
                     .map_or(Ok(true), |seen| seen.insert_value(&value))?
@@ -175,7 +174,6 @@ impl<'e> AggSites<'e> {
         items: impl IntoIterator<Item = &'e Expr>,
         lenient: impl IntoIterator<Item = &'e Expr>,
         params: &BTreeMap<String, Value>,
-        cypher_version: Option<u32>,
     ) -> Result<Self> {
         let mut slots: Vec<Slot<'e>> = Vec::new();
         for (exprs, is_lenient) in [
@@ -184,13 +182,7 @@ impl<'e> AggSites<'e> {
         ] {
             let found = RefCell::new(Vec::new());
             for expr in exprs {
-                agg_eval(
-                    graph,
-                    AggScope::discovering(&found),
-                    expr,
-                    params,
-                    cypher_version,
-                )?;
+                agg_eval(graph, AggScope::discovering(&found), expr, params)?;
             }
             for expr in found.into_inner() {
                 if slots.iter().all(|slot| !std::ptr::eq(slot.expr, expr)) {
@@ -303,10 +295,9 @@ impl<'e> GroupAccs<'e> {
         graph: &ExecGraph<'_>,
         row: &Row,
         params: &BTreeMap<String, Value>,
-        cypher_version: Option<u32>,
     ) -> Result<()> {
         for slot in &mut self.slots {
-            let offered = slot.acc.offer(graph, row, params, cypher_version);
+            let offered = slot.acc.offer(graph, row, params);
             match offered {
                 Ok(()) => {}
                 Err(error) if slot.lenient => slot.acc = SiteAcc::Failed(error),
@@ -367,7 +358,6 @@ impl<'e> GroupAccs<'e> {
         graph: &ExecGraph<'_>,
         seed: Option<&Row>,
         params: &BTreeMap<String, Value>,
-        cypher_version: Option<u32>,
     ) -> FoldedGroup<'e> {
         FoldedGroup {
             values: self
@@ -378,7 +368,7 @@ impl<'e> GroupAccs<'e> {
                         SiteAcc::CountStar(n) => Ok(Value::Int(n)),
                         SiteAcc::Stream { fold, .. } => fold.finish(),
                         SiteAcc::Retain { vals, call, .. } => {
-                            finish_retained(graph, vals, call, seed, params, cypher_version)
+                            finish_retained(graph, vals, call, seed, params)
                         }
                         SiteAcc::Failed(error) | SiteAcc::Rejected(error) => Err(error),
                     };
@@ -398,7 +388,6 @@ fn finish_retained(
     call: Call<'_>,
     seed: Option<&Row>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     let input = match call.percentile {
         None => FoldInput::Many(call.kind),
@@ -408,7 +397,7 @@ fn finish_retained(
             let Some(first) = seed else {
                 return Ok(Value::Null);
             };
-            let p = eval(graph, first, percentile, params, cypher_version)?;
+            let p = eval(graph, first, percentile, params)?;
             // Two distinct rejections: a non-numeric percentile is the
             // wrong-type class, an out-of-[0, 1] one the NumberOutOfRange
             // kind (ADR-0175's 22N03 mapping).

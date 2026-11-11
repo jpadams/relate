@@ -385,7 +385,6 @@ fn scan_segment(
         target.pattern,
         &Row::new(),
         ctx.params,
-        ctx.cypher_version,
         residual.conjuncts,
     )?;
     if candidates.is_empty() {

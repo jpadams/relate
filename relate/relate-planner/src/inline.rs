@@ -66,7 +66,7 @@ pub fn plan_is_bounded_work(plan: &LogicalPlan) -> bool {
 fn clause_escalates(clause: &Clause) -> bool {
     // Every mutating clause escalates (ADR-0504) — the native write arms
     // and the catalog passthrough's write commands (constraint and
-    // graph-type DDL, `ALTER DATABASE`, the named index forms) alike,
+    // graph-type DDL, the named index forms) alike,
     // one answer from the planner's published per-clause table, the same
     // answer the namespace gates and the write-attempt walk read. Two
     // reasons: an auto-commit write must never commit after its client
@@ -346,7 +346,6 @@ mod tests {
             "DROP INDEX user_id",
             // Catalog write/DDL commands (the passthrough the SHOW
             // family shares): the per-clause table's answer.
-            "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
             "CREATE GRAPH TYPE gt AS { (n:Person => {name :: STRING}) }",
             "CREATE INDEX i FOR (n:User) ON (n.id)",
             // The cartesian class: disjoint patterns multiply (quadratic

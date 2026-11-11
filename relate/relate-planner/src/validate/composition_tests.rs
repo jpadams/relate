@@ -80,16 +80,15 @@ fn write_before_call_in_transactions_is_rejected() {
 }
 
 /// A grammar-ending DDL command is standalone whichever AST carries it
-/// (`clause_kind::clause_is_ddl_command`'s family — schema DDL plus
-/// `ALTER DATABASE`): its grammar ends at its own `OPTIONS`/EOF, so every
+/// (`clause_kind::clause_is_ddl_command`'s family — schema
+/// DDL): its grammar ends at its own `OPTIONS`/EOF, so every
 /// continuation is rejected — `WITH`, `RETURN` and `FINISH` alike (live
 /// 2026.10.1, probed 2026-11-08; the front end's own scope check owns the
 /// `SET` form). The SHOW commands project rows and compose freely; their
 /// acceptance is pinned in `relate/relate/tests/ddl_result_shape.rs`.
-/// `ALTER DATABASE` is a family member by grammar (live rejects every
-/// continuation) but cannot serve as this pin's head: the front end's
-/// own administration gate answers first with its unsupported-command
-/// rejection, so the planner rule is its backstop.
+/// (`ALTER DATABASE` was a family member by grammar until ADR-0576
+/// Decision 3 made every form fail the parse with 51N27, so the planner
+/// rule could never see it.)
 #[test]
 fn a_grammar_ending_ddl_command_is_standalone() {
     for cypher in [

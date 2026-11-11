@@ -219,12 +219,11 @@ impl<'a> Parser<'a> {
             "alter" => {
                 // CIP-170: `ALTER DATABASE ...` is distinguished by the word
                 // directly after `ALTER` (`DATABASE` vs `CURRENT`).
-                if self.peek_at_is_ident(1, "database") {
-                    self.parse_alter_database()
-                } else if self.peek_at_is_ident(1, "alias") {
-                    // ADR-0116 §2: `ALTER ALIAS <name> SET DATABASE <target>`
-                    // -- recognized, then rejected with CE's
-                    // `UnsupportedAdministrationCommand`.
+                if self.peek_at_is_ident(1, "database") || self.peek_at_is_ident(1, "alias") {
+                    // ADR-0576 Decision 3: every `ALTER DATABASE` form (SET
+                    // DEFAULT LANGUAGE included) joins ADR-0116 §2's other
+                    // administration commands -- `ALTER ALIAS` among them --
+                    // in their `UnsupportedAdministrationCommand` rejection.
                     let start = self.pos;
                     self.unsupported_admin_clause(start)
                 } else {

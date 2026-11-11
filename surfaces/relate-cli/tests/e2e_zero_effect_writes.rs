@@ -4,7 +4,7 @@
 //!
 //! The criterion is the engine's effect record, so the negative cases matter
 //! as much as the positive one: a catalog change that leaves every mutation
-//! counter at zero (`ALTER DATABASE`, the graph-type DDL, the ontology
+//! counter at zero (the graph-type DDL, the ontology
 //! procedures) applied something and stays silent, and so does a read-only
 //! statement the planner conservatively classifies as a write (`CALL { … }`
 //! with a read-only body, `LOAD CSV … RETURN`).
@@ -366,43 +366,44 @@ const ONTOLOGY_DOC: &str = concat!(
 );
 
 /// ADR-0402 Decision 2: a catalog change persists without touching one graph
-/// mutation counter, so the counters cannot be the criterion. `ALTER DATABASE
-/// SET DEFAULT LANGUAGE` is the default-build case: it must not be reported as
+/// mutation counter, so the counters cannot be criterion. `CREATE GRAPH
+/// TYPE` is the default-build case (ADR-0576 Decision 3 removed
+/// `ALTER DATABASE`, the former case): it must not be reported as
 /// "changed nothing", and the change it reports must be real.
 #[test]
-fn test_alter_database_is_not_reported_as_changed_nothing() {
+fn test_a_catalog_change_is_not_reported_as_changed_nothing() {
     let dir = tempdir();
     let (status, stdout, stderr) = run_in(
         dir.path(),
-        "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
+        "CREATE GRAPH TYPE catalog_case AS { (:N => {p :: STRING}) }",
     );
     assert_eq!(status.code(), Some(0), "{stderr}");
     assert!(
         data_rows(&stdout).is_empty(),
-        "the admin command returns no rows"
+        "the DDL command returns no rows"
     );
     assert_eq!(
         stderr, "",
         "a persisted catalog change is not a zero-effect write"
     );
 
-    // The change the silent run made is real: the default language is 5.
+    // The change the silent run made is real: the graph type exists.
     let (status, stdout, stderr) = run_in(
         dir.path(),
-        "SHOW DATABASE neo4j YIELD name, defaultLanguage",
+        "SHOW GRAPH TYPE catalog_case YIELD name RETURN name",
     );
     assert_eq!(status.code(), Some(0), "{stderr}");
     assert_eq!(
         data_rows(&stdout),
-        ["{\"defaultLanguage\":\"CYPHER 5\",\"name\":\"neo4j\"}"],
-        "ALTER DATABASE persisted the language"
+        ["{\"name\":\"catalog_case\"}"],
+        "CREATE GRAPH TYPE persisted the graph type"
     );
 
     // The same statement inside a transaction is a write the commit
     // persisted: no statement note, no commit summary.
     let (status, stdout, stderr) = run_in(
         dir.path(),
-        ".begin; ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25; .commit",
+        ".begin; CREATE GRAPH TYPE txn_case AS { (:M => {q :: STRING}) }; .commit",
     );
     assert_eq!(status.code(), Some(0), "{stderr}");
     assert!(data_rows(&stdout).is_empty(), "no data rows");

@@ -105,7 +105,6 @@ pub(crate) fn agg_eval<'e>(
     scope: AggScope<'_, 'e>,
     expr: &'e Expr,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     let seed = scope.seed;
     match expr {
@@ -124,17 +123,14 @@ pub(crate) fn agg_eval<'e>(
             // spelling of it. A non-aggregate function keeps the transparent
             // scalar wrapper.
             if name.with_str(relate_ir::classify_aggregate).is_none() {
-                return agg_eval_function(graph, scope, name, args, params, cypher_version);
+                return agg_eval_function(graph, scope, name, args, params);
             }
             scope.aggregate_call(expr)
         }
         Expr::Map(es) => {
             let mut m = BTreeMap::new();
             for (k, e) in es {
-                m.insert(
-                    k.clone(),
-                    agg_eval(graph, scope, e, params, cypher_version)?,
-                );
+                m.insert(k.clone(), agg_eval(graph, scope, e, params)?);
             }
             // The aggregate evaluator has its own Map/List arms; the
             // checked constructors here are what make the ADR-0462 cap hold
@@ -142,12 +138,12 @@ pub(crate) fn agg_eval<'e>(
             Value::checked_map(m)
         }
         Expr::MapProjection { expr, items } => {
-            agg_eval_map_projection(graph, scope, expr, items, params, cypher_version)
+            agg_eval_map_projection(graph, scope, expr, items, params)
         }
         Expr::List(xs) => {
             let mut out = Vec::new();
             for e in xs {
-                out.push(agg_eval(graph, scope, e, params, cypher_version)?);
+                out.push(agg_eval(graph, scope, e, params)?);
             }
             Value::checked_list(out)
         }
@@ -164,7 +160,7 @@ pub(crate) fn agg_eval<'e>(
                 predicate: predicate.clone(),
                 projection: projection.clone(),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         Expr::MapComp {
             key_ident,
@@ -183,7 +179,7 @@ pub(crate) fn agg_eval<'e>(
                 key_expr: key_expr.clone(),
                 value_expr: value_expr.clone(),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         Expr::Quantifier {
             kind,
@@ -198,7 +194,7 @@ pub(crate) fn agg_eval<'e>(
                 list: Box::new(bind_child(&mut children, "__agg_list".into(), list)),
                 predicate: predicate.clone(),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         Expr::Reduce {
             accumulator,
@@ -215,7 +211,7 @@ pub(crate) fn agg_eval<'e>(
                 list: Box::new(bind_child(&mut children, "__agg_list".into(), list)),
                 expression: expression.clone(),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         Expr::AllReduce {
             accumulator,
@@ -234,12 +230,12 @@ pub(crate) fn agg_eval<'e>(
                 expression: expression.clone(),
                 predicate: predicate.clone(),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         Expr::Case {
             when_then,
             else_expr,
-        } => agg_eval_case(graph, scope, when_then, else_expr, params, cypher_version),
+        } => agg_eval_case(graph, scope, when_then, else_expr, params),
         Expr::Int(i) => Ok(Value::Int(*i)),
         Expr::Float(f) => Ok(Value::Float(*f)),
         Expr::Bool(b) => Ok(Value::Bool(*b)),
@@ -263,7 +259,7 @@ pub(crate) fn agg_eval<'e>(
                 left: Box::new(bind_child(&mut children, "__l".into(), left)),
                 right: Box::new(bind_child(&mut children, "__r".into(), right)),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         // Aggregation-transparent single-wrapper positions (LABS-744): every
         // child folds the group and the wrapper runs over the folded values.
@@ -287,7 +283,7 @@ pub(crate) fn agg_eval<'e>(
                 Ok::<_, std::convert::Infallible>(var)
             });
             let Ok(rebuilt) = rebuilt;
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         Expr::Subscript { expr, index } => {
             let mut children = Vec::new();
@@ -295,7 +291,7 @@ pub(crate) fn agg_eval<'e>(
                 expr: Box::new(bind_child(&mut children, "__agg_base".into(), expr)),
                 index: index.clone(),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         Expr::Slice { expr, start, end } => {
             let mut children = Vec::new();
@@ -304,10 +300,10 @@ pub(crate) fn agg_eval<'e>(
                 start: start.clone(),
                 end: end.clone(),
             };
-            agg_eval_combinator(graph, scope, &children, params, cypher_version, || rebuilt)
+            agg_eval_combinator(graph, scope, &children, params, || rebuilt)
         }
         _ => match seed {
-            Some(row) => eval(graph, row, expr, params, cypher_version),
+            Some(row) => eval(graph, row, expr, params),
             None => Ok(Value::Null),
         },
     }
@@ -323,22 +319,18 @@ fn agg_eval_combinator<'e, S: AsRef<str>>(
     scope: AggScope<'_, 'e>,
     children: &[(S, &'e Expr)],
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     rebuild: impl FnOnce() -> Expr,
 ) -> Result<Value> {
     let mut row = scope.seed.cloned().unwrap_or_default();
     for (name, child) in children {
-        row.insert(
-            name.as_ref().into(),
-            agg_eval(graph, scope, child, params, cypher_version)?,
-        );
+        row.insert(name.as_ref().into(), agg_eval(graph, scope, child, params)?);
     }
     if scope.is_discovery() {
         // The children are walked and recorded; the wrapper runs over the
         // folded values only once a group has them.
         return Ok(Value::Null);
     }
-    eval(graph, &row, &rebuild(), params, cypher_version)
+    eval(graph, &row, &rebuild(), params)
 }
 
 /// Non-aggregate function wrapper over aggregate arguments: bind each
@@ -349,7 +341,6 @@ fn agg_eval_function<'e>(
     name: &SmallName,
     args: &'e [Expr],
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     let mut children = Vec::new();
     let rebuilt_args: Vec<Expr> = args
@@ -357,12 +348,10 @@ fn agg_eval_function<'e>(
         .enumerate()
         .map(|(i, arg)| bind_child(&mut children, format!("__agg_arg{i}"), arg))
         .collect();
-    agg_eval_combinator(graph, scope, &children, params, cypher_version, || {
-        Expr::Function {
-            name: name.clone(),
-            distinct: false,
-            args: rebuilt_args,
-        }
+    agg_eval_combinator(graph, scope, &children, params, || Expr::Function {
+        name: name.clone(),
+        distinct: false,
+        args: rebuilt_args,
     })
 }
 
@@ -377,7 +366,6 @@ fn agg_eval_case<'e>(
     when_then: &'e [(Expr, Expr)],
     else_expr: &'e Option<Box<Expr>>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     let mut children: Vec<(String, &Expr)> = Vec::new();
     // Bind every part under its synthetic name and capture the matching
@@ -396,11 +384,9 @@ fn agg_eval_case<'e>(
     let else_expr = else_expr
         .as_deref()
         .map(|e| Box::new(bind_child(&mut children, "__agg_else".into(), e)));
-    agg_eval_combinator(graph, scope, &children, params, cypher_version, || {
-        Expr::Case {
-            when_then,
-            else_expr,
-        }
+    agg_eval_combinator(graph, scope, &children, params, || Expr::Case {
+        when_then,
+        else_expr,
     })
 }
 
@@ -414,7 +400,6 @@ fn agg_eval_map_projection<'e>(
     target: &'e Expr,
     items: &'e [MapProjectionItem],
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     let mut children = Vec::new();
     let target_var = bind_child(&mut children, "__agg_target".into(), target);
@@ -430,10 +415,8 @@ fn agg_eval_map_projection<'e>(
             other => rebuilt.push(other.clone()),
         }
     }
-    agg_eval_combinator(graph, scope, &children, params, cypher_version, || {
-        Expr::MapProjection {
-            expr: Box::new(target_var),
-            items: rebuilt,
-        }
+    agg_eval_combinator(graph, scope, &children, params, || Expr::MapProjection {
+        expr: Box::new(target_var),
+        items: rebuilt,
     })
 }

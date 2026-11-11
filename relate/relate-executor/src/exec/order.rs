@@ -296,7 +296,6 @@ fn cmp_sort_keys(
 pub(crate) fn apply_yield_page_stages(
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     stages: &[relate_parser::PageStage],
     output: &mut Vec<Row>,
 ) -> Result<()> {
@@ -316,29 +315,17 @@ pub(crate) fn apply_yield_page_stages(
                 // an output column, so parking reads the row itself.
                 let keys = OrderKeys::new(&order, &[], false);
                 for row in output.iter_mut() {
-                    park_order_keys(&keys, row, |expr, scope| {
-                        eval(graph, scope, expr, params, cypher_version)
-                    })?;
+                    park_order_keys(&keys, row, |expr, scope| eval(graph, scope, expr, params))?;
                 }
                 sort_rows_by_parked_keys(&keys, output, None)?;
                 unpark_order_keys(&keys, output);
             }
             relate_parser::PageStage::Skip(expr) => {
-                let count = resolve_page_bound(
-                    graph,
-                    params,
-                    cypher_version,
-                    &relate_front::lower_expr(expr)?,
-                )?;
+                let count = resolve_page_bound(graph, params, &relate_front::lower_expr(expr)?)?;
                 *output = page(std::mem::take(output), count, None);
             }
             relate_parser::PageStage::Limit(expr) => {
-                let count = resolve_page_bound(
-                    graph,
-                    params,
-                    cypher_version,
-                    &relate_front::lower_expr(expr)?,
-                )?;
+                let count = resolve_page_bound(graph, params, &relate_front::lower_expr(expr)?)?;
                 *output = page(std::mem::take(output), 0, Some(count));
             }
         }
@@ -458,13 +445,12 @@ pub(crate) fn page(mut rows: Vec<Row>, skip_n: usize, limit_n: Option<usize>) ->
 pub(crate) fn resolve_page_bounds(
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     skip: Option<&Expr>,
     limit: Option<&Expr>,
 ) -> Result<(usize, Option<usize>)> {
     let bound = |exprs: Option<&Expr>| -> Result<Option<usize>> {
         exprs
-            .map(|expr| resolve_page_bound(graph, params, cypher_version, expr))
+            .map(|expr| resolve_page_bound(graph, params, expr))
             .transpose()
     };
     Ok((bound(skip)?.unwrap_or(0), bound(limit)?))
@@ -476,10 +462,9 @@ pub(crate) fn resolve_page_bounds(
 pub(crate) fn resolve_page_bound(
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     expr: &Expr,
 ) -> Result<usize> {
-    skip_limit_count(&eval(graph, &Row::new(), expr, params, cypher_version)?)
+    skip_limit_count(&eval(graph, &Row::new(), expr, params)?)
 }
 
 /// Whether a projection takes the eager pre-projection page: `SKIP`/`LIMIT`

@@ -331,20 +331,6 @@ fn rewritten_statement_parses() {
     }
 }
 
-/// The documented fail-closed case: the `CYPHER <version>` integer takes
-/// a literal only, so its rewritten text does not parse and the statement
-/// stays uncached.
-#[test]
-fn cypher_version_integer_fails_closed() {
-    let n = normalized("CYPHER 5 MATCH (n) RETURN n");
-    assert!(
-        n.rewritten.contains("$__AUTO_INT_0__"),
-        "the version became a placeholder: {}",
-        n.rewritten
-    );
-    assert!(crate::parser::parse(&n.rewritten).is_err());
-}
-
 /// Whitespace and comments never affect the template. A placeholder keeps
 /// a separator only when the next source character would glue to it
 /// (`1 LIMIT` stays two tokens). An operator stays glued (`1+2`), so a

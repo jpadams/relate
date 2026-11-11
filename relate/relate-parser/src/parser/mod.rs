@@ -58,13 +58,22 @@ pub const MAX_NESTING_DEPTH: u32 = 500;
 /// ADR-0116 §2: the [`ParseError::detail`] tag on a parse failure for a
 /// recognized-but-unsupported database administration command (everything
 /// outside CE's supported set on Relate's fixed namespaces). The
-/// error's `message` carries the verbatim statement text (without a leading
-/// `CYPHER n` preamble), so `relate-front` can raise CE's
-/// `UnsupportedAdministrationCommand` (51N27) echoing it. The tag name
-/// matches `ErrorKind::UnsupportedAdministrationCommand` in
+/// error's `message` carries the verbatim statement text, so
+/// `relate-front` can raise CE's `UnsupportedAdministrationCommand`
+/// (51N27) echoing it. The tag name matches
+/// `ErrorKind::UnsupportedAdministrationCommand` in
 /// `relate-error`, so even an unmapped parse error keeps the right TCK
 /// kind/class.
 pub const UNSUPPORTED_ADMINISTRATION_DETAIL: &str = "UnsupportedAdministrationCommand";
+
+/// ADR-0576 Decision 2: the [`ParseError::detail`] tag on a parse failure
+/// for a statement opening with a `CYPHER` preamble clause. The authored
+/// removal text — normative, verbatim in ADR-0576 — lives in
+/// `relate-core`'s `ce_messages::cypher_prefix_unsupported`, which
+/// `relate-front` raises on this tag; the tag name matches
+/// `ErrorKind::UnsupportedCypherVersionPrefix` there, so even an unmapped
+/// parse error keeps the right kind.
+pub const UNSUPPORTED_CYPHER_PREFIX_DETAIL: &str = "UnsupportedCypherVersionPrefix";
 
 /// The [`ParseError::detail`] tag naming the undefined-variable condition
 /// (Neo4j 42N62): every parser site that rejects an unbound name carries it,
@@ -339,48 +348,15 @@ pub fn parse_graph_type_body(canonical: &str) -> ParseResult<GraphTypeBody> {
     Ok(body)
 }
 
-/// CIP-150: the parsed statement preamble (`Parser::parse_preamble`) --
-/// `EXPLAIN`/`PROFILE` flags plus the effective `CYPHER <version>`, if any
-/// was given. Distinct option `key=value` pairs are validated for
-/// recognized keys, constrained value vocabularies
-/// ([`CYPHER_OPTION_VALUES`]), and internal consistency while parsing, but
-/// their values aren't retained past that check -- Relate has no
-/// runtime concept of `runtime=`/`planner=` etc. to act on, so only the
-/// fact that they parsed and didn't conflict matters.
+/// The parsed statement preamble (`Parser::parse_preamble`) — the
+/// `EXPLAIN`/`PROFILE` flags. ADR-0576 Decision 2 removed the CIP-150
+/// `CYPHER [<version>] [<key>=<value>]` clause from the grammar: a
+/// statement opening with one now fails the parse with the authored typed
+/// error instead of reaching here with anything recorded.
 struct Preamble {
-    version: Option<u32>,
     explain: bool,
     profile: bool,
 }
-
-/// CIP-150: the pre-parser option keys Relate recognizes after a
-/// `CYPHER [<version>]` clause (besides the version itself). These mirror
-/// Neo4j's own pre-parser option vocabulary; Relate validates that a
-/// key is recognized and internally consistent but -- since it implements
-/// only one query-execution engine/runtime -- doesn't act on any of their
-/// values.
-const CYPHER_OPTION_KEYS: &[&str] = &[
-    "planner",
-    "runtime",
-    "updatestrategy",
-    "expressionengine",
-    "replan",
-    "connectcomponentsplanner",
-    "debug",
-    "operatorengine",
-];
-
-/// CIP-150 / Neo4j 2026.10: the pre-parser option keys whose *values*
-/// carry a constrained vocabulary, with each key's valid values -- the
-/// value-side twin of [`CYPHER_OPTION_KEYS`]' 22N07 key check. The one
-/// key with a vocabulary today is `runtime`, mirroring the three runtimes
-/// of Neo4j's current line (slotted, pipelined, parallel; the CIP-150
-/// corpus's accepted `runtime=slotted` examples pin the Cypher-5 side of
-/// that set). Relate implements a single engine, so every listed
-/// value is accepted-and-ignored; any other value fails with an authored
-/// 22N10 error naming the valid set.
-const CYPHER_OPTION_VALUES: &[(&str, &[&str])] =
-    &[("runtime", &["slotted", "pipelined", "parallel"])];
 
 /// The recursive-descent parser over a borrowed token stream. `'a` is the
 /// input query text's lifetime: the [`Token`] literals and [`Self::source`]
@@ -1028,7 +1004,6 @@ impl<'a> Parser<'a> {
         let mut stmt = self.parse_statement_block()?;
         stmt.explain = preamble.explain;
         stmt.profile = preamble.profile;
-        stmt.cypher_version = preamble.version;
 
         if self.peek_type() == TokenType::Semicolon {
             self.next_token();
@@ -1053,44 +1028,22 @@ impl<'a> Parser<'a> {
         Ok(stmt)
     }
 
-    /// CIP-150: consumes the optional statement preamble at the very start
-    /// of the query -- any interleaving of `EXPLAIN`/`PROFILE` (each at
-    /// most once, mutually exclusive) with zero or more `CYPHER [<version>]
-    /// [<key>=<value>]...` clauses. `CYPHER` is a non-reserved word --
-    /// recognized by spelling on a plain `Identifier` token, like `SHOW`/
-    /// `USE` elsewhere -- checked only here, once, at the true start of
-    /// input, so it never shadows a variable named `cypher` appearing
-    /// anywhere else in a query.
+    /// Consumes the optional statement preamble at the very start of the
+    /// query — any interleaving of `EXPLAIN`/`PROFILE` (each at most once,
+    /// mutually exclusive).
     ///
-    /// Grammar (per the CIP): `<preamble> ::= <preamble option>...`,
-    /// `<preamble option> ::= EXPLAIN | PROFILE | <cypher options>`,
-    /// `<cypher options> ::= CYPHER [<cypher version>] <cypher option>...`.
-    /// A fresh `CYPHER` keyword is required to open each options clause --
-    /// once one ends (at the first token that isn't a recognized
-    /// `<key>=<value>` pair), only another `CYPHER`/`EXPLAIN`/`PROFILE`
-    /// token can continue the preamble; anything else (including a bare
-    /// `key=value` with no preceding fresh `CYPHER`) falls through to
-    /// ordinary statement parsing and is a generic syntax error there --
-    /// this is what makes `CYPHER 5 EXPLAIN runtime=slotted RETURN 1`
-    /// (doc example E1) a hard error: `EXPLAIN` ends the `CYPHER` clause,
-    /// and `runtime=slotted` isn't a valid statement start.
-    ///
-    /// Two different `<cypher version>` values for the same statement (or
-    /// two different values for the same non-version option key) are
-    /// rejected as a conflicting pre-parser combination; the same value
-    /// repeated is fine. An out-of-range or non-integer version number, or
-    /// an unrecognized option key, is also rejected. Relate recognizes
-    /// exactly the two versions Neo4j 2026.05 ships (`5`, `25`); either is
-    /// accepted and recorded on the returned `Statement` for the engine to
-    /// act on (see `Statement::cypher_version`) -- Relate otherwise
-    /// implements a single dialect (the modern, GQL-aligned grammar this
-    /// whole parser targets), so the two versions differ only where the
-    /// engine explicitly checks `cypher_version` (the gates in
-    /// `relate-front`'s `validate::dialect`, wired into lowering).
+    /// ADR-0576 Decision 2 removed the CIP-150 `CYPHER [<version>]
+    /// [<key>=<value>]` clause: the engine implements one dialect, so the
+    /// preamble selected nothing. A `CYPHER`-spelled identifier at the
+    /// preamble position — with a version number, with options, or bare —
+    /// now fails the parse, before any other processing, with the typed
+    /// [`UNSUPPORTED_CYPHER_PREFIX_DETAIL`] error (the authored removal
+    /// text lives in `relate-core`, single-sourced there). `CYPHER` is a
+    /// non-reserved word — recognized by spelling on a plain `Identifier`
+    /// token, like `SHOW`/`USE` elsewhere — checked only here, once, at
+    /// the true start of input, so it never shadows a variable named
+    /// `cypher` appearing anywhere else in a query.
     fn parse_preamble(&mut self) -> ParseResult<Preamble> {
-        let mut version: Option<u32> = None;
-        let mut options: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
         let mut explain = false;
         let mut profile = false;
 
@@ -1105,104 +1058,16 @@ impl<'a> Parser<'a> {
                     profile = true;
                 }
                 TokenType::Identifier if self.peek().literal.eq_ignore_ascii_case("cypher") => {
-                    self.next_token(); // consume CYPHER
-
-                    // Optional `<cypher version> ::= <digit>...` -- only
-                    // attempted when the next token could plausibly be one
-                    // (an integer or decimal digit sequence); anything else
-                    // (an option key, EXPLAIN, EOF, ...) means no version
-                    // was given at all, per the grammar's `[<cypher
-                    // version>]`.
-                    if matches!(self.peek_type(), TokenType::Integer | TokenType::Float) {
-                        let tok = self.next_token();
-                        if tok.ty != TokenType::Integer
-                            || (tok.literal != "5" && tok.literal != "25")
-                        {
-                            return Err(self.error_at_token(
-                                &tok,
-                                format!(
-                                    "SyntaxError: 22N10 invalid pre-parser option value: {:?} is not a valid cypher version",
-                                    tok.literal
-                                ),
-                            ));
-                        }
-                        let v: u32 = tok.literal.parse().unwrap();
-                        match version {
-                            Some(existing) if existing != v => {
-                                return Err(self.error_at_token(
-                                    &tok,
-                                    "SyntaxError: 22N09 conflicting pre-parser combination: multiple values for 'cypher version'",
-                                ));
-                            }
-                            _ => version = Some(v),
-                        }
-                    }
-
-                    // Zero or more `<cypher option key> = <cypher option
-                    // value>` pairs, each `<key>` a plain identifier
-                    // directly followed by `=`.
-                    while self.peek_type() == TokenType::Identifier
-                        && self.peek_at(1).ty == TokenType::Equals
-                    {
-                        let key_tok = self.next_token();
-                        self.next_token(); // consume =
-                        let value_tok = self.next_token();
-                        let key_lower = key_tok.literal.to_ascii_lowercase();
-                        if !CYPHER_OPTION_KEYS.contains(&key_lower.as_str()) {
-                            return Err(self.error_at_token(
-                                &key_tok,
-                                format!(
-                                    "SyntaxError: 22N07 invalid pre-parser option key: {:?}",
-                                    key_tok.literal
-                                ),
-                            ));
-                        }
-                        // Keys with a constrained value vocabulary
-                        // (`CYPHER_OPTION_VALUES`) validate their value
-                        // the same way -- an authored 22N10 error naming
-                        // the valid set, the value-side twin of the 22N07
-                        // key error above.
-                        if let Some((_, values)) = CYPHER_OPTION_VALUES
-                            .iter()
-                            .find(|(key, _)| *key == key_lower)
-                        {
-                            if !values.contains(&value_tok.literal.to_ascii_lowercase().as_str()) {
-                                return Err(self.error_at_token(
-                                    &value_tok,
-                                    format!(
-                                        "SyntaxError: 22N10 invalid pre-parser option value: {:?} is not a valid {} value (valid values: {})",
-                                        value_tok.literal,
-                                        key_tok.literal,
-                                        values.join(", ")
-                                    ),
-                                ));
-                            }
-                        }
-                        match options.get(&key_lower) {
-                            Some(existing) if existing != &value_tok.literal => {
-                                return Err(self.error_at_token(
-                                    &value_tok,
-                                    format!(
-                                        "SyntaxError: 22N09 conflicting pre-parser combination: multiple values for {:?}",
-                                        key_tok.literal
-                                    ),
-                                ));
-                            }
-                            _ => {
-                                options.insert(key_lower, value_tok.literal.into_owned());
-                            }
-                        }
-                    }
+                    let tok = self.peek().clone();
+                    return Err(self
+                        .error_at_token(&tok, "the statement preamble's CYPHER clause is removed")
+                        .with_detail(UNSUPPORTED_CYPHER_PREFIX_DETAIL));
                 }
                 _ => break,
             }
         }
 
-        Ok(Preamble {
-            version,
-            explain,
-            profile,
-        })
+        Ok(Preamble { explain, profile })
     }
 
     /// `<RegularQuery> ::= <SingleQuery> (UNION [ALL] <SingleQuery>)*` -- a
@@ -1461,7 +1326,6 @@ impl<'a> Parser<'a> {
             explain: false,
             profile: false,
             next: None,
-            cypher_version: None,
             brace_wrapped: false,
             definitions: Vec::new(),
         }

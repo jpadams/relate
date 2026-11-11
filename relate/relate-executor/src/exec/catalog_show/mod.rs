@@ -7,7 +7,6 @@ use relate_core::{Error, Result, Value};
 use relate_model::EntityKind;
 use relate_parser::RoleModifier;
 
-use crate::ctx::QueryCtx;
 use crate::eval::eval;
 use crate::graph::Graph;
 use crate::overlay::ExecGraph;
@@ -42,8 +41,8 @@ fn entity_variable(entity: EntityKind) -> &'static str {
 /// ([`Graph::named_indexes`] then [`Graph::named_constraints`] — the
 /// name-keyed catalog's order; the catalog keeps no creation sequence).
 /// Every statement is the `SHOW INDEXES` / `SHOW CONSTRAINTS`
-/// `createStatement` rendering with no `CYPHER 5` preamble — the
-/// dialect's full form, since a schema mirror must recreate, not hide.
+/// `createStatement` rendering — rendered through the same renderers as
+/// the SHOW rows so the two spellings cannot drift.
 /// An entry whose renderer returns `None` — exactly the rows where the
 /// SHOW column is NULL (a legacy detail-less index row, a
 /// graph-type-managed dependent constraint, a kind with no standalone
@@ -51,7 +50,7 @@ fn entity_variable(entity: EntityKind) -> &'static str {
 /// type's canonical text or the manifest, never a fabricated statement.
 pub fn catalog_create_statements(graph: &Graph) -> Vec<String> {
     let snapshot = graph.schema_snapshot();
-    let data = &snapshot.show.data;
+    let data = &snapshot.show;
     let current = data.current_graph_type.to_body();
     snapshot
         .indexes
@@ -67,7 +66,7 @@ pub fn catalog_create_statements(graph: &Graph) -> Vec<String> {
             )
         })
         .chain(snapshot.constraints.iter().filter_map(|def| {
-            constraints::constraint_ddl_statement(def, &current, &data.derived_constraints)
+            constraints::constraint_statement_for(def, &current, &data.derived_constraints)
         }))
         .collect()
 }
@@ -124,12 +123,11 @@ struct Setting {
 /// `db.query.default_language` is the server-wide default for newly created
 /// databases, and it is unset here, so the row reports the setting's own
 /// default (`CYPHER_5`) — the value Neo4j's acceptance fixture pins. This is
-/// a different fact from a database's configured language: every fixed
-/// namespace carries its own `default_language` (seeded to `25`, ADR-0116
-/// §8), which `SHOW DATABASES` reports as `CYPHER 25` and
-/// `ALTER DATABASE … SET DEFAULT LANGUAGE` rewrites. The two statements
-/// therefore agree rather than contradict: the setting governs new
-/// databases, the catalog column reports the existing one.
+/// a different fact from `SHOW DATABASES`' `defaultLanguage` column, which
+/// ADR-0576 Decision 4 makes the constant `CYPHER 25` (the engine's one
+/// dialect, never a stored fact). The two statements therefore agree rather
+/// than contradict: the setting is a verbatim Neo4j catalog row, the column
+/// reports Relate's single version.
 const SETTINGS: &[Setting] = &[
     Setting {
         name: "browser.allow_outgoing_connections",
@@ -340,12 +338,7 @@ impl SettingFilter {
 /// list entry treated as a non-existing setting, and an empty list meaning
 /// "no filter". Every other shape is the data-exception type failure Neo4j
 /// raises (`TypeError`), never a silently empty selection.
-fn setting_filter(value: Value, cypher5: bool) -> Result<SettingFilter> {
-    if value.is_null() && cypher5 {
-        return Err(Error::invalid_argument_type(
-            "setting name must be STRING or LIST<STRING>",
-        ));
-    }
+fn setting_filter(value: Value) -> Result<SettingFilter> {
     match value {
         Value::Null => Ok(SettingFilter::Names(Vec::new())),
         Value::String(name) => Ok(SettingFilter::Names(vec![name])),
@@ -371,7 +364,6 @@ pub(crate) fn show_settings_rows(
     rows: Vec<Row>,
     clause: &relate_parser::Clause,
     params: &BTreeMap<String, Value>,
-    qctx: QueryCtx<'_>,
 ) -> Result<Vec<Row>> {
     // The catalog is built once per statement; a composed SHOW SETTINGS may
     // see many input rows beneath it.
@@ -386,29 +378,21 @@ pub(crate) fn show_settings_rows(
             catalog.into_iter().map(|(_, row)| row).collect(),
             clause,
             params,
-            qctx.cypher_version,
         );
     };
     let lowered = relate_front::lower_expr(names_expr)?;
     // Each input row selects its own names; the compositions concatenate and
     // the clause's paging/WHERE run once over that flattened cross join — a
     // per-row `LIMIT` would repeat for every input row.
-    super::catalog::project_catalog_by_row(
-        graph,
-        rows,
-        clause,
-        params,
-        qctx.cypher_version,
-        |row| {
-            let value = eval(graph, row, &lowered, params, qctx.cypher_version)?;
-            let filter = setting_filter(value, qctx.is_cypher5())?;
-            Ok(catalog
-                .iter()
-                .filter(|(name, _)| filter.admits(name))
-                .map(|(_, row)| row.clone())
-                .collect())
-        },
-    )
+    super::catalog::project_catalog_by_row(graph, rows, clause, params, |row| {
+        let value = eval(graph, row, &lowered, params)?;
+        let filter = setting_filter(value)?;
+        Ok(catalog
+            .iter()
+            .filter(|(name, _)| filter.admits(name))
+            .map(|(_, row)| row.clone())
+            .collect())
+    })
 }
 
 pub(crate) fn show_graph_type_rows(
@@ -421,7 +405,7 @@ pub(crate) fn show_graph_type_rows(
         // the query's name reads through the text bridge.
         let body = c
             .name
-            .with_str(|text| state.data.graph_types.get(text))
+            .with_str(|text| state.graph_types.get(text))
             .ok_or_else(|| Error::semantic("GraphTypeNotFound"))?;
         vec![catalog_row([
             ("name", Value::String(c.name.to_string().into())),
@@ -442,7 +426,7 @@ pub(crate) fn show_current_graph_type_rows(
     c: &relate_parser::ShowCurrentGraphTypeClause,
 ) -> Result<Vec<Row>> {
     let state = graph.show_schema()?;
-    let derived_names: HashSet<_> = state.data.derived_constraints.keys().cloned().collect();
+    let derived_names: HashSet<_> = state.derived_constraints.keys().cloned().collect();
     let extras = graph
         .named_constraints()
         .into_iter()
@@ -464,7 +448,7 @@ pub(crate) fn show_current_graph_type_rows(
         .collect::<Vec<_>>();
     Ok(if let Some(as_graph) = c.as_graph {
         let (nodes, rels) = crate::graph_type_visualize::render_graph_type_as_graph(
-            &state.data.current_graph_type.to_body(),
+            &state.current_graph_type.to_body(),
             &extras,
             as_graph,
         )?;
@@ -494,7 +478,7 @@ pub(crate) fn show_current_graph_type_rows(
             "specification",
             Value::String(
                 crate::graph_type::current_graph_type_specification(
-                    &state.data.current_graph_type.to_body(),
+                    &state.current_graph_type.to_body(),
                     &extras,
                 )
                 .map_err(crate::graph_type::persisted_derive_error)?

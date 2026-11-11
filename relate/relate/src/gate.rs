@@ -304,11 +304,9 @@ impl Connection {
     /// with CE's `The `USE` clause is not required for administration
     /// commands. …` (GQLSTATUS 42N79, `Neo.ClientError.Statement.
     /// SyntaxError`). The complement is deliberate:
-    /// - `USE system` + administration command stays accepted — live CE
-    ///   rejects even that spelling for `ALTER DATABASE`, but Relate
-    ///   keeps the whole `USE system` + §2 surface runnable (the
+    /// - `USE system` + administration command stays accepted — the
     ///   composable-SHOW contract the harness's `USE system SHOW DEFAULT
-    ///   DATABASE … SHOW DATABASES …` scenario pins; recorded in ADR-0116
+    ///   DATABASE … SHOW DATABASES …` scenario pins (recorded in ADR-0116
     ///   §2's Later references).
     /// - Statements without a `USE` clause never hit this gate: §2's
     ///   any-namespace run stands for them, and the off-system

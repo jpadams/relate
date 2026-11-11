@@ -25,25 +25,18 @@ pub(crate) fn is_nondeterministic(name: &str) -> bool {
         .is_some_and(|row| row.nondeterministic || row.implementation.samples_clock())
 }
 
-/// A dialect-independent builtin implementation.
+/// A builtin implementation.
 pub(super) type Builtin = fn(&ExecGraph<'_>, &str, Vec<Value>) -> Result<Value>;
 
-/// A builtin implementation that also receives the statement's Cypher
-/// version. The `toString` family is the only dialect-sensitive vocabulary
-/// (CIP-271 is Cypher-25-only), so only its rows take this form.
-pub(super) type VersionedBuiltin =
-    fn(&ExecGraph<'_>, &str, Vec<Value>, Option<u32>) -> Result<Value>;
-
 /// The implementation shape a builtin row carries: the plain form for every
-/// dialect-independent name, the versioned form for the `toString` family,
-/// and the three temporal row shapes whose type is part of the registration —
-/// the clock-access spelling names its kind and mode, the truncate spelling
-/// its kind, and the `duration.between`/`duration.in*` family its
-/// [`BetweenUnit`] — so no implementation re-derives it from the call name.
+/// name, and the three temporal row shapes whose type is part of the
+/// registration — the clock-access spelling names its kind and mode, the
+/// truncate spelling its kind, and the `duration.between`/`duration.in*`
+/// family its [`BetweenUnit`] — so no implementation re-derives it from the
+/// call name.
 #[derive(Clone, Copy)]
 pub(super) enum BuiltinImplementation {
     Plain(Builtin),
-    Versioned(VersionedBuiltin),
     Clock(ClockKind, ClockMode),
     Truncate(ClockKind),
     /// A `duration.between`/`duration.in*` row: the unit is part of the
@@ -329,22 +322,6 @@ pub(super) const fn truncate_row(name: &'static str, kind: ClockKind) -> Builtin
         implementation: BuiltinImplementation::Truncate(kind),
         nondeterministic: false,
         arity: ARITY_ONE_TO_THREE,
-    }
-}
-
-/// Row constructor for a dialect-sensitive builtin: dispatch hands it the
-/// statement's Cypher version.
-pub(super) const fn versioned_row(
-    name: &'static str,
-    implementation: VersionedBuiltin,
-    nondeterministic: bool,
-    arity: Arity,
-) -> BuiltinRow {
-    BuiltinRow {
-        name,
-        implementation: BuiltinImplementation::Versioned(implementation),
-        nondeterministic,
-        arity,
     }
 }
 
@@ -649,14 +626,14 @@ pub(super) const BUILTINS: &[BuiltinRow] = &[
         ARITY_AT_LEAST_ONE,
     ),
     row("tolower", string::bi_lower, false, ARITY_AT_LEAST_ONE),
-    versioned_row("tostring", convert::bi_tostring, false, ARITY_EXACTLY_ONE),
-    versioned_row(
+    row("tostring", convert::bi_tostring, false, ARITY_EXACTLY_ONE),
+    row(
         "tostringlist",
         convert::bi_tostringlist,
         false,
         ARITY_AT_LEAST_ONE,
     ),
-    versioned_row(
+    row(
         "tostringornull",
         convert::bi_tostringornull,
         false,

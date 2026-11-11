@@ -25,41 +25,6 @@ fn depth_cap_message() -> String {
 }
 
 #[test]
-fn lowers_cypher_version_preamble_regardless_of_whitespace() {
-    // The preamble is tokenized, not textual: space, newline, and tab
-    // between `CYPHER 5` and the statement body all lower to the same
-    // typed `cypher_version`.
-    for src in [
-        "CYPHER 5 RETURN 1 AS n",
-        "CYPHER 5\nRETURN 1 AS n",
-        "CYPHER 5\tRETURN 1 AS n",
-    ] {
-        assert_eq!(lower(src).cypher_version, Some(5), "for {src:?}");
-    }
-    assert_eq!(lower("CYPHER 25 RETURN 1 AS n").cypher_version, Some(25));
-    assert_eq!(lower("RETURN 1 AS n").cypher_version, None);
-}
-
-#[test]
-fn next_stages_inherit_cypher_version() {
-    let query = lower("CYPHER 5 RETURN 1 AS n NEXT RETURN 2 AS m");
-    assert_eq!(query.cypher_version, Some(5));
-    let next = query.next.as_deref().expect("NEXT stage");
-    assert_eq!(next.cypher_version, Some(5));
-}
-
-#[test]
-fn subquery_bodies_do_not_carry_the_preamble() {
-    // Nested bodies observe the enclosing statement's version through the
-    // executor's QueryCtx at runtime; the lowered IR itself stays `None`.
-    let query = lower("CYPHER 5 CALL { RETURN 1 AS x } RETURN x");
-    let mdb::Clause::CallSubquery { query: inner, .. } = &query.parts[0].clauses[0] else {
-        panic!("expected CALL subquery")
-    };
-    assert_eq!(inner.cypher_version, None);
-}
-
-#[test]
 fn preserves_dynamic_label_and_property_ir() {
     let query = lower(
         "MATCH (n:$any($labels)) WHERE n IS LABELED (A|!B) \

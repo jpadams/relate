@@ -376,7 +376,7 @@ fn run_statement(graph: &ExecGraph<'_>, request: &ExecRequest<'_>) -> Result<(Qu
     graph.begin_statement();
     graph.check_cancelled()?;
     let _clock = QueryClockGuard::new();
-    let qctx = QueryCtx::new(request.plan.cypher_version, request.query_text)
+    let qctx = QueryCtx::new(request.query_text)
         .with_principal(request.principal)
         .with_batch_commit(request.batch_commit);
     let result = execute_plan_stage_seeded(
@@ -415,11 +415,8 @@ pub fn execute_read_at(admission: &ReadAdmission<'_>) -> Result<QueryResult> {
     let attempted = plan_mutates_store(admission.request.plan);
     // ADR-0395: the freshly constructed view carries a zeroed counter —
     // the read admission's statement gets its own budget.
-    let qctx = QueryCtx::new(
-        admission.request.plan.cypher_version,
-        admission.request.query_text,
-    )
-    .with_principal(admission.request.principal);
+    let qctx =
+        QueryCtx::new(admission.request.query_text).with_principal(admission.request.principal);
     let mut result = execute_plan_read_seeded(
         &view,
         admission.request.plan,

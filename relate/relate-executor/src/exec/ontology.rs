@@ -446,7 +446,7 @@ mod tests {
         let graph = crate::graph::Graph::default();
         let params = std::collections::BTreeMap::new();
         let view = ExecGraph::read(&graph);
-        let ctx = ExecCtx::new(&view, &params, None);
+        let ctx = ExecCtx::new(&view, &params);
         // Through the divert: `exec_call` classifies once, the ontology
         // executor's registry-signature contract raises the error.
         let call = CallSpec {
@@ -501,7 +501,7 @@ mod tests {
         let graph = crate::graph::Graph::default();
         let view = ExecGraph::read(&graph);
         let params = std::collections::BTreeMap::new();
-        let ctx = ExecCtx::new(&view, &params, None);
+        let ctx = ExecCtx::new(&view, &params);
         let row = Row::new();
         let err = optional_format_arg(
             &ctx,

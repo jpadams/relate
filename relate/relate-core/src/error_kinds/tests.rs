@@ -57,6 +57,7 @@ const ALL_KINDS: &[ErrorKind] = &[
     ErrorKind::InvalidRelationshipPattern,
     ErrorKind::InvalidArgumentPassingMode,
     ErrorKind::InvalidDelete,
+    ErrorKind::UnsupportedCypherVersionPrefix,
     ErrorKind::TypeError,
     ErrorKind::InvalidArgumentType,
     ErrorKind::ParameterWrongTypeException,

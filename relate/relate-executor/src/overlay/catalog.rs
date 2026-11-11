@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use relate_catalog::{ConstraintDef, IndexDef};
 use relate_core::Result;
 
-use crate::graph::{QueryStats, ShowSchema};
+use crate::graph::{QueryStats, TheaterData};
 use crate::redo::{CatalogName, IndexFacts, RedoOp};
 
 use super::{ExecGraph, WriteScratch};
@@ -118,7 +118,7 @@ impl<'a> ExecGraph<'a> {
         if let Some(scratch) = self.scratch {
             crate::graph::apply_show_overlay(&mut show, scratch.borrow().redo.catalog_ops())?;
         }
-        let details = &show.data.index_details;
+        let details = &show.index_details;
         Ok(crate::redo::resolve_index_facts(
             &indexes,
             details,
@@ -126,7 +126,7 @@ impl<'a> ExecGraph<'a> {
         ))
     }
 
-    pub(crate) fn show_schema(&self) -> Result<ShowSchema> {
+    pub(crate) fn show_schema(&self) -> Result<TheaterData> {
         // A view carrying an admitted `SchemaSnapshot` reads that pinned
         // theater. Schema-less views (`read`/`read_at`/`write`) fall back to
         // the live committed theater under its lock; those constructors are
@@ -254,8 +254,8 @@ impl<'a> ExecGraph<'a> {
     /// a gate that reads several views of one catalog state (the
     /// `CREATE CONSTRAINT` conflict gate) and must not take a second
     /// snapshot between them.
-    pub(crate) fn effective_constraints_in(&self, show: &ShowSchema) -> Vec<ConstraintDef> {
-        resolve_enforced_labels(self.named_constraints(), &show.data.derived_constraints)
+    pub(crate) fn effective_constraints_in(&self, show: &TheaterData) -> Vec<ConstraintDef> {
+        resolve_enforced_labels(self.named_constraints(), &show.derived_constraints)
     }
 
     /// Index DDL: create a standalone index, counted in

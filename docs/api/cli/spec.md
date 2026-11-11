@@ -184,7 +184,7 @@ applied no change. It is not the plan's query type and not the mutation
 counters — both are wrong for real statements:
 
 - a **catalog change** persists while every mutation counter stays zero, so
-  `ALTER DATABASE … SET DEFAULT LANGUAGE …`, `CREATE GRAPH TYPE …` and the
+  `CREATE GRAPH TYPE …` and the
   preview-gated `CALL db.ontology.set(…)` / `CALL db.ontology.drop()` are
   writes that applied a change and print nothing;
 - a **read-only statement the planner conservatively classifies `w` / `rw`** —
@@ -1305,8 +1305,8 @@ the complete notification list after them (it has no plan table);
 the plan and the notifications inside their own payload.
 
 
-The `EXPLAIN`/`PROFILE` preamble is stripped from the `Query:` echo; a
-`CYPHER <version>` preamble stays. `| +` glyphs nest each clause beneath
+The `EXPLAIN`/`PROFILE` preamble is stripped from the `Query:` echo.
+`| +` glyphs nest each clause beneath
 the one it feeds (`ProduceResults` outermost); `Union`/`UnionAll` carry
 multi-part pipelines as children, `Next` carries chained `NEXT` stages.
 The `Estimated Rows` column appears on `EXPLAIN` and `PROFILE` alike

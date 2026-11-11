@@ -107,8 +107,8 @@ MATCH (n) RETURN count(n);                 -- verify inside the transaction
   `CREATE` you expected never ran. Grep the anchored prefix (`note: write
   statement`, `note: .commit`), not `changed nothing` alone — both lines carry
   that tail.
-- The note is the engine's effect record: a catalog change (`ALTER DATABASE …`,
-  `CREATE GRAPH TYPE`, `CALL db.ontology.set/drop`) applies without moving a
+- The note is the engine's effect record: a catalog change
+  (`CREATE GRAPH TYPE`, `CALL db.ontology.set/drop`) applies without moving a
   mutation counter and prints nothing, and neither does a read the planner
   classifies as a write (`CALL { … }` with a read-only body, `LOAD CSV …
   RETURN`). A write inside a `CALL { … }` body or an untaken `WHEN` branch is

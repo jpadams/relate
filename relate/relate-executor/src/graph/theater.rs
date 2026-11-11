@@ -14,15 +14,18 @@ use crate::redo::{self, RedoOp};
 use super::{matching_enforced_label, requires_enforced_label, Graph};
 
 pub use relate_engine_api::{
-    map_put_database, CheckpointTheater, DatabaseEntry, SchemaSnapshot, ShowSchema, TheaterData,
+    map_put_database, CheckpointTheater, DatabaseEntry, SchemaSnapshot, TheaterData,
 };
 
 /// invariants): the three fixed
 /// namespaces' settings (default language, composite flag) live in ONE
 /// table shared by every namespace graph of the store through the
-/// `StoreServices` bundle. `ALTER DATABASE` writes it and `SHOW DATABASES`
-/// reads it from any namespace session, so the two can never diverge the
-/// way per-graph theater copies did. The table is keyed by `Namespace`, so
+/// `StoreServices` bundle. ADR-0576 kept the table for storage-format
+/// compatibility — old stores' checkpoints and WAL tails still carry
+/// `PutDatabase` rows, replayed here on load — but nothing writes it
+/// anymore (`ALTER DATABASE` fails 51N27, ADR-0576 Decision 3) and
+/// nothing reads it (`SHOW DATABASES` reports the constant `CYPHER 25`,
+/// Decision 4). The table is keyed by `Namespace`, so
 /// it holds exactly the three fixed entries by construction and every
 /// lookup is total; the on-disk checkpoint theater image keeps serializing
 /// it as strings under its historical `databases` key, with the boundary
@@ -34,10 +37,12 @@ pub(crate) struct DatabasesCatalog {
 
 impl DatabasesCatalog {
     /// ADR-0116 §1/§8: a fixed namespace's default entry — `CYPHER 25`,
-    /// non-composite — until an `ALTER DATABASE ... SET DEFAULT LANGUAGE`
-    /// redo says otherwise. `Default` and [`Self::sanitize`] seed every
+    /// non-composite. `Default` and [`Self::sanitize`] seed every
     /// fixed namespace with it, and the typed key plus filtered inserts
-    /// keep exactly the three entries present.
+    /// keep exactly the three entries present. ADR-0576 Decision 5: the
+    /// seeded value is format compatibility only — an old store's replayed
+    /// `PutDatabase` redo may overwrite it, and no reader consults it
+    /// (`SHOW DATABASES` reports the constant `CYPHER 25`, Decision 4).
     pub(crate) const DEFAULT_DATABASE_ENTRY: DatabaseEntry = DatabaseEntry {
         default_language: 25,
         composite: false,
@@ -102,7 +107,7 @@ impl Default for DatabasesCatalog {
 
 /// Apply speculative catalog operations to this private admitted copy.
 pub(crate) fn apply_show_overlay<'o>(
-    show: &mut ShowSchema,
+    show: &mut TheaterData,
     ops: impl IntoIterator<Item = &'o RedoOp>,
 ) -> Result<()> {
     for op in ops {
@@ -113,34 +118,25 @@ pub(crate) fn apply_show_overlay<'o>(
                 options,
             } => {
                 let options = redo::props_from_json(options)?;
-                show.data.index_details.insert(name.clone(), detail.clone());
-                show.data.index_options.insert(name.clone(), options);
+                show.index_details.insert(name.clone(), detail.clone());
+                show.index_options.insert(name.clone(), options);
             }
             RedoOp::DropIndex { name } => {
-                show.data.index_details.remove(name);
-                show.data.index_options.remove(name);
+                show.index_details.remove(name);
+                show.index_options.remove(name);
             }
-            RedoOp::PutDatabase {
-                name,
-                language,
-                composite,
-            } => {
-                map_put_database(&mut show.databases, name, *language, *composite);
-            }
-            RedoOp::DropDatabase { .. } => {}
             RedoOp::PutGraphType { name, body } => {
-                show.data.graph_types.insert(name.clone(), body.clone());
+                show.graph_types.insert(name.clone(), body.clone());
             }
             RedoOp::SetCurrentGraphType { body } => {
-                set_current_graph_type(&mut show.data, body)?;
+                set_current_graph_type(show, body)?;
             }
             RedoOp::CatalogDerivedConstraint { constraint } => {
-                show.data
-                    .derived_constraints
+                show.derived_constraints
                     .insert(constraint.name.clone(), constraint.clone());
             }
             RedoOp::DropConstraint { name } => {
-                show.data.derived_constraints.remove(name);
+                show.derived_constraints.remove(name);
             }
             _ => {}
         }
@@ -508,11 +504,8 @@ mod tests {
         }
     }
 
-    fn admitted_show() -> ShowSchema {
-        ShowSchema::capture(
-            DatabasesCatalog::default().snapshot(),
-            &TheaterData::default(),
-        )
+    fn admitted_show() -> TheaterData {
+        TheaterData::default()
     }
 
     #[test]
@@ -526,8 +519,8 @@ mod tests {
         // A decode failure is an error, never a silently dropped index entry
         // (matching `Graph::apply_redo`).
         assert!(apply_show_overlay(&mut show, &ops).is_err());
-        assert!(show.data.index_details.is_empty());
-        assert!(show.data.index_options.is_empty());
+        assert!(show.index_details.is_empty());
+        assert!(show.index_options.is_empty());
     }
 
     #[test]
@@ -539,8 +532,8 @@ mod tests {
             options: serde_json::json!({}),
         }];
         apply_show_overlay(&mut show, &ops).unwrap();
-        assert!(show.data.index_details.contains_key("idx"));
-        assert!(show.data.index_options.contains_key("idx"));
+        assert!(show.index_details.contains_key("idx"));
+        assert!(show.index_options.contains_key("idx"));
     }
 
     /// ADR-0116 §1/§8/§10: the default store-level catalog carries exactly
@@ -557,8 +550,10 @@ mod tests {
     /// store's `CREATE DATABASE` theater) is dropped at the replay
     /// boundary; fixed names match case-insensitively and store under the
     /// typed key, and a `DropDatabase` redo is a no-op because the fixed
-    /// namespaces can never be dropped. The speculative overlay and the
-    /// committed store-level catalog apply the same rule.
+    /// namespaces can never be dropped. The committed store-level catalog
+    /// applies the rule in `apply_redo` replay; the read-admission
+    /// snapshot carries no databases table, so the overlay passes the
+    /// ops by (ADR-0576 Decision 4).
     #[test]
     fn database_ops_keep_only_the_fixed_namespaces() {
         let ops = [
@@ -576,17 +571,10 @@ mod tests {
                 name: "system".into(),
             },
         ];
+        // Database redo never errors the overlay: the admitted copy has no
+        // databases table to update.
         let mut show = admitted_show();
         apply_show_overlay(&mut show, &ops).unwrap();
-        let names: Vec<Namespace> = show.databases.keys().copied().collect();
-        assert_eq!(names, Namespace::ALL);
-        assert_eq!(
-            show.databases[&Namespace::Neo4j],
-            DatabaseEntry {
-                default_language: 5,
-                composite: false,
-            }
-        );
 
         let catalog = DatabasesCatalog::default();
         for op in &ops {
@@ -600,7 +588,16 @@ mod tests {
                 _ => unreachable!(),
             }
         }
-        assert_eq!(catalog.snapshot(), show.databases);
+        let snapshot = catalog.snapshot();
+        let names: Vec<Namespace> = snapshot.keys().copied().collect();
+        assert_eq!(names, Namespace::ALL);
+        assert_eq!(
+            snapshot[&Namespace::Neo4j],
+            DatabaseEntry {
+                default_language: 5,
+                composite: false,
+            }
+        );
     }
 
     /// ADR-0116 §8: the boundary conversion for a checkpoint image drops

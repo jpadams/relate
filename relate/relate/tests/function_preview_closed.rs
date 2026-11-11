@@ -80,14 +80,11 @@ fn show_functions_lists_no_gated_name_without_its_opt_in() {
 fn removed_and_renamed_away_names_are_unknown_in_every_dialect() {
     // ADR-0497 rule (c): a removed name leaves both the callable and the
     // advertised registry, so the binder's ordinary unknown-function
-    // rejection fires -- under the default dialect and an explicit CYPHER 5
-    // alike.
+    // rejection fires in the one dialect.
     for query in [
         "RETURN distance(point({x: 0, y: 0}), point({x: 1, y: 1})) AS d",
-        "CYPHER 5 RETURN distance(point({x: 0, y: 0}), point({x: 1, y: 1})) AS d",
         "MATCH p = ()-->() RETURN rels(p) AS r",
         "RETURN typename(1) AS t",
-        "CYPHER 5 RETURN typename(1) AS t",
         "RETURN vector.normalize([1.0]) AS v",
         "RETURN vector.add([1.0], [2.0]) AS v",
         "RETURN vector.manhattan([1.0], [2.0]) AS v",
@@ -95,11 +92,10 @@ fn removed_and_renamed_away_names_are_unknown_in_every_dialect() {
         "RETURN spatial.contains(point({x: 0, y: 0}), point({x: 0, y: 0})) AS b",
         "RETURN linestring({coordinates: [[0.0, 0.0], [1.0, 1.0]]}) AS l",
         // `apoc.coll.sort` was deleted outright (LABS-912): the APOC
-        // spelling left the registry in every dialect, so the ordinary
+        // spelling left the registry, so the ordinary
         // rejection replaces both the old Cypher-25 dialect gate and the
         // Cypher-5 preview opt-in.
         "RETURN apoc.coll.sort([2, 1]) AS x",
-        "CYPHER 5 RETURN apoc.coll.sort([2, 1]) AS x",
     ] {
         let error = connection()
             .query(query)

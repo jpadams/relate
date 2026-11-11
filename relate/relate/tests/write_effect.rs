@@ -33,15 +33,15 @@ fn a_short_circuited_write_changed_nothing() {
     assert_eq!(result.stats, relate::QueryStats::default());
 }
 
-/// `ALTER DATABASE SET DEFAULT LANGUAGE` persists a catalog change and leaves
-/// every mutation counter at zero: the effect's applied fact comes from the
-/// write redo, so it is a write that changed something.
+/// A catalog change (`CREATE GRAPH TYPE`) persists a catalog change and
+/// leaves every mutation counter at zero: the effect's applied fact comes
+/// from the write redo, so it is a write that changed something.
 #[test]
 fn a_catalog_change_is_a_write_that_applied() {
     let db = Database::open(":memory:").unwrap();
     let mut conn = db.connect().unwrap();
     let result = conn
-        .query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5")
+        .query("CREATE GRAPH TYPE social AS { (:Person => {name :: STRING}) }")
         .unwrap();
     assert_eq!(result.stats, relate::QueryStats::default());
     assert!(result.effect.attempted());

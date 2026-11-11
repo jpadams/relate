@@ -237,7 +237,7 @@ fn run_clauses_mode(
                 }
             }
             Clause::Create { patterns } => {
-                rows = exec_create(graph, rows, patterns, params, qctx)?;
+                rows = exec_create(graph, rows, patterns, params)?;
             }
             Clause::CreateIndex {
                 name,
@@ -267,7 +267,7 @@ fn run_clauses_mode(
                 field_terminator,
             } => {
                 rows = exec_load_csv(
-                    ExecCtx::new(graph, params, qctx.cypher_version),
+                    ExecCtx::new(graph, params),
                     rows,
                     *with_headers,
                     url,
@@ -322,7 +322,7 @@ fn run_clauses_mode(
             } => {
                 if let Some(search) = search {
                     rows = search_match_clause(
-                        ExecCtx::new(graph, params, qctx.cypher_version),
+                        ExecCtx::new(graph, params),
                         rows,
                         *optional,
                         *match_mode,
@@ -355,7 +355,6 @@ fn run_clauses_mode(
                             where_clause.as_ref(),
                             &clauses[i..],
                             params,
-                            qctx.cypher_version,
                         )?
                     } else {
                         None
@@ -381,7 +380,6 @@ fn run_clauses_mode(
                                     where_clause.as_ref(),
                                     graph,
                                     params,
-                                    qctx.cypher_version,
                                     rows.len(),
                                 )?
                             };
@@ -392,7 +390,6 @@ fn run_clauses_mode(
                                     clauses.get(i + 1),
                                     &fold_order,
                                     params,
-                                    qctx.cypher_version,
                                     scope,
                                 )?
                             } else {
@@ -404,7 +401,7 @@ fn run_clauses_mode(
                             // — lives in `match_clause.rs`, one place with
                             // one admission gate.
                             let (ladder_rows, operator) = run_match_operator_ladder(
-                                ExecCtx::new(graph, params, qctx.cypher_version),
+                                ExecCtx::new(graph, params),
                                 rows,
                                 *optional,
                                 *match_mode,
@@ -460,25 +457,25 @@ fn run_clauses_mode(
                 on_create,
                 on_match,
             } => {
-                rows = exec_merge(graph, rows, pattern, on_create, on_match, params, qctx)?;
+                rows = exec_merge(graph, rows, pattern, on_create, on_match, params)?;
             }
             Clause::Delete {
                 detach,
                 expressions,
             } => {
-                rows = exec_delete(graph, rows, *detach, expressions, params, qctx)?;
+                rows = exec_delete(graph, rows, *detach, expressions, params)?;
             }
             Clause::Set { items } => {
-                rows = exec_set(graph, rows, items, params, qctx)?;
+                rows = exec_set(graph, rows, items, params)?;
             }
             Clause::Remove { items } => {
-                rows = exec_remove(graph, rows, items, params, qctx)?;
+                rows = exec_remove(graph, rows, items, params)?;
             }
             Clause::Unwind { expression, alias } if streams_into_projection(clauses.get(i + 1)) => {
                 let stats = Rc::new(UnwindStats::new(profile.is_some()));
                 pending_unwind = Some(ParkedUnwind {
                     feed: UnwindFeed::new(
-                        ExecCtx::new(graph, params, qctx.cypher_version),
+                        ExecCtx::new(graph, params),
                         &clauses[i + 1..],
                         std::mem::take(&mut rows),
                         expression,
@@ -496,15 +493,7 @@ fn run_clauses_mode(
                 profile_recorded = true;
             }
             Clause::Unwind { expression, alias } => {
-                rows = exec_unwind(
-                    graph,
-                    &clauses[i + 1..],
-                    rows,
-                    expression,
-                    alias,
-                    params,
-                    qctx,
-                )?;
+                rows = exec_unwind(graph, &clauses[i + 1..], rows, expression, alias, params)?;
             }
             Clause::Call {
                 name,
@@ -519,7 +508,7 @@ fn run_clauses_mode(
                 // text (String vocabulary), once per clause.
                 let call_name = name.to_string();
                 let (call_rows, yields_unit) = exec_call(
-                    ExecCtx::new(graph, params, qctx.cypher_version).with_principal(qctx.principal),
+                    ExecCtx::new(graph, params).with_principal(qctx.principal),
                     rows,
                     CallSpec {
                         name: &call_name,
@@ -564,7 +553,7 @@ fn run_clauses_mode(
             } => {
                 let (feed, parked) = take_feed(&mut pending_unwind, &mut pending_fold, &mut rows);
                 rows = project_rows(
-                    ExecCtx::new(graph, params, qctx.cypher_version),
+                    ExecCtx::new(graph, params),
                     feed,
                     &ProjectSpec {
                         items,
@@ -597,7 +586,7 @@ fn run_clauses_mode(
             } => {
                 let (feed, parked) = take_feed(&mut pending_unwind, &mut pending_fold, &mut rows);
                 rows = project_rows(
-                    ExecCtx::new(graph, params, qctx.cypher_version),
+                    ExecCtx::new(graph, params),
                     feed,
                     &ProjectSpec {
                         items,
@@ -904,21 +893,16 @@ fn try_match_folds(
     where_clause: Option<&relate_ir::Expr>,
     clauses: &[Clause],
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Option<FoldedReturn>> {
-    if let Some(folded) = try_fold_boolean_count(graph, rows, clauses, params, cypher_version)? {
+    if let Some(folded) = try_fold_boolean_count(graph, rows, clauses, params)? {
         return Ok(Some(folded));
     }
     // The walk-count arm (`kernels::frontier_count`): a bounded
     // REPEATABLE ELEMENTS quantified pattern under a plain `count`, ahead
     // of the multi-hop REPEATABLE decline below.
-    if let Some(folded) = super::kernels::frontier_count::try_fold_walk_count(
-        graph,
-        rows,
-        clauses,
-        params,
-        cypher_version,
-    )? {
+    if let Some(folded) =
+        super::kernels::frontier_count::try_fold_walk_count(graph, rows, clauses, params)?
+    {
         return Ok(Some(folded));
     }
     // `skip_rel` keeps one relationship out of the next hop, which is the
@@ -941,26 +925,12 @@ fn try_match_folds(
     // widest coverage. The one-hop fold follows and serves exactly the
     // queries the path fold declined — no coverage gate between them, so
     // no query compiles the plan twice.
-    if let Some(folded) = try_fold_path_aggs(
-        graph,
-        rows,
-        patterns,
-        where_clause,
-        &clauses[1..],
-        params,
-        cypher_version,
-    )? {
+    if let Some(folded) =
+        try_fold_path_aggs(graph, rows, patterns, where_clause, &clauses[1..], params)?
+    {
         return Ok(Some(folded));
     }
-    try_fold_one_hop_aggs(
-        graph,
-        rows,
-        patterns,
-        where_clause,
-        &clauses[1..],
-        params,
-        cypher_version,
-    )
+    try_fold_one_hop_aggs(graph, rows, patterns, where_clause, &clauses[1..], params)
 }
 
 pub(crate) fn execute_part_read_seeded(

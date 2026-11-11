@@ -25,13 +25,15 @@ runs against a single graph:
 - `SHOW DATABASES` returns exactly the three fixed-namespace rows: `neo4j`
   (standard, read-write, `default` and `home`), `system` (system,
   read-write) and `system_ontologies` (standard, read-only), all `online`
-  with empty `aliases`/`constituents`. `SHOW DEFAULT DATABASE` and
+  with empty `aliases`/`constituents`, and every row's `defaultLanguage`
+  is the constant `CYPHER 25` — the engine's one dialect, never a stored
+  fact (ADR-0576). `SHOW DEFAULT DATABASE` and
   `SHOW HOME DATABASE` return `neo4j`; an unknown name returns no rows.
   Database administration follows Neo4j Community Edition: only
-  `SHOW DATABASE[S]`, `SHOW DEFAULT/HOME DATABASE` and
-  `ALTER DATABASE … SET DEFAULT LANGUAGE CYPHER 5|25` are supported; every
+  `SHOW DATABASE[S]` and `SHOW DEFAULT/HOME DATABASE` are supported; every
   other database administration command (`CREATE`/`DROP`/`ALTER DATABASE`
-  otherwise, `START`/`STOP DATABASE`, aliases, composite forms) fails with
+  in every form — `SET DEFAULT LANGUAGE` included (ADR-0576) —
+  `START`/`STOP DATABASE`, aliases, composite forms) fails with
   51N27 `Unsupported administration command: <statement>` (ADR-0116). A
   `WITH` composing one of these commands (`… YIELD … WITH … RETURN …`) is
   rejected when routed to `system` — `The following clauses are not allowed

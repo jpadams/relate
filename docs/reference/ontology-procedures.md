@@ -304,15 +304,14 @@ semantic error: SemanticError: This database is not queryable. Use the db.ontolo
 
 (GQLSTATUS 42N17.) What still runs while routed to `system_ontologies` is
 exactly the ADR-0116 §2 database-administration commands — `SHOW
-DATABASE[S] [name]`, `SHOW DEFAULT DATABASE`, `SHOW HOME DATABASE`,
-`ALTER DATABASE … SET DEFAULT LANGUAGE`. No graph is derived from the stored
-document (ADR-0229 §3 supersedes ADR-0120 §2): the document is reachable
-only through the `db.ontology.*` procedures above — `get` reads it, and
-`apply` turns it into `neo4j`'s current graph type. The ADR-0226 §1
-document→graph mapping is not shipped; it is revived from git history when
-Neo4j publishes its mapping. The divergence from live Neo4j CE 2026.09 —
-which allows reads on `system_ontologies` — is deliberate and recorded in
-ADR-0229.
+DATABASE[S] [name]`, `SHOW DEFAULT DATABASE`, `SHOW HOME DATABASE`. No
+graph is derived from the stored document (ADR-0229 §3 supersedes
+ADR-0120 §2): the document is reachable only through the `db.ontology.*`
+procedures above — `get` reads it, and `apply` turns it into `neo4j`'s
+current graph type. The ADR-0226 §1 document→graph mapping is not
+shipped; it is revived from git history when Neo4j publishes its
+mapping. The divergence from live Neo4j CE 2026.09 — which allows reads
+on `system_ontologies` — is deliberate and recorded in ADR-0229.
 
 ## Storage behavior
 

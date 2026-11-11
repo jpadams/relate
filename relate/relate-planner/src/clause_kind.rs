@@ -48,7 +48,7 @@ pub(crate) fn ir_clause_keyword(clause: &relate_ir::Clause) -> &'static str {
 /// and the query-type classifier ([`crate::query_type`]) share through the
 /// access fold ([`crate::access`]). Catalog DDL — index, constraint and
 /// graph-type commands — is [`ClauseClass::Schema`] in either its IR or
-/// `Catalog` form; `ALTER DATABASE` and the plain data-write variants are
+/// `Catalog` form, and the plain data-write variants are
 /// [`ClauseClass::Write`] (ADR-0447: a graph type is schema, so a read tool
 /// refuses it and a DDL tool admits it). CALL, CALL { … } and
 /// WHEN/ELSE are [`ClauseClass::Read`] here: the consumers classify those
@@ -78,15 +78,11 @@ pub(crate) fn clause_is_routing(clause: &relate_ir::Clause) -> bool {
 /// The grammar-ending DDL family: the commands whose own grammar ends at
 /// its `OPTIONS`/EOF, so no continuation may follow them. Membership is
 /// decided here, explicitly — not through `clause_class`, which is the
-/// *access* classification and puts `ALTER DATABASE` in `Write`:
+/// *access* classification:
 ///
-/// - every `ClauseClass::Schema` clause, whichever AST carries it (the
-///   rich `Catalog` DDL commands and the compact `CreateIndex`/
-///   `DropIndex`);
-/// - `ALTER DATABASE` (and its `AlterCurrentGraphType` kin already land
-///   in `Schema`), a database-alteration command whose grammar ends the
-///   same way — live 2026.10.1 rejects `ALTER DATABASE … FINISH`, `…
-///   WITH …` and `… RETURN …` as parse errors (probed 2026-11-08).
+/// every `ClauseClass::Schema` clause, whichever AST carries it (the
+/// rich `Catalog` DDL commands and the compact `CreateIndex`/
+/// `DropIndex`).
 ///
 /// The compact `ShowIndexes` spelling is explicitly **not** a member: it
 /// is `ClauseClass::Read` and projects rows, so the SHOW family composes.
@@ -94,17 +90,11 @@ pub(crate) fn clause_is_routing(clause: &relate_ir::Clause) -> bool {
 /// (`SHOW DATABASES` et al., ADR-0116) compose too — including
 /// `YIELD … RETURN` and UNION arms — so they are not members either. The
 /// standalone rule ([`crate::validate`]) reads this one answer instead of
-/// assembling the family at its use site.
+/// assembling the family at its use site. (`ALTER DATABASE` was a member
+/// by grammar until ADR-0576 Decision 3 made every form fail the parse
+/// with 51N27, so no plan can carry it.)
 pub(crate) fn clause_is_ddl_command(clause: &relate_ir::Clause) -> bool {
-    use relate_ir::Clause as Ir;
     clause_class(clause) == ClauseClass::Schema
-        || matches!(
-            clause,
-            Ir::Catalog(command) if matches!(
-                command.as_ref(),
-                relate_parser::Clause::AlterDatabase(_)
-            )
-        )
 }
 
 /// The family that cannot appear in a `UNION` arm. Two members by two
@@ -133,9 +123,6 @@ fn catalog_command_class(command: &relate_parser::Clause) -> ClauseClass {
         | C::DropConstraint(_)
         | C::CreateGraphType(_)
         | C::AlterCurrentGraphType(_) => ClauseClass::Schema,
-        // Catalog writes the namespace gate already treats as writes; a
-        // database command is administration, not a schema definition.
-        C::AlterDatabase(_) => ClauseClass::Write,
         // The SHOW family and the other read-only commands. The plain
         // data-write variants (Create/Merge/Delete/Set/Remove/Foreach/
         // LoadCSV) are Read in `Catalog` form: the front-end lowers them
@@ -259,7 +246,7 @@ pub fn clause_projects_rows(clause: &relate_ir::Clause) -> bool {
 /// alike, so no consumer keeps a second list of write clauses.
 ///
 /// The answer is the clause table: every `Write` and `Schema` class,
-/// **catalog commands included** (`ALTER DATABASE` and the graph-type
+/// **catalog commands included** (the graph-type
 /// commands are catalog writes that persist while moving no ADR-0309
 /// counter, and index/constraint DDL is a schema write). Two clause shapes
 /// are deliberately not this table's to answer, because only the caller's
@@ -314,7 +301,6 @@ mod tests {
     #[test]
     fn catalog_writes_are_mutation_operators() {
         for (cypher, expected) in [
-            ("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5", true),
             (
                 "CREATE GRAPH TYPE gt AS { (n:Person => {name :: STRING}) }",
                 true,

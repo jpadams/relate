@@ -6,7 +6,6 @@ use relate_core::{Result, Value};
 use relate_model::{ConstraintClassification, ConstraintType, EntityKind};
 use relate_parser::{ConstraintEntityFilter, ConstraintKindFilter};
 
-use crate::ctx::QueryCtx;
 use crate::overlay::ExecGraph;
 use crate::row::Row;
 
@@ -73,25 +72,19 @@ fn constraint_filter_types(wanted: ConstraintKindFilter) -> &'static [Constraint
 /// The `createStatement` column for one constraint row: Neo4j CE's
 /// rendered CREATE CONSTRAINT statement, or `None` when there is no
 /// faithful rendering — a dependent constraint (graph-type-managed; the
-/// column is NULL), a label/endpoint-label or unrecognized kind (no
-/// standalone CREATE form), or a Cypher 5 `propertyType` constraint (the
-/// `IS :: <type>` verb is hidden). The caller maps `None` to the
+/// column is NULL) or a label/endpoint-label or unrecognized kind (no
+/// standalone CREATE form). The caller maps `None` to the
 /// column's NULL.
 fn constraint_create_statement(
     def: &relate_catalog::ConstraintDef,
     kind: Option<ConstraintType>,
     entity: EntityKind,
     classification: ConstraintClassification,
-    cypher5: bool,
 ) -> Option<String> {
     if classification == ConstraintClassification::Dependent {
         return None;
     }
     let kind = kind?;
-    // The SHOW-only guard: Cypher 5 hides the `IS :: <type>` verb form.
-    if cypher5 && kind == ConstraintType::PropertyType {
-        return None;
-    }
     // The one verb table (`standalone_verb`): `None` for the kinds with no
     // standalone CREATE form and for an untyped `propertyType`.
     let verb = crate::graph_type::standalone_verb(kind, def.property_type.as_deref())?;
@@ -125,53 +118,39 @@ fn constraint_statement_binding(
     entity: EntityKind,
     current: &relate_parser::GraphTypeBody,
     detail: Option<&relate_model::Constraint>,
-    cypher5: bool,
 ) -> (ConstraintClassification, Option<String>) {
     let classification = detail
         .map(|constraint| crate::graph_type::classify_constraint(current, constraint))
         .unwrap_or_else(|| {
             crate::graph_type::classify_constraint_parts(current, kind, entity, &def.label)
         });
-    let statement = constraint_create_statement(def, kind, entity, classification, cypher5);
+    let statement = constraint_create_statement(def, kind, entity, classification);
     (classification, statement)
-}
-
-/// The constraint's CREATE statement for the checkpoint's schema mirror
-/// (ADR-0481 §3), classified and rendered exactly as the SHOW row does,
-/// with no `CYPHER 5` preamble — a schema mirror must recreate, not hide.
-/// `None` is the SHOW column's NULL (a graph-type-managed dependent
-/// constraint, a kind with no standalone CREATE form); the mirror omits
-/// the entry rather than fabricate a statement — a dependent
-/// constraint's schema is already carried by the graph type's canonical
-/// text.
-pub(super) fn constraint_ddl_statement(
-    def: &relate_catalog::ConstraintDef,
-    current: &relate_parser::GraphTypeBody,
-    derived: &BTreeMap<String, relate_model::Constraint>,
-) -> Option<String> {
-    // The mirror is the SHOW binding with the dialect's full form; one
-    // binding, not a second spelling of it.
-    constraint_statement_for(def, current, derived, false)
 }
 
 /// The `createStatement` a constraint's backing index row shows: Neo4j
 /// renders the owning constraint's CREATE CONSTRAINT there, not the
 /// index's own CREATE RANGE INDEX. Resolved through the same binding as
-/// the `SHOW CONSTRAINTS` row, so the two renderings cannot drift.
+/// the `SHOW CONSTRAINTS` row, so the two renderings cannot drift — and
+/// the checkpoint's schema mirror (ADR-0481 §3) reads the same call:
+/// `None` is the SHOW column's NULL (a graph-type-managed dependent
+/// constraint, a kind with no standalone CREATE form); the mirror omits
+/// the entry rather than fabricate a statement — a dependent
+/// constraint's schema is already carried by the graph type's canonical
+/// text.
 pub(super) fn constraint_statement_for(
     def: &relate_catalog::ConstraintDef,
     current: &relate_parser::GraphTypeBody,
     derived: &BTreeMap<String, relate_model::Constraint>,
-    cypher5: bool,
 ) -> Option<String> {
     let binding = constraint_binding(def, derived);
     let (kind, entity, detail) = (binding.kind, binding.entity, binding.detail);
-    constraint_statement_binding(def, kind, entity, current, detail, cypher5).1
+    constraint_statement_binding(def, kind, entity, current, detail).1
 }
 
 /// The shared per-row inputs of [`constraint_row`]: the typed binding
-/// (`kind`, `entity`, `detail`), the current graph type and dialect flag for
-/// the classification/rendering, and the committed-ness that decides the
+/// (`kind`, `entity`, `detail`), the current graph type for the
+/// classification/rendering, and the committed-ness that decides the
 /// schema id — bundled so the adjacent untyped facts cannot transpose and
 /// the producer stays within the argument-count budget.
 struct ConstraintRowContext<'a> {
@@ -179,7 +158,6 @@ struct ConstraintRowContext<'a> {
     entity: EntityKind,
     detail: Option<&'a relate_model::Constraint>,
     current: &'a relate_parser::GraphTypeBody,
-    cypher5: bool,
     committed: bool,
 }
 
@@ -198,7 +176,6 @@ fn constraint_row(def: relate_catalog::ConstraintDef, ctx: ConstraintRowContext<
         entity,
         detail,
         current,
-        cypher5,
         committed,
     } = ctx;
     let index_backed = kind.is_some_and(|kind| kind.is_index_backed());
@@ -206,7 +183,7 @@ fn constraint_row(def: relate_catalog::ConstraintDef, ctx: ConstraintRowContext<
     // display; the typed mapping itself is total.
     let display_type = kind.map_or("UNKNOWN", |kind| show_constraint_type_name(kind, entity));
     let (classification, create_statement) =
-        constraint_statement_binding(&def, kind, entity, current, detail, cypher5);
+        constraint_statement_binding(&def, kind, entity, current, detail);
     let create_statement = optional_string_cell(create_statement.as_deref());
     catalog_row([
         // An uncommitted (in-transaction) constraint has no schema id yet;
@@ -264,11 +241,10 @@ fn constraint_row(def: relate_catalog::ConstraintDef, ctx: ConstraintRowContext<
 pub(crate) fn show_constraints_rows(
     graph: &ExecGraph<'_>,
     c: &relate_parser::ShowConstraintsClause,
-    qctx: QueryCtx<'_>,
 ) -> Result<Vec<Row>> {
     let show = graph.show_schema()?;
-    let derived = &show.data.derived_constraints;
-    let current = show.data.current_graph_type.to_body();
+    let derived = &show.derived_constraints;
+    let current = show.current_graph_type.to_body();
     // The entity filter, resolved once to the row producer's own typed
     // vocabulary before any row is walked: the clause's typed
     // `ConstraintEntityFilter` mapped onto `EntityKind` (never a
@@ -304,7 +280,6 @@ pub(crate) fn show_constraints_rows(
                     entity,
                     detail,
                     current: &current,
-                    cypher5: qctx.is_cypher5(),
                     committed,
                 },
             )

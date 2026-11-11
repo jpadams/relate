@@ -9,8 +9,9 @@ and the selection never carries over to the next request. The final
 `PULL`/`DISCARD` SUCCESS reports the namespace the query ran in as `db`; an
 unknown name fails with `Graph not found: <name>` (ADR-0146).
 `system_ontologies` is listed but not queryable (ADR-0229): only the
-ADR-0116 §2 database-administration commands (`SHOW DATABASES`, `ALTER
-DATABASE … SET DEFAULT LANGUAGE`) still run while routed to it — every
+ADR-0116 §2 database-administration commands (`SHOW DATABASES`, `SHOW
+DEFAULT DATABASE`, `SHOW HOME DATABASE`) still run while routed to it —
+every
 other statement, reads included, fails with the 42N17 text `This database
 is not queryable. Use the db.ontology.* procedures on the user database
 'neo4j' instead.`

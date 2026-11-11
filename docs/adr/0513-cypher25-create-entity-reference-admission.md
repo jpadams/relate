@@ -154,3 +154,12 @@ and cannot pass against it.
   `validate_create_self_reference` (`validate/self_reference.rs`), and
   end-to-end 22N01 pins in `cypherlite/tests/write_validation.rs` (CREATE and
   MERGE, start and end positions).
+
+## Later references
+
+ADR-0576 supersedes Decision 1's Cypher-25-only carve-out: the `CYPHER`
+preamble is rejected before admission, so the self-reference rule is now
+unconditional. The 01N00 self-reference deprecation notification
+survives via the conservative tier's gap — a bare declaration inside a
+scope-free body that the battery cannot reject still reaches execution
+and fires the notification there.

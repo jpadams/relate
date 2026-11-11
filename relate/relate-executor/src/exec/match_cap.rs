@@ -11,7 +11,7 @@ use crate::eval::{eval, is_agg_expr, var_prop};
 use crate::overlay::ExecGraph;
 use crate::row::Row;
 
-use super::order::skip_limit_count;
+use super::order::resolve_page_bounds;
 use super::sink::SinkProjection;
 
 /// Stop MATCH once `RETURN/WITH DISTINCT … LIMIT n` has enough distinct keys.
@@ -19,7 +19,6 @@ use super::sink::SinkProjection;
 pub(crate) struct DistinctLimitCap<'a> {
     items: &'a [Projection],
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     seen: DistinctSet,
     want: usize,
 }
@@ -37,7 +36,7 @@ impl DistinctLimitCap<'_> {
         // `DistinctSet::insert_row` alone.
         let mut vals = Vec::with_capacity(self.items.len());
         for p in self.items {
-            vals.push(eval(graph, row, &p.expr, self.params, self.cypher_version)?);
+            vals.push(eval(graph, row, &p.expr, self.params)?);
         }
         self.seen.insert_row(&vals)?;
         Ok(())
@@ -123,18 +122,9 @@ impl ReturnWithSuffix<'_> {
         &self,
         graph: &ExecGraph<'_>,
         params: &BTreeMap<String, Value>,
-        cypher_version: Option<u32>,
     ) -> Result<Option<usize>> {
-        let Some(lim) = self.limit else {
-            return Ok(None);
-        };
-        let empty = Row::new();
-        let skip_n = match self.skip {
-            Some(e) => skip_limit_count(&eval(graph, &empty, e, params, cypher_version)?)?,
-            None => 0,
-        };
-        let limit_n = skip_limit_count(&eval(graph, &empty, lim, params, cypher_version)?)?;
-        Ok(skip_n.checked_add(limit_n))
+        let (skip_n, limit_n) = resolve_page_bounds(graph, params, self.skip, self.limit)?;
+        Ok(limit_n.and_then(|limit| skip_n.checked_add(limit)))
     }
 }
 
@@ -142,7 +132,6 @@ pub(crate) fn distinct_limit_cap<'a>(
     suffix: &'a [Clause],
     graph: &ExecGraph<'_>,
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Option<DistinctLimitCap<'a>>> {
     let Some(clause) = suffix.first() else {
         return Ok(None);
@@ -159,13 +148,12 @@ pub(crate) fn distinct_limit_cap<'a>(
     {
         return Ok(None);
     }
-    let Some(want) = s.skip_limit_want(graph, params, cypher_version)? else {
+    let Some(want) = s.skip_limit_want(graph, params)? else {
         return Ok(None);
     };
     Ok(Some(DistinctLimitCap {
         items: s.items,
         params,
-        cypher_version,
         seen: DistinctSet::default(),
         want,
     }))
@@ -281,7 +269,6 @@ pub(crate) fn ordered_limit_cap(
     patterns: &[PathPattern],
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     input_rows: usize,
 ) -> Result<Option<RowLimitCap>> {
     if input_rows != 1 || graph.has_write_overlay() {
@@ -302,7 +289,7 @@ pub(crate) fn ordered_limit_cap(
     if !ordered_expand_pattern(patterns, rel_var) {
         return Ok(None);
     }
-    let Some(want) = s.skip_limit_want(graph, params, cypher_version)? else {
+    let Some(want) = s.skip_limit_want(graph, params)? else {
         return Ok(None);
     };
     if want == 0 {
@@ -331,7 +318,6 @@ fn plain_limit_cap(
     suffix: &[Clause],
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Option<RowLimitCap>> {
     let Some(clause) = suffix.first() else {
         return Ok(None);
@@ -347,7 +333,7 @@ fn plain_limit_cap(
     {
         return Ok(None);
     }
-    let Some(want) = s.skip_limit_want(graph, params, cypher_version)? else {
+    let Some(want) = s.skip_limit_want(graph, params)? else {
         return Ok(None);
     };
     if want == 0 {
@@ -389,18 +375,16 @@ pub(crate) fn match_limit_cap<'a>(
     where_clause: Option<&Expr>,
     graph: &ExecGraph<'_>,
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     input_rows: usize,
 ) -> Result<Option<MatchCap<'a>>> {
     if where_clause.is_some() {
-        return Ok(plain_limit_cap(suffix, graph, params, cypher_version)?.map(MatchCap::Plain));
+        return Ok(plain_limit_cap(suffix, graph, params)?.map(MatchCap::Plain));
     }
-    if let Some(o) = ordered_limit_cap(suffix, patterns, graph, params, cypher_version, input_rows)?
-    {
+    if let Some(o) = ordered_limit_cap(suffix, patterns, graph, params, input_rows)? {
         return Ok(Some(MatchCap::Ordered(o)));
     }
-    if let Some(p) = plain_limit_cap(suffix, graph, params, cypher_version)? {
+    if let Some(p) = plain_limit_cap(suffix, graph, params)? {
         return Ok(Some(MatchCap::Plain(p)));
     }
-    Ok(distinct_limit_cap(suffix, graph, params, cypher_version)?.map(MatchCap::Distinct))
+    Ok(distinct_limit_cap(suffix, graph, params)?.map(MatchCap::Distinct))
 }

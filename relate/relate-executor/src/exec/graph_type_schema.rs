@@ -40,7 +40,6 @@ fn resolve_alteration_options(
     graph: &ExecGraph<'_>,
     body: &mut relate_parser::GraphTypeBody,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<()> {
     for constraint in &mut body.constraints {
         if matches!(constraint.options, relate_parser::OptionsForm::Absent) {
@@ -55,7 +54,6 @@ fn resolve_alteration_options(
             graph,
             &constraint.options,
             params,
-            cypher_version,
             &crate::exec::ddl_options::OptionKeyPolicy {
                 admitted: policy.admitted(),
                 literal: &key_error,
@@ -234,7 +232,6 @@ pub(crate) fn alter_current_graph_type(
     c: &relate_parser::AlterCurrentGraphTypeClause,
     rows: Vec<Row>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Vec<Row>> {
     // The stored model converts to the parser model once, here at
     // DDL-execution time; the per-verb body algebra lives in
@@ -252,7 +249,6 @@ pub(crate) fn alter_current_graph_type(
             // is nothing to resolve here.
             graph
                 .show_schema()?
-                .data
                 .graph_types
                 .get(&name.to_string())
                 .ok_or_else(|| Error::semantic("GraphTypeNotFound"))?
@@ -261,7 +257,7 @@ pub(crate) fn alter_current_graph_type(
         relate_parser::AlterCurrentGraphTypeTarget::Body(verb_body) => {
             // Only the statement's own body can carry `OPTIONS $param`.
             let mut body = verb_body.clone();
-            resolve_alteration_options(graph, &mut body, params, cypher_version)?;
+            resolve_alteration_options(graph, &mut body, params)?;
             body
         }
     };
@@ -315,7 +311,7 @@ pub(crate) fn set_current_graph_type_validate_first(
 /// [`apply_drop`]: crate::graph_type::apply_drop
 fn add_named_drop_targets(
     graph: &ExecGraph<'_>,
-    state: &crate::graph::ShowSchema,
+    state: &crate::graph::TheaterData,
     current: &relate_parser::GraphTypeBody,
     body: &relate_parser::GraphTypeBody,
     purge: &mut Vec<String>,
@@ -328,7 +324,7 @@ fn add_named_drop_targets(
         {
             continue;
         }
-        if let Some(derived) = state.data.derived_constraints.get(&name.to_string()) {
+        if let Some(derived) = state.derived_constraints.get(&name.to_string()) {
             if crate::graph_type::classify_constraint(current, derived)
                 == relate_model::ConstraintClassification::Dependent
             {
@@ -376,7 +372,7 @@ fn stored_constraint_kind(constraint: &ConstraintDef) -> Result<ConstraintType> 
 /// proves the rule is not graph-type-managed yet.
 fn reject_uncovered_independent_constraints(
     graph: &ExecGraph<'_>,
-    state: &crate::graph::ShowSchema,
+    state: &crate::graph::TheaterData,
     introduced: &std::collections::HashSet<ElementTypeKey>,
     derived: &[crate::graph_type::DerivedConstraint],
 ) -> Result<()> {
@@ -421,7 +417,7 @@ fn reject_uncovered_independent_constraints(
 /// are one rule and the re-statement is accepted.
 fn reject_added_equivalent_constraints(
     graph: &ExecGraph<'_>,
-    state: &crate::graph::ShowSchema,
+    state: &crate::graph::TheaterData,
     statement: &relate_parser::GraphTypeBody,
     after: &relate_parser::GraphTypeBody,
 ) -> Result<()> {
@@ -593,10 +589,10 @@ fn prepare_current_graph_type(
             .into_iter()
             .map(|constraint| constraint.name)
             .collect(),
-        &state.data.derived_constraints,
+        &state.derived_constraints,
         verb,
     );
-    let current = state.data.current_graph_type.to_body();
+    let current = state.current_graph_type.to_body();
     if matches!(verb, relate_parser::AlterGraphTypeVerb::Drop) {
         add_named_drop_targets(graph, &state, &current, verb_body, &mut purge)?;
     }

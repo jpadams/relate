@@ -1,10 +1,8 @@
 //! Temporal constructor and duration-bound arity: a call with more than the
 //! grammar's two arguments is the typed `InvalidNumberOfArguments`
-//! rejection, never a silent construction from the first argument — under
-//! both dialects (Cypher 25 reaches the shared construction policy, Cypher 5
-//! is rejected by the front-end's one-argument signature gate). The
-//! `duration.between`/`duration.in*` family's exactly-two contract lives
-//! here too, beside its sibling arity policies.
+//! rejection, never a silent construction from the first argument.
+//! The `duration.between`/`duration.in*` family's exactly-two contract
+//! lives here too, beside its sibling arity policies.
 
 mod common;
 
@@ -40,21 +38,6 @@ fn three_argument_constructors_are_a_typed_arity_error() {
     ] {
         assert!(conn.query(query).is_ok(), "{query}");
     }
-}
-
-#[test]
-fn cypher5_rejects_three_argument_constructors() {
-    for query in [
-        "CYPHER 5 RETURN date('2024-06-27', 'yyyy-MM-dd', 'x') AS x",
-        "CYPHER 5 RETURN duration('P1D', 'y', 3) AS x",
-    ] {
-        arity_error(query);
-    }
-    // The one-argument Cypher 5 signature still runs.
-    let mut conn = connection();
-    assert!(conn
-        .query("CYPHER 5 RETURN date('2024-06-27') AS x")
-        .is_ok());
 }
 
 /// C5: `duration.between` and its `duration.in*` siblings take exactly two

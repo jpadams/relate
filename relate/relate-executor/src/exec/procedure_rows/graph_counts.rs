@@ -105,8 +105,8 @@ pub(crate) fn graph_counts_row(
     section: &str,
 ) -> Result<BTreeMap<String, Value>> {
     let show = graph.show_schema()?;
-    let details = &show.data.index_details;
-    let derived = &show.data.derived_constraints;
+    let details = &show.index_details;
+    let derived = &show.derived_constraints;
     let constraints = graph.named_constraints();
     let constraint_entries: Vec<Value> = constraints
         .iter()
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn graph_type_constraints_carry_their_enforced_label_and_endpoint() {
         let (_section, constraints) = constraints_of(
-            "CYPHER 25 ALTER CURRENT GRAPH TYPE SET {\
+            "ALTER CURRENT GRAPH TYPE SET {\
                (:Actor => :Person),\
                (:Actor)-[:ACTED_IN =>]->(:Movie)\
              }",

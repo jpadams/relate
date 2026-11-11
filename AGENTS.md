@@ -608,8 +608,8 @@ reporting only, no ratchet).
 Database administration (ADR-0116): every store has three fixed namespaces
 — `neo4j`, `system`, `system_ontologies`; `USE` routes the statement,
 unknown name fails (42N00). Supported commands = `SHOW DATABASE[S]`, `SHOW
-DEFAULT/HOME DATABASE`, `ALTER DATABASE … SET DEFAULT LANGUAGE` only —
-everything else (`CREATE`/`DROP`/`ALTER DATABASE` otherwise,
+DEFAULT/HOME DATABASE` only — everything else (`CREATE`/`DROP`/`ALTER
+DATABASE` in every form — `SET DEFAULT LANGUAGE` included (ADR-0576) —
 `START`/`STOP`, aliases, composite forms) fails 51N27. `system_ontologies`
 is listed but not queryable (ADR-0229): every statement routed there —
 reads included, `EXPLAIN`-wrapped included — fails with the authored 42N17

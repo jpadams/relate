@@ -19,7 +19,7 @@ exec/catalog.rs::imported_catalog # projection/filter stage materializes its row
 exec/catalog.rs::project_catalog # projection/filter stage materializes its rows; to be replaced by streaming
 exec/catalog.rs::project_catalog_by_row # projection/filter stage materializes its rows; to be replaced by streaming
 exec/catalog.rs::visible_catalog # projection/filter stage materializes its rows; to be replaced by streaming
-exec/catalog_schema.rs::catalog_alter_database # bounded catalog/admin/procedure result, not graph-sized
+
 exec/catalog_schema.rs::catalog_create_constraint # bounded catalog/admin/procedure result, not graph-sized
 exec/catalog_schema.rs::catalog_create_index # bounded catalog/admin/procedure result, not graph-sized
 exec/catalog_schema.rs::catalog_drop_constraint # bounded catalog/admin/procedure result, not graph-sized

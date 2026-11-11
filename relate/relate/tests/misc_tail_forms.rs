@@ -174,9 +174,10 @@ fn with_star_may_relist_an_imported_name() {
 }
 
 #[test]
-fn merge_property_map_may_reference_the_merged_entity() {
-    // Cypher 25 rejects the same-clause reference (42I58); the Cypher 5
-    // preamble keeps the deprecated lenient behavior with its 01N00 warning.
+fn merge_property_map_self_reference_is_rejected() {
+    // The same-clause reference is rejected outright (42I58): ADR-0576
+    // removed the `CYPHER 5` preamble that kept the deprecated lenient
+    // behavior, so no spelling opts back in.
     let mut conn = connection();
     run(&mut conn, "CREATE ({prop: 'x'})");
     let error = conn
@@ -188,10 +189,15 @@ fn merge_property_map_may_reference_the_merged_entity() {
             .contains("cannot be created and referenced"),
         "{error}"
     );
-    let legacy = conn
+    // The prefixed spelling fails the parse with the authored removal
+    // error before the rule is ever reached.
+    let prefixed = conn
         .query("CYPHER 5 MATCH (a) WITH a AS shadow MERGE (a {prop: a.prop}) RETURN a.prop AS prop")
-        .unwrap();
-    assert_eq!(legacy.rows, vec![vec![Value::String("x".into())]]);
+        .unwrap_err();
+    assert!(
+        prefixed.to_string().contains("CYPHER version prefix"),
+        "{prefixed}"
+    );
     // The graph still holds exactly the seeded node.
     let nodes = run(&mut conn, "MATCH (n) RETURN count(*) AS c");
     assert_eq!(nodes.rows, vec![vec![Value::Int(1)]]);
@@ -213,13 +219,7 @@ fn merge_property_map_reference_for_relationships() {
             .contains("cannot be created and referenced"),
         "{error}"
     );
-    let legacy = conn
-        .query(
-            "CYPHER 5 MATCH ()-[r]->() WITH r AS shadow MERGE ()-[r:R {prop: r.prop}]->() \
-             RETURN r.prop AS prop",
-        )
-        .unwrap();
-    assert_eq!(legacy.rows, vec![vec![Value::String("x".into())]]);
+    // No `CYPHER 5` lenient spelling exists to opt back in with (ADR-0576).
 }
 
 #[test]

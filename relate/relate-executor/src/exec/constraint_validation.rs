@@ -90,7 +90,6 @@ fn validate_slice(graph: &ExecGraph<'_>, slice: &ValidationSlice) -> Result<()> 
         .into_iter()
         .map(|mut def| {
             def.enforced_label = show
-                .data
                 .derived_constraints
                 .get(&def.name)
                 .and_then(|constraint| constraint.enforced_label.clone());

@@ -156,7 +156,7 @@ pub(crate) fn served_nfa_run(
 ) -> FrontierRun {
     let view = ExecGraph::read(graph);
     run(
-        ExecCtx::new(&view, &BTreeMap::new(), None),
+        ExecCtx::new(&view, &BTreeMap::new()),
         seed,
         nfa,
         WalkBudget::standard(),

@@ -528,7 +528,6 @@ pub fn catalog_info(clause: &Clause) -> Option<CatalogInfo<'_>> {
         | Clause::DropIndex(_)
         | Clause::CreateConstraint(_)
         | Clause::DropConstraint(_)
-        | Clause::AlterDatabase(_)
         | Clause::CreateGraphType(_)
         | Clause::AlterCurrentGraphType(_)
         | Clause::Match(_)
@@ -689,7 +688,6 @@ mod tests {
             "DROP INDEX i",
             "CREATE CONSTRAINT c FOR (n:N) REQUIRE n.p IS UNIQUE",
             "DROP CONSTRAINT c",
-            "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
             "CREATE GRAPH TYPE social AS { (:Person => {name :: STRING}) }",
             "ALTER CURRENT GRAPH TYPE SET { (:Private => {v :: STRING}) }",
         ] {

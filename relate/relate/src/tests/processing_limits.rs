@@ -398,26 +398,6 @@ fn count_eviction_releases_the_cache_reservation() {
     );
 }
 
-/// `CYPHER <version>` rewrites to a statement that does not parse. The
-/// original statement runs, nothing is cached, and its plan charge is
-/// released with the statement.
-#[test]
-fn a_rewritten_parse_failure_runs_the_original_and_stores_nothing() {
-    let db = open_tokens(1 << 20);
-    let mut conn = db.connect().unwrap();
-    conn.query("CREATE ()").unwrap();
-    assert_eq!(reserved(&db), 0);
-    let ran = conn
-        .query("CYPHER 5 MATCH (n) RETURN count(n) AS c")
-        .unwrap();
-    assert_eq!(ran.rows, vec![vec![Value::Int(1)]]);
-    assert_eq!(cache_len(&db), 0);
-    // The result keeps the statement workspace. The plan charge left
-    // with the reservation, and nothing stayed on the cache ledger.
-    drop(ran);
-    assert_eq!(reserved(&db), 0);
-}
-
 /// A non-cacheable statement reserves its plan on the workspace pool for
 /// the run, and refuses before execution when that reservation does not fit.
 #[test]

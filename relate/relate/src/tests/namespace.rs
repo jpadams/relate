@@ -39,8 +39,6 @@ fn system_ontologies_is_gated_before_dispatch() {
         );
     }
     conn.query("SHOW DATABASES").unwrap();
-    conn.query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25")
-        .unwrap();
 }
 
 #[test]

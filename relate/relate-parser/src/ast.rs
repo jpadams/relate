@@ -25,20 +25,6 @@ pub struct Statement {
     /// outermost `Statement` of each stage only -- a stage's own `.union`
     /// arms never carry their own independent `.next` chain.
     pub next: Option<Box<Statement>>,
-    /// CIP-150: the effective Cypher language version explicitly requested
-    /// by a `CYPHER <version>` statement preamble (`5` or `25`), or `None`
-    /// if the query had no version-bearing preamble clause at all (a
-    /// version-less `CYPHER <options>` clause with no `<cypher version>`
-    /// token also leaves this `None`). Only ever set on the outermost
-    /// `Statement` a top-level `parse()` call returns -- the preamble is
-    /// parsed once, before any clause, so nested statements (UNION arms,
-    /// `CALL`/`EXISTS`/`COUNT` subquery bodies, NEXT stages) never carry
-    /// their own value here and consumers must read it off the top-level
-    /// statement. `None` means "use the session/database default
-    /// language", which Relate always resolves to 25 (its only
-    /// implemented dialect) since it has no CIP-170 default-language
-    /// configuration surface.
-    pub cypher_version: Option<u32>,
     /// CIP-146/CIP-242: true when this `SingleQuery` was written as
     /// `[ USE <graph-expr> ] '{' <RegularQuery> '}'` -- top-level braces --
     /// rather than the plain unbraced form. The brace form's *content* is
@@ -82,7 +68,6 @@ impl PartialEq for Statement {
             && self.explain == other.explain
             && self.profile == other.profile
             && self.next == other.next
-            && self.cypher_version == other.cypher_version
             && self.definitions == other.definitions
     }
 }
@@ -276,12 +261,6 @@ pub enum Clause {
     /// `specification` column (the CIP-180 canonical body string wrapped in
     /// `{ }`, or the literal `{}` when empty).
     ShowCurrentGraphType(ShowCurrentGraphTypeClause),
-    /// `ALTER DATABASE <name> [IF EXISTS] SET DEFAULT LANGUAGE CYPHER
-    /// <n>` (CIP-170). Under ADR-0116 §2's fixed namespaces this is the
-    /// only supported `ALTER DATABASE` form; every other form is
-    /// recognized and rejected at parse time with CE's
-    /// `UnsupportedAdministrationCommand`.
-    AlterDatabase(AlterDatabaseClause),
 }
 
 impl Clause {
@@ -326,22 +305,8 @@ impl Clause {
             Clause::CreateGraphType(_) => "CREATE GRAPH TYPE",
             Clause::ShowGraphType(_) => "SHOW GRAPH TYPE",
             Clause::ShowCurrentGraphType(_) => "SHOW CURRENT GRAPH TYPE",
-            Clause::AlterDatabase(_) => "ALTER DATABASE",
         }
     }
-}
-
-/// See `Clause::AlterDatabase`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AlterDatabaseClause {
-    pub name: SchemaName,
-    pub if_exists: bool,
-    /// The `SET DEFAULT LANGUAGE CYPHER <n>` digits (e.g. `5`, `25`, or an
-    /// unsupported value like `6`), unvalidated at parse time -- CIP-170
-    /// NOTES.md Deviations #2: an out-of-range version here is a *runtime*
-    /// data exception (`22N04`), unlike the CIP-150 statement-preamble
-    /// `CYPHER <version>` prefix, which rejects at compile time.
-    pub default_language: u32,
 }
 
 /// See `Clause::AlterCurrentGraphType`.

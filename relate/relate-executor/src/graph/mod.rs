@@ -85,8 +85,6 @@ pub use index::take_index_rebuilds;
 pub use relate_planner::ContainsCount;
 pub(crate) use services::StoreServices;
 
-use theater::TheaterData;
-
 /// The core-store map: integer keys, FxHash — SipHash + the default
 /// hasher on dense engine-generated ids was profiled as a top-2 cost
 /// (LABS-337/LABS-358); ADR-0355's rule: a key that is attacker-writable
@@ -178,7 +176,7 @@ impl Graph {
     }
 }
 
-pub(crate) use theater::{apply_show_overlay, DatabasesCatalog, ShowSchema};
+pub(crate) use theater::{apply_show_overlay, DatabasesCatalog, TheaterData};
 pub use theater::{CheckpointTheater, DatabaseEntry, SchemaSnapshot};
 
 /// `Atomic*::fetch_update` was renamed to `try_update` in Rust 1.95 and
@@ -1284,7 +1282,7 @@ impl Graph {
         };
         after_catalog();
         // Publication serialization makes these non-overlapping captures
-        // (catalog above, then databases + theater in capture_show_schema)
+        // (catalog above, then theater in capture_show_schema)
         // atomic to embedded readers, without ever nesting catalog/theater
         // locks.
         let show = self.capture_show_schema();
@@ -1295,10 +1293,10 @@ impl Graph {
         }
     }
 
-    /// The committed SHOW metadata at this instant: the store-level
-    /// databases table plus this graph's theater, under the theater lock.
-    pub(crate) fn capture_show_schema(&self) -> ShowSchema {
-        ShowSchema::capture(self.databases().snapshot(), &self.theater.lock().unwrap())
+    /// The committed SHOW metadata at this instant: this graph's theater,
+    /// under the theater lock.
+    pub(crate) fn capture_show_schema(&self) -> TheaterData {
+        self.theater.lock().unwrap().clone()
     }
 
     pub fn named_constraints(&self) -> Vec<ConstraintDef> {

@@ -157,14 +157,7 @@ impl<'r, 'a> MatchedSink<'r, 'a> {
         match &mut self.kind {
             SinkKind::Probe(probe) => {
                 ctx.graph.cancel_tick()?;
-                probe.accept_row(
-                    ctx.graph,
-                    row,
-                    used(),
-                    residual,
-                    ctx.params,
-                    ctx.cypher_version,
-                )?;
+                probe.accept_row(ctx.graph, row, used(), residual, ctx.params)?;
             }
             SinkKind::Collect {
                 tail,

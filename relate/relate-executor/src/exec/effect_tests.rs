@@ -56,9 +56,9 @@ fn an_effective_write_reports_an_application() {
     assert!(!result.effect.changed_nothing());
 }
 
-/// A catalog change (`ALTER DATABASE`) leaves every ADR-0309 mutation counter
-/// at zero while the store changes: the effect's applied fact comes from the
-/// redo, not the counters, so it is not reported as changed nothing.
+/// A catalog change (`CREATE GRAPH TYPE`) leaves every ADR-0309 mutation
+/// counter at zero while the store changes: the effect's applied fact comes
+/// from the redo, not the counters, so it is not reported as changed nothing.
 #[test]
 fn a_catalog_change_applies_without_moving_a_counter() {
     let g = Graph::default();
@@ -66,9 +66,9 @@ fn a_catalog_change_applies_without_moving_a_counter() {
     let result = exec_write(
         &g,
         &scratch,
-        "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
+        "CREATE GRAPH TYPE catalog_case AS { (:N => {p :: STRING}) }",
     )
-    .expect("the admin command succeeds");
+    .expect("the graph-type DDL succeeds");
     assert_eq!(
         result.stats,
         QueryStats::default(),

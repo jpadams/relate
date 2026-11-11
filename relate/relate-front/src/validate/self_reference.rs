@@ -2,9 +2,8 @@
 //! clause creates. One home for both halves of the rule — the property-value
 //! half (`validate_create_self_reference`) and the CIP-156 dynamic
 //! label/type half (`check_dynamic_label_scope`) — because they are one
-//! Neo4j admission with one error text. ADR-0513 records the rule, its
-//! Cypher-5 carve-out and the conservative tier's deliberate
-//! under-approximation.
+//! Neo4j admission with one error text. ADR-0513 records the rule and the
+//! conservative tier's deliberate under-approximation.
 //!
 //! The scope-tracking pass ([`crate::validate::validate_variable_types`])
 //! applies the rule with the exact enclosing bindings — the top level and
@@ -72,9 +71,8 @@ pub(crate) fn declares_shape(node: &NodePattern) -> bool {
 pub(crate) fn validate_create_self_reference(
     clauses: &[Clause],
     enclosing: &IdentHashSet<SmallName>,
-    cypher_version: Option<u32>,
 ) -> Result<(), EngineError> {
-    validate_create_self_reference_with(clauses, enclosing, |_| true, true, cypher_version)
+    validate_create_self_reference_with(clauses, enclosing, |_| true, true)
 }
 
 /// The scope-free battery's tier: the caller cannot see a nested body's
@@ -83,19 +81,12 @@ pub(crate) fn validate_create_self_reference(
 /// ADR-0513 §Consequences.
 pub(crate) fn validate_create_self_reference_conservative(
     clauses: &[Clause],
-    cypher_version: Option<u32>,
 ) -> Result<(), EngineError> {
     // MERGE is excluded: in a body whose correlated outer bindings this
     // tier cannot see, a merged element with a label/property map may be a
     // reference to an imported entity rather than a declaration, so only the
     // exact tier can decide it.
-    validate_create_self_reference_with(
-        clauses,
-        &IdentHashSet::default(),
-        declares_shape,
-        false,
-        cypher_version,
-    )
+    validate_create_self_reference_with(clauses, &IdentHashSet::default(), declares_shape, false)
 }
 
 /// One body over the two tiers. `declares_node` is the tier's one varying
@@ -110,13 +101,7 @@ fn validate_create_self_reference_with(
     enclosing: &IdentHashSet<SmallName>,
     declares_node: fn(&NodePattern) -> bool,
     include_merge: bool,
-    cypher_version: Option<u32>,
 ) -> Result<(), EngineError> {
-    // Cypher 5 only warns (01N00) and binds the earlier pattern element; the
-    // rule owns its dialect gate so no caller can forget it.
-    if relate_core::is_cypher5(cypher_version) {
-        return Ok(());
-    }
     let mut introduced: IdentHashSet<SmallName> = IdentHashSet::default();
     for clause in clauses {
         // Names bound before each CREATE/MERGE: a pattern variable that is
@@ -655,9 +640,6 @@ mod tests {
             // A `CALL` body's imported bindings are references too.
             "MATCH (c) CALL (c) { CREATE (c)-[:R]->(:X {p: c.q}) } RETURN c",
             "MATCH (c) CALL { WITH c CREATE (c)-[:R]->(:X {p: c.q}) } RETURN c",
-            // The rule is Cypher-25-only: an explicit CYPHER 5 preamble is
-            // the 01N00 notification shape, not an error.
-            "CYPHER 5 CREATE (a {x: 1}), (b {y: a.x})",
             // ADR-0513 §Consequences: the conservative tier cannot see a
             // nested body's correlated outer bindings, so a *bare* declaration
             // inside `CALL { }` read by its own clause is not caught. Pinned

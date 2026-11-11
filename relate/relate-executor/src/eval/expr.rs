@@ -641,18 +641,17 @@ pub(crate) fn eval_case(
     params: &BTreeMap<String, Value>,
     when_then: &[(Expr, Expr)],
     else_expr: &Option<Box<Expr>>,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     // Every arm's condition is a predicate: the parser lowers a simple-CASE
     // test operand into the arm's equality comparison, so first-true wins and
     // an arm that is not true falls through to the next.
     for (when, then) in when_then {
-        if eval(graph, row, when, params, cypher_version)?.truthy() == Some(true) {
-            return eval(graph, row, then, params, cypher_version);
+        if eval(graph, row, when, params)?.truthy() == Some(true) {
+            return eval(graph, row, then, params);
         }
     }
     match else_expr {
-        Some(e) => eval(graph, row, e, params, cypher_version),
+        Some(e) => eval(graph, row, e, params),
         None => Ok(Value::Null),
     }
 }

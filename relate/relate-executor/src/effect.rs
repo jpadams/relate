@@ -6,7 +6,7 @@
 //! A statement's plan-derived query type is deliberately conservative
 //! (ADR-0332): a top-level `CALL { … }` and every `LOAD CSV` count as writes
 //! so the namespace write gate cannot be bypassed, even when the body only
-//! reads. It also cannot see catalog changes — `ALTER DATABASE`, a graph-type
+//! reads. It also cannot see catalog changes — a graph-type
 //! change, `db.ontology.set` — which leave every ADR-0309 mutation counter at
 //! zero while the store did change. Neither fact can answer "did this
 //! statement write and apply nothing", so the executor records the answer

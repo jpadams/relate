@@ -85,7 +85,6 @@ pub(crate) fn rewrite_horizontal_aggregates(
     row: &Row,
     expr: &Expr,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Expr> {
     match horizontal_call(expr) {
         Some(call) => {
@@ -111,7 +110,7 @@ pub(crate) fn rewrite_horizontal_aggregates(
                         items.get(index).cloned().unwrap_or(Value::Null),
                     );
                 }
-                values.push(eval(graph, &iteration, call.arg, params, cypher_version)?);
+                values.push(eval(graph, &iteration, call.arg, params)?);
             }
             let value = horizontal_aggregate(call.kind, &call.name, values)?;
             Ok(Expr::RuntimeValue(value))
@@ -121,9 +120,9 @@ pub(crate) fn rewrite_horizontal_aggregates(
         // scope-bearing variants (pattern/subquery forms) carry their own
         // structure and are leaves here, exactly as `Expr::children`
         // skips them
-        None => expr.map_children(&mut |child| {
-            rewrite_horizontal_aggregates(graph, row, child, params, cypher_version)
-        }),
+        None => {
+            expr.map_children(&mut |child| rewrite_horizontal_aggregates(graph, row, child, params))
+        }
     }
 }
 
@@ -152,7 +151,7 @@ mod tests {
     /// Run `expr` through the rewrite and return the value it folded the
     /// row-bound list to, failing when the rewrite declined to fold it.
     fn rewritten(graph: &ExecGraph<'_>, row: &Row, expr: &Expr) -> Value {
-        match rewrite_horizontal_aggregates(graph, row, expr, &BTreeMap::new(), None).unwrap() {
+        match rewrite_horizontal_aggregates(graph, row, expr, &BTreeMap::new()).unwrap() {
             Expr::RuntimeValue(value) => value,
             other => panic!("horizontal aggregate was not folded: {other:?}"),
         }
@@ -198,7 +197,7 @@ mod tests {
         );
         let mixed = list_row(vec![duration(0, 0, 1), Value::Int(1)]);
         assert!(
-            rewrite_horizontal_aggregates(&graph, &mixed, &agg_fn("sum"), &BTreeMap::new(), None)
+            rewrite_horizontal_aggregates(&graph, &mixed, &agg_fn("sum"), &BTreeMap::new())
                 .is_err(),
             "mixing durations and numbers is a type error"
         );
@@ -213,7 +212,7 @@ mod tests {
         let row = list_row(vec![Value::String("x".into())]);
         for name in ["sum", "avg"] {
             assert!(
-                rewrite_horizontal_aggregates(&graph, &row, &agg_fn(name), &BTreeMap::new(), None)
+                rewrite_horizontal_aggregates(&graph, &row, &agg_fn(name), &BTreeMap::new())
                     .is_err(),
                 "a non-numeric {name} operand is a type error"
             );

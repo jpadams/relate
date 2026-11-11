@@ -210,6 +210,11 @@ error_kinds! {
     // (Delete1/Delete2); a non-label non-entity expression (`DELETE 1 + 1`)
     // stays `InvalidArgumentType` (Delete5).
     InvalidDelete => SyntaxError,
+    // ADR-0576 Decision 2: a statement opening with a `CYPHER` preamble
+    // clause. Not a TCK scenario — Relate's authored removal error — but a
+    // parse-time rejection, so a `SyntaxError`-class compile-time failure.
+    // The text lives in `ce_messages::cypher_prefix_unsupported`.
+    UnsupportedCypherVersionPrefix => SyntaxError,
     // --- Type errors ---
     TypeError => TypeError,
     InvalidArgumentType => TypeError,

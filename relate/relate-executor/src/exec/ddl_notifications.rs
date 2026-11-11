@@ -77,8 +77,8 @@ pub fn ddl_notifications(
     }
 }
 
-/// One parsed catalog clause's notes. A non-DDL catalog clause (a `SHOW`, an
-/// `ALTER DATABASE`) raises none.
+/// One parsed catalog clause's notes. A non-DDL catalog clause (a `SHOW`)
+/// raises none.
 fn catalog_clause_notifications(
     graph: &ExecGraph<'_>,
     clause: &relate_parser::Clause,
@@ -514,7 +514,7 @@ fn create_constraint_notifications(
     // validation can only turn the statement into an error (the statement's
     // own, which propagates), so the version cannot change the skip
     // evidence. Only a skip carries evidence for a note.
-    let gate = constraint_create_gate(graph, c, &def, constraint_type, params, None)?;
+    let gate = constraint_create_gate(graph, c, &def, constraint_type, params)?;
     let Gate::Skip(rule) = gate else {
         return Ok(Vec::new());
     };

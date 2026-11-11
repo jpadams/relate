@@ -113,12 +113,7 @@ impl<'a, 'data> GpmEmit<'a, 'data> {
     /// through the shared `reduce_row`), so an emitted row is exactly the
     /// row the materialized walk would have emitted.
     pub(super) fn offer(&mut self, gctx: &GpmCtx<'_>, mut state: super::GpmState) -> Result<()> {
-        let GpmCtx {
-            graph,
-            params,
-            cypher_version,
-            ..
-        } = *gctx;
+        let GpmCtx { graph, params, .. } = *gctx;
         // the arm's own pattern — the completion pipeline runs once,
         // before the arm match
         let path = match self {
@@ -157,14 +152,7 @@ impl<'a, 'data> GpmEmit<'a, 'data> {
                 // names, rebinding group names), then the predicate, the
                 // halt cell on the first accept — the same verdict the
                 // materialized rows' answer reads.
-                probe.accept_row(
-                    graph,
-                    state.row,
-                    state.used,
-                    residual,
-                    params,
-                    cypher_version,
-                )?;
+                probe.accept_row(graph, state.row, state.used, residual, params)?;
             }
         }
         Ok(())

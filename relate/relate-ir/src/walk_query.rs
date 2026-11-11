@@ -528,7 +528,6 @@ mod tests {
             parts: vec![SingleQuery { clauses }],
             union_all: Vec::new(),
             next: None,
-            cypher_version: None,
         }
     }
 

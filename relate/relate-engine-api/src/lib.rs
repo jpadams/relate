@@ -15,7 +15,7 @@ mod query;
 mod write;
 
 pub use catalog_image::{
-    map_put_database, CheckpointTheater, DatabaseEntry, SchemaSnapshot, ShowSchema, TheaterData,
+    map_put_database, CheckpointTheater, DatabaseEntry, SchemaSnapshot, TheaterData,
 };
 pub use commit::CommitRecord;
 pub use engines::{

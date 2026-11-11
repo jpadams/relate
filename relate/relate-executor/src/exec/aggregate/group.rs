@@ -65,7 +65,6 @@ struct GroupState<'e> {
 pub(crate) struct Aggregation<'a> {
     items: &'a [Projection],
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     order: &'a OrderKeys<'a>,
     having: Option<&'a Expr>,
     import_scope: Option<&'a Row>,
@@ -94,7 +93,6 @@ impl<'a> Aggregation<'a> {
         items: &'a [Projection],
         group_by: Option<&'a [Expr]>,
         params: &'a BTreeMap<String, Value>,
-        cypher_version: Option<u32>,
         subclauses: &GroupSubclauses<'a>,
     ) -> Result<Self> {
         let GroupSubclauses {
@@ -140,7 +138,6 @@ impl<'a> Aggregation<'a> {
                 .map(|p| &p.expr),
             order.exprs().chain(having),
             params,
-            cypher_version,
         )?;
         let account = relate_core::tokens::workspace_accounting();
         // The input vector stays allocated until the fold finishes. Bill it
@@ -162,7 +159,6 @@ impl<'a> Aggregation<'a> {
         let mut this = Self {
             items,
             params,
-            cypher_version,
             order,
             having,
             import_scope,
@@ -210,7 +206,6 @@ impl<'a> Aggregation<'a> {
     pub(crate) fn offer(&mut self, graph: &ExecGraph<'_>, row: Row) -> Result<()> {
         let Self {
             params,
-            cypher_version,
             key_exprs,
             account,
             sites,
@@ -222,19 +217,13 @@ impl<'a> Aggregation<'a> {
             group_retained,
             ..
         } = self;
-        let (params, cypher_version, account) = (*params, *cypher_version, *account);
+        let (params, account) = (*params, *account);
         graph.cancel_tick()?;
         // Star-free after the desugar in `open`: one `eval` per key, and the
         // capacity is exact.
         let mut key = Vec::with_capacity(key_exprs.len());
         for k in key_exprs.iter() {
-            key.push(GroupKey::new(&eval(
-                graph,
-                &row,
-                k,
-                params,
-                cypher_version,
-            )?));
+            key.push(GroupKey::new(&eval(graph, &row, k, params)?));
         }
         if let Some(retained) = retained.as_mut() {
             retained.release_row(&row);
@@ -258,7 +247,7 @@ impl<'a> Aggregation<'a> {
                     }
                     group_retained.add_row(graph, row.values())?;
                 }
-                state.accs.offer(graph, &row, params, cypher_version)?;
+                state.accs.offer(graph, &row, params)?;
                 if lands_as_seed {
                     state.seed = Some(row);
                 } else {
@@ -288,7 +277,7 @@ impl<'a> Aggregation<'a> {
                 group_retained.add_row(graph, row.values())?;
                 let mut accs = sites.open_group();
                 group_retained.add_bytes(graph, accs.footprint())?;
-                accs.offer(graph, &row, params, cypher_version)?;
+                accs.offer(graph, &row, params)?;
                 // The row stays as the seed and holds its share of what the
                 // sites kept; that payload was charged once with the seed.
                 accs.settle(graph, group_retained)?;
@@ -310,7 +299,6 @@ impl<'a> Aggregation<'a> {
         let Self {
             items,
             params,
-            cypher_version,
             order,
             having,
             import_scope,
@@ -336,7 +324,7 @@ impl<'a> Aggregation<'a> {
             let GroupState { seed, accs } = state;
             let seed_row = seed.as_ref().or(import_scope);
             let mut n = seed_row.cloned().unwrap_or_default();
-            let folded = accs.finish(graph, seed.as_ref(), params, cypher_version);
+            let folded = accs.finish(graph, seed.as_ref(), params);
             if star {
                 // The variables `*` carries are already in the first-row
                 // seed; keep the internal `__*` names out of the projected
@@ -354,10 +342,9 @@ impl<'a> Aggregation<'a> {
                         AggScope::of_group(&folded, seed_row),
                         &p.expr,
                         params,
-                        cypher_version,
                     )?
                 } else if let Some(row) = seed_row {
-                    eval(graph, row, &p.expr, params, cypher_version)?
+                    eval(graph, row, &p.expr, params)?
                 } else {
                     Value::Null
                 };
@@ -372,13 +359,7 @@ impl<'a> Aggregation<'a> {
             // read of a present value fails — the documented `ORDER BY`
             // policy.
             park_order_keys(order, &mut n, |expr, scope| {
-                agg_eval(
-                    graph,
-                    AggScope::of_row(&folded, scope),
-                    expr,
-                    params,
-                    cypher_version,
-                )
+                agg_eval(graph, AggScope::of_row(&folded, scope), expr, params)
             })?;
             // HAVING (ADR-0453): the aggregating WHERE, answered per group
             // with the same scope an ORDER BY key gets. Not-true drops the
@@ -386,13 +367,7 @@ impl<'a> Aggregation<'a> {
             // is the typed rejection live raises (22N01) and a list/path
             // converts, both through the one predicate policy (ADR-0458 §7).
             if let Some(predicate) = having {
-                let keeps = agg_eval(
-                    graph,
-                    AggScope::of_row(&folded, &n),
-                    predicate,
-                    params,
-                    cypher_version,
-                )?;
+                let keeps = agg_eval(graph, AggScope::of_row(&folded, &n), predicate, params)?;
                 if !crate::eval::predicate_value_holds(&keeps)? {
                     continue;
                 }
@@ -416,18 +391,9 @@ pub(crate) fn aggregate_ex<'a>(
     items: &'a [Projection],
     group_by: Option<&'a [Expr]>,
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     subclauses: &GroupSubclauses<'a>,
 ) -> Result<Vec<Row>> {
-    let mut aggregation = Aggregation::open(
-        graph,
-        &rows,
-        items,
-        group_by,
-        params,
-        cypher_version,
-        subclauses,
-    )?;
+    let mut aggregation = Aggregation::open(graph, &rows, items, group_by, params, subclauses)?;
     for row in rows {
         aggregation.offer(graph, row?)?;
     }

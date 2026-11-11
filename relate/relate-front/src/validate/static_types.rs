@@ -365,21 +365,13 @@ fn require_boolean_literal_operand(operand: &Expr) -> Result<(), EngineError> {
 /// (variable, parameter, function result, …) is left to the runtime evaluator,
 /// so no valid query is affected.
 ///
-/// `cypher_version` is the statement's CIP-150 preamble: CIP-271's container
-/// acceptance is Cypher-25-only, so the `toString()` gate stands down under an
-/// explicit `CYPHER 5` (where the runtime rejects every container, and
-/// `toStringOrNull()` maps that rejection to null).
-///
 /// Covered (all `expressions/…` TCK features):
 /// - `NOT` / `AND` / `OR` / `XOR` require boolean operands (Boolean1-4).
 /// - `x IN <list>` requires a list right operand (List5 scenario 42).
 /// - `properties(x)` requires a node/relationship/map (Graph9 scenarios 5-7).
 /// - `toString()`/`toStringOrNull()` reject a `LIST<T>` literal (CIP-271).
-pub fn validate_static_operator_types(
-    clauses: &[Clause],
-    cypher_version: Option<u32>,
-) -> Result<(), EngineError> {
-    let mut check = |expr: &Expr| check_static_operator_types(expr, cypher_version);
+pub fn validate_static_operator_types(clauses: &[Clause]) -> Result<(), EngineError> {
+    let mut check = check_static_operator_types;
     for clause in clauses {
         match clause {
             Clause::Return(rc) => {
@@ -427,7 +419,7 @@ pub fn validate_static_operator_types(
 }
 
 /// The per-node visitor for [`validate_static_operator_types`].
-fn check_static_operator_types(e: &Expr, cypher_version: Option<u32>) -> Result<(), EngineError> {
+fn check_static_operator_types(e: &Expr) -> Result<(), EngineError> {
     match e {
         Expr::Unary(u) if is_boolean_operator(u.op) => require_boolean_literal_operand(&u.expr)?,
         // `||` concatenates strings or lists; any other statically-known
@@ -492,9 +484,7 @@ fn check_static_operator_types(e: &Expr, cypher_version: Option<u32>) -> Result<
                     n.eq_ignore_ascii_case("tostring") || n.eq_ignore_ascii_case("tostringornull")
                 }) =>
         {
-            if !relate_core::is_cypher5(cypher_version)
-                && homogeneous_list_literal_class(&fc.args[0]).is_some()
-            {
+            if homogeneous_list_literal_class(&fc.args[0]).is_some() {
                 return Err(EngineError::semantic(
                     ErrorKind::InvalidArgumentValue,
                     "toString()",
@@ -699,7 +689,7 @@ mod tests {
     /// its verdict.
     fn parse_and_check_static_ops(query: &str) -> Result<(), EngineError> {
         let stmt = relate_parser::parse(query).expect("parse");
-        validate_static_operator_types(&stmt.clauses, stmt.cypher_version)
+        validate_static_operator_types(&stmt.clauses)
     }
 
     #[test]
@@ -883,22 +873,6 @@ mod tests {
             assert!(
                 parse_and_check_static_ops(query).is_ok(),
                 "`{query}` must not be rejected by the static pass"
-            );
-        }
-    }
-
-    #[test]
-    fn tostring_static_gate_stands_down_under_cypher_5() {
-        // CIP-271 is Cypher-25-only; under an explicit `CYPHER 5` preamble
-        // the runtime owns the container contract (toString raises,
-        // toStringOrNull returns null), so the static gate must not fire.
-        for query in [
-            "CYPHER 5 RETURN toString([1, 2]) AS result",
-            "CYPHER 5 RETURN toStringOrNull([1, 2]) AS result",
-        ] {
-            assert!(
-                parse_and_check_static_ops(query).is_ok(),
-                "`{query}` must be left to the runtime under CYPHER 5"
             );
         }
     }

@@ -63,6 +63,30 @@ const SKIPPED_CASES: &[(&str, &str)] = &[
          system_ontologies_rejects_writes_nested_in_subqueries_and_label_exprs in \
          tests/namespace.rs",
     ),
+    (
+        "cypher_prefix_create_database",
+        "ADR-0576 Decision 2 removed the CYPHER preamble: a statement opening \
+         with `CYPHER 25 ...` fails the parse with the authored \
+         UnsupportedCypherVersionPrefix error before any other processing, so \
+         CE's prefix-stripping 51N27 path cannot run; the unprefixed \
+         create_database case pins the same CE text, and \
+         tests/cypher_version_preamble.rs pins the authored rejection",
+    ),
+    (
+        "alter_unknown_database",
+        "ADR-0576 Decision 3: every `ALTER DATABASE` form fails the parse with \
+         51N27 UnsupportedAdministrationCommand before the database name is \
+         resolved, so CE's unknown-database 42N00 text cannot run; the \
+         unsupported-admin table (testdata/unsupported-admin-commands.tsv) \
+         pins the 51N27 rejection of this very form",
+    ),
+    (
+        "alter_unknown_database_if_exists",
+        "ADR-0576 Decision 3: every `ALTER DATABASE` form fails the parse with \
+         51N27 UnsupportedAdministrationCommand, `IF EXISTS` included, so CE's \
+         no-op success cannot run; the unsupported-admin table \
+         (testdata/unsupported-admin-commands.tsv) pins the 51N27 rejection",
+    ),
 ];
 
 /// The root-cause GQLSTATUS codes this fixture must pin at least once. Codes

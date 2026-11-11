@@ -637,7 +637,6 @@ mod tests {
             (ce::use_clause_with_administration_command(), "SyntaxError"),
             (ce::system_ontologies_not_queryable(), "SemanticError"),
             (ce::read_only_write(), "WriteOnReadOnlyAccessDatabase"),
-            (ce::alter_unknown_database("movies"), "DatabaseNotFound"),
             (ce::database_does_not_exist("movies"), "DatabaseNotFound"),
             (ce::namespace_change_in_transaction(), "TransactionError"),
         ];

@@ -97,12 +97,7 @@ fn schema_ddl_returns_zero_rows_and_zero_columns() {
         BTreeMap::from([("idx".to_string(), Value::String("param_idx".into()))]),
     );
 
-    // Database administration and graph-type DDL.
-    assert_omitted(
-        &mut conn,
-        "ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5",
-        BTreeMap::new(),
-    );
+    // Graph-type DDL.
     assert_omitted(
         &mut conn,
         "CREATE GRAPH TYPE social AS { (:Person => {name :: STRING}) }",

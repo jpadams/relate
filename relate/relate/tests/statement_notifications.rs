@@ -681,19 +681,31 @@ fn transaction_ddl_schema_names_survive_checkpoint_reopen() {
 }
 
 /// A MERGE whose property map reads the entity it merges is the
-/// deprecated self-reference (MergeAcceptance [6]). Like every
-/// statement-scoped notification it is derived only where a plan tree is
-/// built.
+/// deprecated self-reference (MergeAcceptance [6]). The direct spelling
+/// is the 42I58 error in every form since ADR-0576 removed the
+/// `CYPHER 5` preamble; inside a `CALL { }` body the exact tier cannot
+/// see the correlated outer bindings, so the conservative tier
+/// under-approximates there and the deprecated shape raises this warning
+/// instead — the one spelling where the notification still fires
+/// (ADR-0513 §Consequences).
 #[test]
 fn merge_self_reference_is_a_deprecation_notification() {
     let mut conn = connection();
-    // The rule is an error under Cypher 25; the Cypher 5 preamble keeps
-    // the deprecated shape and raises this warning.
     let explained = conn
-        .query("CYPHER 5 EXPLAIN MERGE (a {prop: a.prop}) RETURN a")
+        .query("EXPLAIN CALL { MERGE (a {prop: a.prop}) RETURN 1 AS one } RETURN one")
         .unwrap();
-    assert_eq!(kinds(&explained), [NotificationKind::MergeSelfReference]);
-    let notification = &explained.notifications()[0];
+    // The scope-less `CALL` carries its own advisory beside the warning;
+    // this test pins the self-reference notification, not the pair.
+    assert!(
+        kinds(&explained).contains(&NotificationKind::MergeSelfReference),
+        "{:?}",
+        kinds(&explained)
+    );
+    let notification = explained
+        .notifications()
+        .iter()
+        .find(|n| n.kind() == NotificationKind::MergeSelfReference)
+        .expect("the self-reference notification");
     assert_eq!(
         notification.code(),
         "Neo.ClientNotification.Statement.FeatureDeprecationWarning"

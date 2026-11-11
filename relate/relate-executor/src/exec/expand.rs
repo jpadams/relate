@@ -43,15 +43,13 @@ use super::rider::BindingSink;
 
 /// Per-path matching context shared by the node/relationship expansion
 /// recursion: graph view, the path pattern, parameters, residuals, the
-/// enclosing statement's CIP-150 `cypher_version`, the per-walk
-/// compiled scan predicates, the path's relationship-type filters, and
-/// the walk's precomputed binding-schema ladder.
+/// per-walk compiled scan predicates, the path's relationship-type filters,
+/// and the walk's precomputed binding-schema ladder.
 #[derive(Clone, Copy)]
 pub(crate) struct PathMatch<'a, 'data> {
     pub graph: &'a ExecGraph<'data>,
     pub path: &'a PathPattern,
     pub params: &'a BTreeMap<String, Value>,
-    pub cypher_version: Option<u32>,
     pub residual: &'a Residual<'a>,
     pub probe: &'a FarProbe,
     /// The scan-predicate specialization (predicate_spec.rs): compiled
@@ -152,12 +150,7 @@ pub(crate) fn match_resolved_path(
     // The walk entry reads the layer's bundle (F-1-3): the graph, params,
     // and cypher version arrive as the one `ExecCtx`, not three loose
     // parameters beside it.
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     // Neo4j 2026's runtime entity-type check: a pattern variable already
     // bound to a non-null value that is not the entity its position demands
     // is 22N27 (22N01 for a map), not the silent no-match the classic
@@ -165,7 +158,7 @@ pub(crate) fn match_resolved_path(
     // candidate enumeration, so it fires even when the graph holds no
     // candidate for the other endpoint.
     check_prebound_entities(path, &row)?;
-    let probe = FarProbe::prepare(graph, path, &row, params, cypher_version, residual);
+    let probe = FarProbe::prepare(graph, path, &row, params, residual);
     if probe.blocks_path() {
         return Ok(());
     }
@@ -188,15 +181,7 @@ pub(crate) fn match_resolved_path(
     // (the clause's pattern loop) builds them once per pattern, not per
     // row; every hop below filters the adjacency by interned id.
     let seek = match rel_filters.first() {
-        Some(filter) => first_rel_seek(
-            graph,
-            path,
-            &filter.types,
-            &row,
-            params,
-            cypher_version,
-            residual,
-        ),
+        Some(filter) => first_rel_seek(graph, path, &filter.types, &row, params, residual),
         None => RelSeek::Decline,
     };
     // The live seek's two facts, decoded once from the one value: the
@@ -238,7 +223,6 @@ pub(crate) fn match_resolved_path(
         graph,
         path,
         params,
-        cypher_version,
         residual,
         probe: &probe,
         rel_seek,
@@ -336,7 +320,6 @@ pub(crate) fn match_node(
         graph,
         path,
         params,
-        cypher_version,
         residual,
         probe,
         ..
@@ -347,7 +330,7 @@ pub(crate) fn match_node(
             Some(ids) => ids,
             None => return Ok(()),
         },
-        None => node_candidates(graph, np, &row, params, cypher_version, residual.conjuncts)?,
+        None => node_candidates(graph, np, &row, params, residual.conjuncts)?,
     };
     // The residual's ready conjuncts, derived once for the whole candidate
     // loop (every candidate binds the same names before the residual
@@ -379,7 +362,7 @@ pub(crate) fn match_node(
         if !predicate_spec::candidate_ok(graph, gate, id)? {
             continue;
         }
-        if gate.is_none() && !node_ok(graph, id, np, &row, params, cypher_version)? {
+        if gate.is_none() && !node_ok(graph, id, np, &row, params)? {
             continue;
         }
         let mut row2 = row.clone();
@@ -394,7 +377,7 @@ pub(crate) fn match_node(
         ) {
             continue;
         }
-        if !super::pushdown::conjuncts_hold(graph, &row2, &ready, params, cypher_version)? {
+        if !super::pushdown::conjuncts_hold(graph, &row2, &ready, params)? {
             continue;
         }
         if idx >= path.rels.len() {
@@ -428,7 +411,6 @@ fn expand_bound_rel_list(
         graph,
         path,
         params,
-        cypher_version,
         ..
     } = *pm;
     let rp = &path.rels[rel_idx];
@@ -456,7 +438,6 @@ fn expand_bound_rel_list(
                 graph,
                 row,
                 params,
-                cypher_version,
                 RelHop {
                     pattern: rp,
                     filter: &pm.rel_filters[rel_idx],
@@ -573,7 +554,6 @@ pub(super) fn hop_candidate(
     graph: &ExecGraph<'_>,
     row: &Row,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     hop: RelHop<'_>,
     traverse: Direction,
     used: &UsedRels,
@@ -583,16 +563,7 @@ pub(super) fn hop_candidate(
     tallies: &super::WalkTallies,
 ) -> Result<Option<NodeId>> {
     let next = crate::pattern_walk::admit_hop(
-        graph,
-        row,
-        params,
-        cypher_version,
-        hop,
-        traverse,
-        used,
-        trail,
-        current,
-        rid,
+        graph, row, params, hop, traverse, used, trail, current, rid,
     )?;
     if next.is_some() {
         tallies.walk();
@@ -616,7 +587,6 @@ pub(super) fn admit_candidate(
     graph: &ExecGraph<'_>,
     row: &Row,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     hop: RelHop<'_>,
     rel_idx: usize,
     traverse: Direction,
@@ -628,17 +598,7 @@ pub(super) fn admit_candidate(
 ) -> Result<Option<NodeId>> {
     tallies.expansion_hop(rel_idx);
     hop_candidate(
-        graph,
-        row,
-        params,
-        cypher_version,
-        hop,
-        traverse,
-        used,
-        trail,
-        current,
-        rid,
-        tallies,
+        graph, row, params, hop, traverse, used, trail, current, rid, tallies,
     )
 }
 
@@ -667,7 +627,6 @@ fn walk_candidate(
         graph,
         path,
         params,
-        cypher_version,
         ..
     } = *pm;
     graph.cancel_tick()?;
@@ -679,7 +638,6 @@ fn walk_candidate(
         graph,
         row,
         params,
-        cypher_version,
         RelHop {
             pattern: rp,
             filter: &pm.rel_filters[rel_idx],
@@ -736,7 +694,6 @@ fn walk(
         graph,
         path,
         params,
-        cypher_version,
         ..
     } = *pm;
     let rp = &path.rels[rel_idx];
@@ -745,7 +702,6 @@ fn walk(
             graph,
             row,
             params,
-            cypher_version,
             RelHop {
                 pattern: rp,
                 filter: &pm.rel_filters[rel_idx],

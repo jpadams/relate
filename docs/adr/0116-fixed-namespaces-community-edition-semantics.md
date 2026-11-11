@@ -259,3 +259,12 @@ namespace's is `rl-onto` (this ADR's `cypherlite` spelling predates the
 product rename; the segment was `relate`, then the dash-bearing
 `relate-neo4j`, at the time of those changes). The three-part shape and the
 segment-to-namespace mapping of (7) are unchanged.
+
+ADR-0576 removes the default-language selection §2 kept: every `ALTER
+DATABASE` form — `SET DEFAULT LANGUAGE` included, with its
+unknown-database failure and `IF EXISTS` no-op — now fails 51N27
+`UnsupportedAdministrationCommand` like the other administration
+commands, leaving §2's SHOW commands as the supported set. §6's stored
+`defaultLanguage` row and §8's stored-and-shown value are superseded: the
+column is the constant `CYPHER 25`, and a value recorded in an old store
+is ignored on load. §8's storage-format statements stand.

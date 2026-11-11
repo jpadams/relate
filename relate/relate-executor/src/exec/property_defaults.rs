@@ -93,7 +93,7 @@ pub(crate) fn apply_property_defaults(graph: &ExecGraph<'_>) -> Result<()> {
     if slice.node_labels.is_empty() && slice.created_rels.is_empty() {
         return Ok(());
     }
-    let body = graph.show_schema()?.data.current_graph_type.to_body();
+    let body = graph.show_schema()?.current_graph_type.to_body();
     if !body_has_default_values(&body) {
         return Ok(());
     }

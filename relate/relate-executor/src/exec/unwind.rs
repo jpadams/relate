@@ -239,24 +239,20 @@ pub(super) fn open_source(
     row: &Row,
     expression: &Expr,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Elements> {
     if let Expr::Function { name, args, .. } = expression {
-        let plan =
-            name.with_str(|text| lazy_range(graph, row, params, text, args, cypher_version))?;
+        let plan = name.with_str(|text| lazy_range(graph, row, params, text, args))?;
         if let Some(plan) = plan {
             return Ok(Elements::Range(plan.values()));
         }
     }
-    Ok(
-        match eval(graph, row, expression, params, cypher_version)? {
-            Value::List(xs) => Elements::List(into_items(xs)),
-            // A null source yields no rows; any other scalar is its own
-            // single element.
-            Value::Null => Elements::One(None),
-            other => Elements::One(Some(other)),
-        },
-    )
+    Ok(match eval(graph, row, expression, params)? {
+        Value::List(xs) => Elements::List(into_items(xs)),
+        // A null source yields no rows; any other scalar is its own
+        // single element.
+        Value::Null => Elements::One(None),
+        other => Elements::One(Some(other)),
+    })
 }
 
 /// What a streamed `UNWIND` reports to PROFILE once its consumer drained it.
@@ -337,13 +333,7 @@ impl<'a> UnwindFeed<'a> {
     /// from the carried row; a scalar keeps its row whole.
     fn open_next_input(&mut self) -> Option<Result<()>> {
         let row = self.inputs.next()?;
-        let elements = match open_source(
-            self.ctx.graph,
-            &row,
-            self.expression,
-            self.ctx.params,
-            self.ctx.cypher_version,
-        ) {
+        let elements = match open_source(self.ctx.graph, &row, self.expression, self.ctx.params) {
             Ok(elements) => elements,
             Err(error) => return Some(Err(error)),
         };
@@ -505,7 +495,6 @@ mod strip_plan_tests {
                 parts: vec![SingleQuery { clauses: vec![] }],
                 union_all: vec![],
                 next: None,
-                cypher_version: None,
             }),
             optional: false,
             scope,

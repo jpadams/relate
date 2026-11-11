@@ -15,11 +15,13 @@
 //! `p = REPEATABLE ELEMENTS (...)` spelling, the allReduce three-argument
 //! expression form, the `CYPHER 25` header (with `runtime=` value
 //! validation), NEXT chains carrying rows between stages, zero-lower-bound
-//! quantified path patterns, and chained comparisons.
+//! quantified path patterns, chained comparisons, and the former
+//! CYPHER-5 rejections running with or without a preamble (the engine no
+//! longer reads the statement version).
 
 mod common;
 
-use common::{connection, err_text, row, rows, scalar_one};
+use common::{connection, row, rows, scalar_one};
 use relate::Value;
 
 /// The CIP-51 corpus's background graph (its single-path-pattern
@@ -201,32 +203,6 @@ fn allreduce_three_argument_form_gates_on_its_predicate() {
 }
 
 #[test]
-fn cypher_25_header_is_accepted_and_runtime_option_values_are_validated() {
-    let mut c = connection();
-    // The header itself is transparent; `runtime=parallel` is
-    // accepted-and-ignored (Relate has a single engine).
-    for q in [
-        "CYPHER 25 RETURN 1 AS n",
-        "CYPHER 25 runtime=parallel RETURN 1 AS n",
-    ] {
-        assert_eq!(row(&mut c, q), vec![Value::Int(1)], "{q}");
-    }
-    // An unknown runtime value fails with the authored 22N10 error naming
-    // the valid values.
-    let err = err_text(c.query("CYPHER 25 runtime=bogus RETURN 1 AS n"));
-    assert!(
-        err.contains("22N10 invalid pre-parser option value") && err.contains("parallel"),
-        "wrong error text: {err}"
-    );
-    // And an unknown option key keeps its authored 22N07 error.
-    let err = err_text(c.query("CYPHER 25 foo=bar RETURN 1 AS n"));
-    assert!(
-        err.contains("22N07 invalid pre-parser option key"),
-        "wrong error text: {err}"
-    );
-}
-
-#[test]
 fn next_chains_carry_rows_between_stages() {
     let mut c = connection();
     assert_eq!(
@@ -293,4 +269,57 @@ fn chained_comparisons_evaluate_as_a_conjunction() {
             Value::Bool(false)
         ]
     );
+}
+
+/// The former CYPHER-5 rejections, rewritten positive: the engine runs one
+/// dialect, so the Cypher-25-only surface the preamble used to gate —
+/// string interpolation (CIP-261), `vector()` (CIP-214),
+/// the `SEARCH` clause (CIP-224), `VECTOR<...>` property type constraints
+/// (CIP-216), and the two-argument temporal constructors (CIP-228) — runs
+/// with no preamble at all (a `CYPHER n` prefix now fails the parse,
+/// ADR-0576 Decision 2).
+#[test]
+fn former_cypher5_rejections_run_in_the_single_dialect() {
+    // String interpolation (CIP-261).
+    let mut c = connection();
+    assert_eq!(
+        row(&mut c, "RETURN s'a{1}b' AS r"),
+        vec![Value::String("a1b".into())]
+    );
+
+    // vector() (CIP-214) and the two-argument temporal constructors
+    // (CIP-228) construct.
+    {
+        let mut c = connection();
+        c.query("RETURN vector([1.0, 2.0], 2, FLOAT32) AS v")
+            .unwrap();
+        c.query("RETURN date('2024-06-27', 'yyyy-MM-dd') AS x")
+            .unwrap();
+    }
+
+    // The SEARCH clause (CIP-224) answers through a vector index.
+    let mut c = connection();
+    c.query("CREATE VECTOR INDEX filmVectors FOR (f:Film) ON f.embedding")
+        .unwrap();
+    c.query(
+        "CREATE (:Film {title: 'Alpha', embedding: [1.0, 0.0]}), \
+         (:Film {title: 'Beta', embedding: [0.9, 0.1]})",
+    )
+    .unwrap();
+    assert_eq!(
+        row(
+            &mut c,
+            "MATCH (movie:Film) SEARCH movie IN \
+             (VECTOR INDEX filmVectors FOR [1.0, 0.0] LIMIT 1) \
+             RETURN movie.title AS title"
+        ),
+        vec![Value::String("Alpha".into())]
+    );
+
+    // `VECTOR<...>` property type constraints (CIP-216) install.
+    {
+        let mut c = connection();
+        c.query("CREATE CONSTRAINT vec FOR (n:L) REQUIRE n.p IS :: VECTOR<FLOAT32>(2)")
+            .unwrap();
+    }
 }

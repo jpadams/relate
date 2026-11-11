@@ -23,18 +23,9 @@ pub(super) fn vector_metric_form(
     params: &BTreeMap<String, Value>,
     n: &str,
     args: &[Expr],
-    cypher_version: Option<u32>,
 ) -> Option<Result<Value>> {
     let form = MetricForm::for_name(n)?;
-    Some(vector_metric(
-        graph,
-        row,
-        params,
-        n,
-        args,
-        form,
-        cypher_version,
-    ))
+    Some(vector_metric(graph, row, params, n, args, form))
 }
 
 /// The name-to-behavior mapping for the two metric forms, derived exactly
@@ -74,7 +65,6 @@ fn vector_metric(
     n: &str,
     args: &[Expr],
     form: MetricForm,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     if args.len() != form.arity {
         return Err(Error::syntax(format!(
@@ -87,7 +77,7 @@ fn vector_metric(
     };
     let mut vals = Vec::new();
     for a in &args[..args.len() - 1] {
-        vals.push(eval(graph, row, a, params, cypher_version)?);
+        vals.push(eval(graph, row, a, params)?);
     }
     (form.target)(&vals, *metric)
 }

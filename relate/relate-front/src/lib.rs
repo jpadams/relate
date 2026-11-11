@@ -80,22 +80,51 @@ impl ParseStages {
 
 /// Maps a `relate-parser` failure to a front-end error.
 ///
-/// ADR-0116 §2: a parse failure tagged
+/// The parse-detail tags the front answers with an authored Community
+/// Edition message instead of a syntax error live in one table —
+/// [`AUTHORED_PARSE_DETAILS`] — so a new recognized-then-rejected class is
+/// a row there, not another special case at this boundary. ADR-0116 §2:
 /// [`UNSUPPORTED_ADMINISTRATION_DETAIL`](relate_parser::parser::UNSUPPORTED_ADMINISTRATION_DETAIL)
 /// is a recognized database administration command outside CE's supported
-/// set; its message is the verbatim statement text (without a leading
-/// `CYPHER n`), echoed in CE's `UnsupportedAdministrationCommand` (51N27)
-/// *semantic* error. Every other parse failure stays a syntax error,
-/// prepending the TCK error-detail tag when one is present.
+/// set; its message is the verbatim statement text, echoed in CE's
+/// `UnsupportedAdministrationCommand` (51N27) *semantic* error. ADR-0576
+/// Decision 2:
+/// [`UNSUPPORTED_CYPHER_PREFIX_DETAIL`](relate_parser::parser::UNSUPPORTED_CYPHER_PREFIX_DETAIL)
+/// is a statement opening with a `CYPHER` preamble clause, raised as the
+/// authored removal error. Every other parse failure stays a syntax
+/// error, prepending the TCK error-detail tag when one is present.
+/// One authored parse-detail row: the tag the parser stamps and the CE
+/// message the front answers it with.
+type AuthoredParseDetail<'a> = (&'a str, fn(&str) -> Error);
+
+const AUTHORED_PARSE_DETAILS: &[AuthoredParseDetail<'_>] = &[
+    (
+        relate_parser::parser::UNSUPPORTED_ADMINISTRATION_DETAIL,
+        relate_core::ce_messages::unsupported_administration_command,
+    ),
+    (
+        relate_parser::parser::UNSUPPORTED_CYPHER_PREFIX_DETAIL,
+        cypher_prefix_from_parse_detail,
+    ),
+];
+
+/// The prefix rejection's authored message; it quotes no statement text,
+/// so the detail row's message argument is unused.
+fn cypher_prefix_from_parse_detail(_: &str) -> Error {
+    relate_core::ce_messages::cypher_prefix_unsupported()
+}
+
 fn map_parse_error(e: relate_parser::ParseError) -> Error {
-    if e.detail == Some(relate_parser::parser::UNSUPPORTED_ADMINISTRATION_DETAIL) {
-        return relate_core::ce_messages::unsupported_administration_command(&e.message);
-    }
     if let Some(detail) = e.detail {
-        Error::syntax(format!("{detail}: {e}"))
-    } else {
-        Error::syntax(e.to_string())
+        if let Some((_, authored)) = AUTHORED_PARSE_DETAILS
+            .iter()
+            .find(|(tag, _)| *tag == detail)
+        {
+            return authored(&e.message);
+        }
+        return Error::syntax(format!("{detail}: {e}"));
     }
+    Error::syntax(e.to_string())
 }
 
 /// Parse with `relate-parser`, resolve CIP-231 local callables away

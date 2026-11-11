@@ -18,12 +18,11 @@ pub(super) fn property_exists_form(
     params: &BTreeMap<String, Value>,
     n: &str,
     args: &[Expr],
-    cypher_version: Option<u32>,
 ) -> Option<Result<Value>> {
     if n != "property_exists" {
         return None;
     }
-    Some(property_exists(graph, row, params, args, cypher_version))
+    Some(property_exists(graph, row, params, args))
 }
 
 // PROPERTY_EXISTS uses an identifier as a property-name literal. It must
@@ -33,14 +32,13 @@ fn property_exists(
     row: &Row,
     params: &BTreeMap<String, Value>,
     args: &[Expr],
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     if args.len() != 2 {
         return Err(Error::syntax(
             "InvalidNumberOfArguments: property_exists() requires two arguments",
         ));
     }
-    let element = eval(graph, row, &args[0], params, cypher_version)?;
+    let element = eval(graph, row, &args[0], params)?;
     // The property-name argument renders once (this is a dedicated
     // two-argument builtin, not a per-row hot read).
     let property = match &args[1] {

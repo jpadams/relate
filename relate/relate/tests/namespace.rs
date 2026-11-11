@@ -111,9 +111,6 @@ fn system_session_allows_show_commands_and_procedure_calls() {
     // A standalone call composes with YIELD/RETURN (ADR-0116 §4).
     conn.query("CALL db.labels() YIELD label RETURN label")
         .unwrap();
-    // Supported administration commands run from any namespace (§2).
-    conn.query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25")
-        .unwrap();
     // Deliberate corner: the 42N17 offender collection is per-part
     // top-level, so a read nested in an expression subquery attached to a
     // standalone CALL stays allowed.
@@ -250,8 +247,6 @@ fn system_ontologies_session_rejects_every_non_administration_statement() {
     }
 
     // Administration commands still run (ADR-0116 §2's carve-out).
-    conn.query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 25")
-        .unwrap();
     let result = conn.query("SHOW DATABASES").unwrap();
     assert_eq!(result.header.namespace, Namespace::SystemOntologies);
 }

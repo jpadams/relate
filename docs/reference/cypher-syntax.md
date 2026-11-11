@@ -1153,12 +1153,18 @@ authored `preview feature '<name>' is not enabled` error):
 
 ### Cypher version selection
 
-Prefix a statement with `CYPHER 5` or `CYPHER 25` to select the language version:
+There is none: every statement runs the engine's one dialect — the modern,
+GQL-aligned grammar (ADR-0576). A statement opening with a `CYPHER
+<version>` prefix fails with the authored error
 
-```cypher
-CYPHER 25 RETURN vector([1.0, 2.0], 2, FLOAT32);   -- 25-only features
-CYPHER 5  MATCH (n) RETURN n;
 ```
+syntax error: UnsupportedCypherVersionPrefix: the CYPHER version prefix is
+no longer supported. Every statement runs the latest Cypher; please remove
+the prefix and resend the statement
+```
+
+before any other processing; `CYPHER` stays an ordinary (non-reserved)
+identifier everywhere else in a query.
 
 ### Extended functions
 

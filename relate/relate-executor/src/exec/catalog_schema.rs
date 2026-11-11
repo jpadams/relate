@@ -1,4 +1,4 @@
-//! Index, constraint, and database schema-mutating catalog commands
+//! Index and constraint schema-mutating catalog commands
 //! extracted from `execute_catalog`. Each returns the statement's final
 //! rows. The graph-type commands live in the sibling `graph_type_schema`.
 
@@ -22,7 +22,6 @@ pub(crate) fn catalog_create_index(
     c: &relate_parser::CreateIndexClause,
     rows: Vec<Row>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Vec<Row>> {
     let name = match &c.name {
         Some(name) => schema_name_value(name, params)?,
@@ -32,7 +31,7 @@ pub(crate) fn catalog_create_index(
     // constraint twin (ADR-0489): Neo4j rejects the statement's shape at
     // compile time, so an `IF NOT EXISTS`/equivalent-rule skip can never
     // mask an invalid property count or OPTIONS map.
-    let options = resolve_index_options(graph, c, params, cypher_version)?;
+    let options = resolve_index_options(graph, c, params)?;
     // The conflict family is one named gate (shared with the legacy IR fast
     // path); the detail/create tail stays here.
     let facts = IndexFacts::from_clause(c, name.clone());
@@ -139,7 +138,6 @@ pub(crate) fn catalog_create_constraint(
     c: &relate_parser::CreateConstraintClause,
     rows: Vec<Row>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Vec<Row>> {
     let declared_name = match &c.name {
         Some(name) => Some(schema_name_value(name, params)?),
@@ -151,7 +149,7 @@ pub(crate) fn catalog_create_constraint(
     // `validate_constraint_options`); this function stays the definition
     // construction plus the creation half.
     if matches!(
-        constraint_create_gate(graph, c, &def, constraint_type, params, cypher_version)?,
+        constraint_create_gate(graph, c, &def, constraint_type, params)?,
         Gate::Skip(_)
     ) {
         return Ok(rows);
@@ -195,9 +193,8 @@ pub(crate) fn constraint_create_gate(
     def: &ConstraintDef,
     constraint_type: ConstraintType,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Gate> {
-    validate_constraint_options(graph, c, constraint_type, params, cypher_version)?;
+    validate_constraint_options(graph, c, constraint_type, params)?;
     // One catalog snapshot for the two views this gate reads (the current
     // graph type and the index details); the effective-constraint view
     // below resolves its own derived records from the same snapshot shape.
@@ -234,7 +231,7 @@ pub(crate) fn constraint_create_gate(
         constraint_type,
         ConstraintType::Exists | ConstraintType::PropertyType
     ) && crate::graph_type::label_identifies_type(
-        &schema.data.current_graph_type.to_body(),
+        &schema.current_graph_type.to_body(),
         def.relationship,
         &def.label,
     ) {
@@ -253,7 +250,7 @@ pub(crate) fn constraint_create_gate(
     // hard conflict, not an `IF NOT EXISTS` no-op -- Neo4j rejects the create
     // with "There already exists an index (...)" whether or not the flag is
     // present (live corpus: `Create*ConstraintCommandsPart3`, 22N73).
-    if serving_pair_range_conflict(&schema.data.index_details, backed, def) {
+    if serving_pair_range_conflict(&schema.index_details, backed, def) {
         let schema_text = if def.relationship {
             format!("()-[:{} {{{}}}]-()", def.label, def.properties.join(", "))
         } else {
@@ -311,14 +308,11 @@ pub(crate) fn catalog_drop_constraint(
     let name = schema_name_value(&c.name, params)?;
     let state = graph.show_schema()?;
     let is_dependent = state
-        .data
         .derived_constraints
         .get(&name)
         .is_some_and(|constraint| {
-            crate::graph_type::classify_constraint(
-                &state.data.current_graph_type.to_body(),
-                constraint,
-            ) == relate_model::ConstraintClassification::Dependent
+            crate::graph_type::classify_constraint(&state.current_graph_type.to_body(), constraint)
+                == relate_model::ConstraintClassification::Dependent
         });
     if is_dependent {
         return Err(Error::execution(
@@ -332,38 +326,5 @@ pub(crate) fn catalog_drop_constraint(
         return Err(Error::semantic("ConstraintNotFound"));
     }
     super::ddl::exec_drop_constraint(graph, &name, false)?;
-    Ok(rows)
-}
-
-pub(crate) fn catalog_alter_database(
-    graph: &ExecGraph<'_>,
-    c: &relate_parser::AlterDatabaseClause,
-    rows: Vec<Row>,
-    params: &BTreeMap<String, Value>,
-) -> Result<Vec<Row>> {
-    let name = schema_name_value(&c.name, params)?;
-    // ADR-0116 §1/§2: namespace names match case-insensitively; an
-    // unknown name fails with CE's text unless `IF EXISTS` makes the
-    // command a no-op.
-    let Some(ns) = relate_core::Namespace::parse(&name) else {
-        if c.if_exists {
-            return Ok(rows);
-        }
-        return Err(relate_core::ce_messages::alter_unknown_database(&name));
-    };
-    let canonical = ns.as_str();
-    let state = graph.show_schema()?;
-    let composite = state.databases[&ns].composite;
-    let language = c.default_language;
-    if !matches!(language, 5 | 25) {
-        return Err(Error::semantic(
-            "InvalidArgumentValue: unsupported Cypher version",
-        ));
-    }
-    graph.push_catalog_redo(RedoOp::PutDatabase {
-        name: canonical.to_string(),
-        language,
-        composite,
-    });
     Ok(rows)
 }

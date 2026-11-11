@@ -18,9 +18,10 @@ use super::{DatabasesCatalog, Graph, Procedure};
 /// graph of the store holds a clone of it (installed via
 /// [`Graph::share_services_from`]), so a procedure registered on the store
 /// is callable from any namespace session, the CSV policy and the preview
-/// set are identical in every namespace, and `ALTER DATABASE` /
-/// `SHOW DATABASES` read and write one shared databases table (ADR-0276;
-/// ADR-0116 §8 invariants) regardless of the session's namespace. Open
+/// set are identical in every namespace, and every session sees one
+/// shared databases table (ADR-0276; ADR-0116 §8 invariants) regardless of
+/// the session's namespace — a table ADR-0576 left write-only for old-store
+/// compatibility. Open
 /// installs the preview set once with [`Graph::configure_preview`]; both
 /// the catalog and the `CALL` gate read it back through [`Graph::preview`].
 ///
@@ -44,8 +45,10 @@ pub(crate) struct StoreServices {
     /// The store-level databases catalog (ADR-0276; ADR-0116 §8
     /// invariants): the three fixed
     /// namespaces' settings. One table for the whole store — per-graph
-    /// copies diverged when `ALTER DATABASE` wrote the `neo4j` graph's
+    /// copies diverged historically when a write hit the `neo4j` graph's
     /// theater while a `system` session read its own statically seeded one.
+    /// ADR-0576: kept for old-store replay only; nothing writes or reads
+    /// it through Cypher anymore.
     pub(crate) databases: DatabasesCatalog,
     /// The per-allocation expression cap (ADR-0463) every namespace graph
     /// of the store enforces. `None` is the explicit opt-out; the default is

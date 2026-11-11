@@ -553,7 +553,6 @@ fn full_scan_oracle(graph: &ExecGraph<'_>) -> Result<()> {
     let show = graph.show_schema()?;
     for constraint in constraints {
         let enforced_label = show
-            .data
             .derived_constraints
             .get(&constraint.name)
             .and_then(|constraint| constraint.enforced_label.clone());

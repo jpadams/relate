@@ -80,9 +80,9 @@ impl PlanNode {
         // boundary's rendering (ADR-0359), passed in by the surface that
         // rendered it through `relate-formatter`.
         let representation = format!(
-            "Cypher {cypher_version}\n\nPlanner {planner}\n\nRuntime {planner}\n\nRuntime \
+            "Cypher {}\n\nPlanner {planner}\n\nRuntime {planner}\n\nRuntime \
              version {version}\n\n{plan_text}",
-            cypher_version = wire::CYPHER_VERSION,
+            wire::CYPHER_VERSION,
         );
         args.insert(
             plan_keys::STRING_REPRESENTATION.to_string(),

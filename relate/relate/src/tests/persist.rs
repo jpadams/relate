@@ -122,8 +122,6 @@ fn checkpoint_recycles_enforced_label_and_show_theater_for_every_compiled_codec(
                 .unwrap();
             conn.query("CREATE GRAPH TYPE social AS { (:Member => {name :: STRING}) }")
                 .unwrap();
-            conn.query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5")
-                .unwrap();
             conn.query("CREATE TEXT INDEX people FOR (n:Person) ON (n.name)")
                 .unwrap();
             conn.query("CREATE VECTOR INDEX people_vec FOR (n:Person) ON n.embedding OPTIONS {indexConfig: {`vector.dimensions`: 2}}")
@@ -216,8 +214,6 @@ fn legacy_untyped_label_constraint_survives_checkpoint_and_wal_recycle() {
                 vec![vec![Value::String("label_rule".into()), Value::Null]]
             );
             conn.query("CREATE (:Person {name: 'Per'})").unwrap();
-            conn.query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5")
-                .unwrap();
             conn.query("CREATE CONSTRAINT known_rule FOR (n:Known) REQUIRE n:Verified")
                 .unwrap();
             expected_database = conn.query(database_show).unwrap().rows;
@@ -599,6 +595,92 @@ fn pre_generated_name_checkpoint_reopens_and_keeps_alter_idempotent() {
                 .len(),
             after,
             "{codec:?}"
+        );
+    }
+}
+
+/// ADR-0576 Decision 4/§5: a `defaultLanguage` value recorded in an old
+/// store's catalog — written by an earlier `ALTER DATABASE` or an older
+/// binary, replayed here by rewriting the checkpoint image the way that
+/// binary wrote it — is ignored on load: the reopened store reports the
+/// constant `CYPHER 25` on every fixed namespace. No catalog, WAL or
+/// snapshot format changes: the image keeps its historical shape and the
+/// table keeps loading. The fresh store's half of the constant is pinned
+/// in `tests/catalog.rs` (`catalog_show_schema_database_and_graph_type`).
+#[test]
+fn show_databases_reports_the_constant_language_including_on_an_old_store() {
+    /// Sorted `(name, defaultLanguage)` rows of `SHOW DATABASES`.
+    fn languages(conn: &mut crate::Connection) -> Vec<(String, String)> {
+        let mut rows: Vec<(String, String)> = conn
+            .query("SHOW DATABASES YIELD name, defaultLanguage RETURN name, defaultLanguage")
+            .unwrap()
+            .rows
+            .into_iter()
+            .map(|row| {
+                let Value::String(name) = &row[0] else {
+                    panic!("a name column: {row:?}")
+                };
+                let Value::String(language) = &row[1] else {
+                    panic!("a defaultLanguage column: {row:?}")
+                };
+                (name.to_string(), language.to_string())
+            })
+            .collect();
+        rows.sort();
+        rows
+    }
+
+    let constant = vec![
+        ("neo4j".to_string(), "CYPHER 25".to_string()),
+        ("system".to_string(), "CYPHER 25".to_string()),
+        ("system_ontologies".to_string(), "CYPHER 25".to_string()),
+    ];
+
+    // An old store: every namespace's catalog entry recorded `CYPHER 5`.
+    for &codec in SnapshotCodecKind::compiled() {
+        let dir = tempfile::tempdir().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        {
+            let db = Database::open_with(
+                uri,
+                OpenOptions {
+                    snapshot_codec: Some(codec),
+                    ..no_timer()
+                },
+            )
+            .unwrap();
+            // A `name` property: the markdown codec's vault grammar requires
+            // one on every node (ADR-0406), and the other codecs accept it.
+            db.connect()
+                .unwrap()
+                .query("CREATE (:N {name: 'one'})")
+                .unwrap();
+            db.checkpoint().unwrap();
+        }
+        let path = dir.path().join(codec.checkpoint_image());
+        let mut image: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(
+            image["theater"]["databases"].is_object(),
+            "{codec:?}: a databases table: {}",
+            image["theater"]
+        );
+        let databases = image["theater"]["databases"]
+            .as_object_mut()
+            .expect("a databases table");
+        for (_name, entry) in databases.iter_mut() {
+            *entry = serde_json::json!([5, false]);
+        }
+        assert_eq!(databases.len(), 3, "{codec:?}: {databases:?}");
+        std::fs::write(&path, serde_json::to_vec(&image).unwrap()).unwrap();
+
+        // The reopened store ignores the recorded value: the constant.
+        let db = Database::open_with(uri, no_timer()).unwrap();
+        let mut conn = db.connect().unwrap();
+        assert_eq!(
+            languages(&mut conn),
+            constant,
+            "{codec:?}: the recorded CYPHER 5 must be ignored on load"
         );
     }
 }

@@ -26,12 +26,7 @@ pub(crate) fn show_transactions_rows(
         for expr in &c.ids {
             let expr = relate_front::lower_expr(expr)?;
             for row in rows {
-                let value = eval(graph, row, &expr, params, qctx.cypher_version)?;
-                if value.is_null() && qctx.is_cypher5() {
-                    return Err(Error::invalid_argument_type(
-                        "transaction id must be STRING or LIST<STRING>",
-                    ));
-                }
+                let value = eval(graph, row, &expr, params)?;
                 found |= match value {
                     Value::String(ref s) => **s == *txid,
                     Value::List(ref xs) => xs
@@ -58,19 +53,13 @@ pub(crate) fn terminate_transactions_rows(
     c: &relate_parser::TerminateTransactionsClause,
     rows: &[Row],
     params: &BTreeMap<String, Value>,
-    qctx: QueryCtx<'_>,
 ) -> Result<Vec<Row>> {
     Ok({
         let mut out = Vec::new();
         for expr in &c.ids {
             let expr = relate_front::lower_expr(expr)?;
             for outer in rows {
-                let values = match eval(graph, outer, &expr, params, qctx.cypher_version)? {
-                    Value::Null if qctx.is_cypher5() => {
-                        return Err(Error::invalid_argument_type(
-                            "transaction id must be STRING or LIST<STRING>",
-                        ))
-                    }
+                let values = match eval(graph, outer, &expr, params)? {
                     Value::List(v) => v,
                     v => Arc::new(vec![v]),
                 };
@@ -97,7 +86,7 @@ pub(crate) fn terminate_transactions_rows(
 }
 
 /// Which fixed namespaces `SHOW DATABASES` may emit: every one, exactly
-/// one, or none (a null name parameter off Cypher 5, or a name no fixed
+/// one, or none (a null name parameter, or a name no fixed
 /// namespace carries — `Namespace::parse` already matches
 /// case-insensitively).
 #[derive(Clone, Copy)]
@@ -128,13 +117,10 @@ impl NamespaceFilter {
 }
 
 pub(crate) fn show_databases_rows(
-    graph: &ExecGraph<'_>,
     c: &relate_parser::ShowDatabasesClause,
     params: &BTreeMap<String, Value>,
-    qctx: QueryCtx<'_>,
 ) -> Result<Vec<Row>> {
     Ok({
-        let state = graph.show_schema()?;
         // The filter resolves to the typed model at the boundary; an absent
         // parameter fails with `ParameterMissing` (ADR-0308).
         let wanted = match &c.filter {
@@ -146,25 +132,17 @@ pub(crate) fn show_databases_rows(
             DatabaseFilter::Named(SchemaName::Parameter(p)) => match params.get(p) {
                 None => return Err(Error::parameters_missing([p.as_str()])),
                 Some(Value::String(name)) => NamespaceFilter::named(name),
-                Some(Value::Null) if qctx.is_cypher5() => {
-                    return Err(Error::invalid_argument_type("database name must be STRING"))
-                }
                 Some(Value::Null) => NamespaceFilter::NoMatch,
                 _ => return Err(Error::invalid_argument_type("database name must be STRING")),
             },
         };
         // ADR-0116 §1/§6: exactly the three fixed namespaces; an unknown
-        // name returns no rows. The stored `defaultLanguage` comes from the
-        // store-level databases catalog (ADR-0116 §8/§10; `CYPHER 25`
-        // default).
+        // name returns no rows.
         relate_core::Namespace::ALL
             .iter()
             .filter(|ns| wanted.admits(**ns))
             .map(|ns| {
                 let name = ns.as_str();
-                // `DatabasesCatalog::default`/`sanitize` guarantee an
-                // entry for every fixed namespace, so indexing cannot miss.
-                let language = state.databases[ns].default_language;
                 // ADR-0142: the topology/status columns carry fixed
                 // Browser-compatible constants, not live status — Relate
                 // is a single-node embedded engine, so every namespace is
@@ -228,10 +206,11 @@ pub(crate) fn show_databases_rows(
                     ),
                     ("lastStopTime", Value::Null),
                     ("store", Value::String("relate-native-1.0".into())),
-                    (
-                        "defaultLanguage",
-                        Value::String(format!("CYPHER {language}").into()),
-                    ),
+                    // ADR-0576 Decision 4: the column is the constant
+                    // `CYPHER 25` — the engine's one dialect — never a
+                    // stored fact; a value recorded in an old store's
+                    // catalog is ignored on load (Decision 5).
+                    ("defaultLanguage", Value::String("CYPHER 25".into())),
                 ])
             })
             .collect()

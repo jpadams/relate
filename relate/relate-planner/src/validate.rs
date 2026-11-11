@@ -95,7 +95,7 @@ pub(crate) fn validate_part_with_env(
     }
     // A grammar-ending DDL command is standalone whichever AST carries
     // it (the family is `clause_kind::clause_is_ddl_command`'s — schema
-    // DDL plus `ALTER DATABASE`): every continuation (`WITH`, `SET`,
+    // DDL): every continuation (`WITH`, `SET`,
     // `RETURN`, `FINISH`) is a syntax error on live 2026.10.1 (probed
     // 2026-11-08). `USE` is routing, not a continuation (ADR-0116: an
     // administration command runs from any namespace), so it never

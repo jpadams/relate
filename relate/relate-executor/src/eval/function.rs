@@ -30,7 +30,32 @@ mod vector;
 
 pub(super) use entity::entity_backing_map;
 pub(crate) use registry::is_nondeterministic;
-use registry::{arity_rejection, lookup_builtin, BuiltinImplementation};
+use registry::{arity_rejection, lookup_builtin, BuiltinImplementation, BuiltinRow};
+
+/// The shared call-resolution step every builtin spelling reads: the
+/// arity gate first — a malformed call reports its arity (LABS-667,
+/// Neo4j 42I13: "does not provide the required number of arguments"),
+/// never an argument's own error, and the evaluator does no work for it —
+/// then the ordered argument evaluation. `function` and `lazy_range`
+/// differ only in their tails, so the row's contract is enforced from
+/// this one spelling.
+fn eval_args_checked(
+    graph: &ExecGraph<'_>,
+    row: &Row,
+    params: &BTreeMap<String, Value>,
+    n: &str,
+    builtin: &BuiltinRow,
+    args: &[Expr],
+) -> Result<Vec<Value>> {
+    if let Some(requirement) = builtin.arity.violation(args.len()) {
+        return Err(Error::syntax(arity_rejection(n, requirement, args.len())));
+    }
+    let mut vals = Vec::with_capacity(args.len());
+    for a in args {
+        vals.push(eval(graph, row, a, params)?);
+    }
+    Ok(vals)
+}
 
 /// The `range(...)` call an `UNWIND` can walk without building its list:
 /// resolves the call exactly as [`function`] does — the lower-cased name
@@ -43,24 +68,13 @@ pub(crate) fn lazy_range(
     params: &BTreeMap<String, Value>,
     name: &str,
     args: &[Expr],
-    cypher_version: Option<u32>,
 ) -> Result<Option<RangePlan>> {
     let n = name.to_ascii_lowercase();
     if n != "range" {
         return Ok(None);
     }
     let builtin = lookup_builtin(n.as_str()).expect("range is a registered builtin");
-    if let Some(requirement) = builtin.arity.violation(args.len()) {
-        return Err(Error::syntax(arity_rejection(
-            n.as_str(),
-            requirement,
-            args.len(),
-        )));
-    }
-    let mut vals = Vec::with_capacity(args.len());
-    for a in args {
-        vals.push(eval(graph, row, a, params, cypher_version)?);
-    }
+    let vals = eval_args_checked(graph, row, params, n.as_str(), builtin, args)?;
     list::range_plan(&vals).map(Some)
 }
 
@@ -71,7 +85,6 @@ pub(crate) fn function(
     name: &str,
     _distinct: bool,
     args: &[Expr],
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
     let n = name.to_ascii_lowercase();
     if n == "length" {
@@ -79,33 +92,20 @@ pub(crate) fn function(
             all: false, path, ..
         }) = args.first()
         {
-            return eval_shortest(
-                graph,
-                row,
-                params,
-                false,
-                path,
-                ShortestWant::Length,
-                cypher_version,
-            );
+            return eval_shortest(graph, row, params, false, path, ShortestWant::Length);
         }
     }
-    if let Some(result) =
-        property::property_exists_form(graph, row, params, n.as_str(), args, cypher_version)
-    {
+    if let Some(result) = property::property_exists_form(graph, row, params, n.as_str(), args) {
         return result;
     }
-    if let Some(result) =
-        vector::vector_metric_form(graph, row, params, n.as_str(), args, cypher_version)
-    {
+    if let Some(result) = vector::vector_metric_form(graph, row, params, n.as_str(), args) {
         return result;
     }
-    // Resolve the row and validate the call's shape before evaluating any
-    // argument: a malformed call reports its arity (LABS-667, Neo4j 42I13:
-    // "does not provide the required number of arguments"), never an
-    // argument's own error, and the evaluator does no work for it. The row
-    // owns the contract, so registering a builtin is the one decision
-    // point.
+    // Resolve the row before evaluating any argument: a call the row does
+    // not know is the row's own rejection (aggregate name or unknown
+    // function). The row owns the contract, so registering a builtin is
+    // the one decision point; [`eval_args_checked`] then gates the call's
+    // shape before any argument runs.
     let Some(builtin) = lookup_builtin(n.as_str()) else {
         if relate_front::agg::is_aggregate_name(&n) {
             // 42I24: an aggregate call outside an aggregation context is a
@@ -121,22 +121,9 @@ pub(crate) fn function(
         // not a semantic one; the kind token carries the class.
         return Err(Error::unknown_function(&n));
     };
-    if let Some(requirement) = builtin.arity.violation(args.len()) {
-        return Err(Error::syntax(arity_rejection(
-            n.as_str(),
-            requirement,
-            args.len(),
-        )));
-    }
-    let mut vals = Vec::new();
-    for a in args {
-        vals.push(eval(graph, row, a, params, cypher_version)?);
-    }
+    let vals = eval_args_checked(graph, row, params, n.as_str(), builtin, args)?;
     match builtin.implementation {
         BuiltinImplementation::Plain(implementation) => implementation(graph, n.as_str(), vals),
-        BuiltinImplementation::Versioned(implementation) => {
-            implementation(graph, n.as_str(), vals, cypher_version)
-        }
         // The clock-access spelling's kind and mode come from the row, so
         // the implementation never re-parses the call name; its argument is
         // a timezone (never a value), and the row's one-argument contract
@@ -297,7 +284,7 @@ mod tests {
             for count in counts {
                 let requirement = builtin.arity.violation(count).unwrap();
                 let args = vec![Expr::Int(1); count];
-                let text = function(&graph, &row, &params, builtin.name, false, &args, None)
+                let text = function(&graph, &row, &params, builtin.name, false, &args)
                     .unwrap_err()
                     .to_string();
                 let expected = arity_rejection(builtin.name, requirement, args.len());
@@ -342,10 +329,10 @@ mod tests {
 
         assert!(Arc::ptr_eq(&render_scalar(&input).unwrap(), &payload));
         assert!(shared(
-            bi_tostring(&graph, "toString", vec![input.clone()], None).unwrap()
+            bi_tostring(&graph, "toString", vec![input.clone()]).unwrap()
         ));
         assert!(shared(
-            bi_tostringornull(&graph, "toStringOrNull", vec![input.clone()], None).unwrap()
+            bi_tostringornull(&graph, "toStringOrNull", vec![input.clone()]).unwrap()
         ));
         assert!(shared(
             bi_string_interp(&graph, "string.interp", vec![input.clone()]).unwrap()

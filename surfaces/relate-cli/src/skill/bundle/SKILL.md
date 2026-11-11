@@ -199,7 +199,7 @@ Extensions beyond openCypher: label expressions (`n:A|B&!C`), quantified
 path patterns and selectors (`SHORTEST 1`, `ANY`, `TRAIL`), `SEARCH`
 (vector + fulltext indexes), `vector()`/UUID types, string interpolation
 (`s'Hello {name}'`), map comprehensions (`{i IN list | k: v}`), explicit
-`GROUP BY`, `CYPHER 5` / `CYPHER 25` preambles. Parameters are `$name`
+`GROUP BY`. Parameters are `$name`
 (passed with `--param` or from Python dict keys). Every referenced
 parameter must be supplied: a missing one fails the statement with
 `ParameterMissing: Expected parameter(s): <names>`, never binds `null`.

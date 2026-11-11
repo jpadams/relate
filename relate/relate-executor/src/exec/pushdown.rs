@@ -73,11 +73,9 @@ pub(crate) fn residual_ok(
     graph: &ExecGraph<'_>,
     row: &Row,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     residual: &Residual<'_>,
 ) -> Result<bool> {
-    let ready = ready_conjuncts(residual, row, None, &[]);
-    conjuncts_hold(graph, row, &ready, params, cypher_version)
+    residual_ok_skipping(graph, row, params, residual, &[])
 }
 
 /// The residual's conjuncts that are ready on `row` — every scope name
@@ -134,10 +132,9 @@ pub(crate) fn conjuncts_hold(
     row: &Row,
     ready: &[&Expr],
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
 ) -> Result<bool> {
     for c in ready {
-        if !predicate_holds(graph, row, c, params, cypher_version)? {
+        if !predicate_holds(graph, row, c, params)? {
             return Ok(false);
         }
     }
@@ -153,12 +150,11 @@ pub(crate) fn residual_ok_skipping(
     graph: &ExecGraph<'_>,
     row: &Row,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     residual: &Residual<'_>,
     settled: &[usize],
 ) -> Result<bool> {
     let ready = ready_conjuncts(residual, row, None, settled);
-    conjuncts_hold(graph, row, &ready, params, cypher_version)
+    conjuncts_hold(graph, row, &ready, params)
 }
 
 pub(crate) fn flatten_and_owned(expr: &Expr) -> Vec<Expr> {

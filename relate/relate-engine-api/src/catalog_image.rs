@@ -12,7 +12,7 @@ use crate::redo::IndexDetailSpec;
 /// The five committed per-graph SHOW-metadata maps that make up a checkpoint
 /// theater. Composed by the live graph state (a plain `TheaterData`), the
 /// serialized checkpoint image (`CheckpointTheater`'s flattened `data`) and
-/// the read-admission snapshot (`ShowSchema`'s `data`). The databases table
+/// the read-admission snapshot (`SchemaSnapshot::show`). The databases table
 /// is NOT here: it is the store-level databases table (ADR-0276).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TheaterData {
@@ -115,28 +115,13 @@ impl CheckpointTheater {
 pub struct SchemaSnapshot {
     pub indexes: Vec<IndexDef>,
     pub constraints: Vec<ConstraintDef>,
-    pub show: ShowSchema,
-}
-
-/// The read-admission SHOW metadata: the store-level databases table plus
-/// the graph's committed theater maps, captured at one admission point.
-/// Composes [`TheaterData`] the way [`CheckpointTheater`] does, so the five
-/// maps exist once. Speculative catalog redo is applied by the query
-/// engine that owns derivation; committed state changes only when that
-/// engine applies redo.
-#[derive(Debug, Clone)]
-pub struct ShowSchema {
-    pub databases: BTreeMap<Namespace, DatabaseEntry>,
-    pub data: TheaterData,
-}
-
-impl ShowSchema {
-    /// Capture the committed SHOW metadata at one admission point: the
-    /// store-level databases table plus this graph's theater maps.
-    pub fn capture(databases: BTreeMap<Namespace, DatabaseEntry>, theater: &TheaterData) -> Self {
-        Self {
-            databases,
-            data: theater.clone(),
-        }
-    }
+    /// The read-admission SHOW metadata: the graph's committed theater
+    /// maps, captured at one admission point (a clone of the theater's
+    /// [`TheaterData`]). Composes it the way [`CheckpointTheater`] does,
+    /// so the five maps exist once; the store-level databases table is
+    /// not admitted — no reader consults it (ADR-0576 Decision 4).
+    /// Speculative catalog redo is applied by the query engine that owns
+    /// derivation; committed state changes only when that engine applies
+    /// redo.
+    pub show: TheaterData,
 }

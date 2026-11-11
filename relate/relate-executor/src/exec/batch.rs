@@ -113,12 +113,7 @@ pub(crate) fn try_scan_filter_batch(
     };
     #[cfg(test)]
     batch_engaged();
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     // The walk-start fact (LABS-369) the per-row path records per walk:
     // this clause's only walk starts at the pattern's only element,
     // forward, the un-optimised default — recorded once, the way the
@@ -130,20 +125,13 @@ pub(crate) fn try_scan_filter_batch(
         conjuncts: &conjuncts,
         scope: &scope,
     };
-    let candidates = node_candidates(
-        graph,
-        plan.node,
-        seed,
-        params,
-        cypher_version,
-        residual.conjuncts,
-    )?;
+    let candidates = node_candidates(graph, plan.node, seed, params, residual.conjuncts)?;
     // Admission is the walker's own per-candidate check, unchanged: the
     // same `node_ok` call the per-row path makes per candidate, outside
     // the seek phase like it is there.
     let mut admitted: Vec<NodeId> = Vec::with_capacity(candidates.len());
     for id in candidates {
-        if node_ok(graph, id, plan.node, seed, params, cypher_version)? {
+        if node_ok(graph, id, plan.node, seed, params)? {
             admitted.push(id);
         }
     }
@@ -335,12 +323,7 @@ fn scan_chunk(graph: &ExecGraph<'_>, plan: &BatchPlan<'_>, batch: &[NodeId]) -> 
 /// check first (LABS-645), then the rows; a row the conjunct drops is
 /// gone before the next conjunct runs.
 fn filter_chunk(ctx: ExecCtx<'_>, plan: &BatchPlan<'_>, chunk: &Chunk) -> Result<Vec<usize>> {
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     // The bound evaluates against a row with no bindings — it is
     // variable-free by the gate, so the row it cannot read is inert; this
     // is the seed-row evaluation the per-row path makes against each
@@ -356,7 +339,7 @@ fn filter_chunk(ctx: ExecCtx<'_>, plan: &BatchPlan<'_>, chunk: &Chunk) -> Result
                 survivors = apply_null(chunk.column(*slot), *is_null, survivors);
             }
             BatchPred::Cmp { slot, op, bound } => {
-                let bound_value = eval(graph, &seed, bound, params, cypher_version)?;
+                let bound_value = eval(graph, &seed, bound, params)?;
                 if bound_value.is_null() {
                     // A null bound makes every comparison null, and a
                     // `WHERE` drops null — every row goes, here, without

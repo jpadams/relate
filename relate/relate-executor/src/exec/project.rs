@@ -180,19 +180,12 @@ impl<'a> ProjectSpec<'a> {
 fn filter_where(
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     predicate: &Expr,
     rows: Vec<Row>,
 ) -> Result<Vec<Row>> {
     let mut filtered = Vec::with_capacity(rows.len());
     for row in rows {
-        if crate::eval::predicate_value_holds(&eval(
-            graph,
-            &row,
-            predicate,
-            params,
-            cypher_version,
-        )?)? {
+        if crate::eval::predicate_value_holds(&eval(graph, &row, predicate, params)?)? {
             filtered.push(row);
         }
     }
@@ -230,7 +223,6 @@ pub(crate) fn open_fold<'a>(
     fields: &ProjectionFields<'a>,
     order: &'a OrderKeys<'a>,
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     scope: Option<&'a Row>,
 ) -> Result<Aggregation<'a>> {
     Aggregation::open(
@@ -239,7 +231,6 @@ pub(crate) fn open_fold<'a>(
         fields.items,
         fields.group_by,
         params,
-        cypher_version,
         &GroupSubclauses {
             order,
             having: fields.where_clause.filter(|w| is_agg_expr(w)),
@@ -257,7 +248,6 @@ pub(crate) fn open_match_fold<'a>(
     next: Option<&'a Clause>,
     order_slot: &'a OnceCell<OrderKeys<'a>>,
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     scope: Option<&'a Row>,
 ) -> Result<Option<MatchFold<'a>>> {
     if order_slot.get().is_some() {
@@ -271,7 +261,7 @@ pub(crate) fn open_match_fold<'a>(
     };
     let order = order_slot
         .get_or_init(|| OrderKeys::new(fields.order, fields.items, fields.group_by.is_some()));
-    open_fold(graph, &fields, order, params, cypher_version, scope)
+    open_fold(graph, &fields, order, params, scope)
         .map(|aggregation| Some(MatchFold::new(aggregation)))
 }
 
@@ -323,12 +313,7 @@ pub(crate) fn project_rows(
     source: RowSource,
     scope: Option<&Row>,
 ) -> Result<Vec<Row>> {
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     let ProjectSpec {
         items,
         distinct,
@@ -409,8 +394,7 @@ pub(crate) fn project_rows(
         }
     };
     let rows = if eager_paged {
-        let (skip_n, limit_n) =
-            resolve_page_bounds(graph, params, cypher_version, skip.as_ref(), limit.as_ref())?;
+        let (skip_n, limit_n) = resolve_page_bounds(graph, params, skip.as_ref(), limit.as_ref())?;
         page(rows, skip_n, limit_n)
     } else {
         rows
@@ -426,20 +410,11 @@ pub(crate) fn project_rows(
     let mut merged = if preprojected {
         preprojected_rows(graph, rows, &mut refresh)?
     } else if star && !has_agg {
-        star_rows(
-            graph,
-            params,
-            cypher_version,
-            rows,
-            items,
-            &order_keys,
-            &mut refresh,
-        )?
+        star_rows(graph, params, rows, items, &order_keys, &mut refresh)?
     } else if has_agg {
         aggregate_rows(
             graph,
             params,
-            cypher_version,
             stream.unwrap_or(RowFeed::Held(rows)),
             items,
             group_by,
@@ -452,7 +427,6 @@ pub(crate) fn project_rows(
         plain_rows(
             graph,
             params,
-            cypher_version,
             rows,
             items,
             &order_keys,
@@ -465,7 +439,7 @@ pub(crate) fn project_rows(
     // predicate — a plain WHERE, or any WHERE on a non-aggregating path —
     // filters the merged rows here.
     if let Some(w) = plain_where {
-        merged = filter_where(graph, params, cypher_version, w, merged)?;
+        merged = filter_where(graph, params, w, merged)?;
     }
 
     // The eager stop already paged on its own resolved bounds; the
@@ -473,7 +447,7 @@ pub(crate) fn project_rows(
     let (skip_n, limit_n) = if eager_paged {
         (0, None)
     } else {
-        resolve_page_bounds(graph, params, cypher_version, skip.as_ref(), limit.as_ref())?
+        resolve_page_bounds(graph, params, skip.as_ref(), limit.as_ref())?
     };
 
     if !order_keys.is_empty() {
@@ -552,7 +526,6 @@ fn preprojected_rows(
 fn star_rows(
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     rows: Vec<Row>,
     items: &[Projection],
     order_keys: &OrderKeys<'_>,
@@ -575,12 +548,12 @@ fn star_rows(
                 if is_star_item(projection) {
                     continue;
                 }
-                let value = eval(graph, &r, &projection.expr, params, cypher_version)?;
+                let value = eval(graph, &r, &projection.expr, params)?;
                 n.insert(projection.output_name(index), refresh.apply(graph, value));
             }
             drop(r);
             park_order_keys(order_keys, &mut n, |expr, scope| {
-                eval(graph, scope, expr, params, cypher_version)
+                eval(graph, scope, expr, params)
             })?;
             // The star branch's output row landing in its final shape,
             // through the same one `add_row` charge.
@@ -597,7 +570,6 @@ fn star_rows(
 fn aggregate_rows<'a>(
     graph: &ExecGraph<'_>,
     params: &'a BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     feed: RowFeed<'_>,
     items: &'a [Projection],
     group_by: Option<&'a [Expr]>,
@@ -619,7 +591,6 @@ fn aggregate_rows<'a>(
             items,
             group_by,
             params,
-            cypher_version,
             &GroupSubclauses {
                 order: order_keys,
                 having,
@@ -644,7 +615,6 @@ fn aggregate_rows<'a>(
 fn plain_rows(
     graph: &ExecGraph<'_>,
     params: &BTreeMap<String, Value>,
-    cypher_version: Option<u32>,
     rows: Vec<Row>,
     items: &[Projection],
     order_keys: &OrderKeys<'_>,
@@ -675,7 +645,7 @@ fn plain_rows(
             .filter(|(_, projection)| !is_star_item(projection))
             .map(|(i, projection)| {
                 let name = projection.output_name(i);
-                let val = eval(graph, &row, &projection.expr, params, cypher_version)?;
+                let val = eval(graph, &row, &projection.expr, params)?;
                 Ok((name, refresh.apply(graph, val)))
             })
             .collect::<Result<Vec<_>>>()?;
@@ -701,7 +671,7 @@ fn plain_rows(
         // payload.
         drop(row);
         park_order_keys(order_keys, &mut row2, |expr, scope| {
-            eval(graph, scope, expr, params, cypher_version)
+            eval(graph, scope, expr, params)
         })?;
         // The built row landing in the output container, in its final
         // shape: the identity rule counts each distinct payload once

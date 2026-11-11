@@ -115,7 +115,7 @@ fn decide<R>(
         // The probe arm's wiring constructs the verdict shape directly.
         Consumer::Exists
     } else {
-        match decode_consumer(&clauses[1..], &patterns[0], &view, &params, None) {
+        match decode_consumer(&clauses[1..], &patterns[0], &view, &params) {
             Ok(consumer) => consumer,
             Err(decline) => return k(Err(decline)),
         }

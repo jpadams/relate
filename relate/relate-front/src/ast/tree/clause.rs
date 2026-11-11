@@ -180,12 +180,11 @@ pub(super) fn walk_clause_exprs_tree(
             }
             walk_page_stages_tree(info.stages, depths, walk)?;
         }
-        // No clause-level expression this walk owns: the DROP forms, ALTER
-        // DATABASE, the empty-result terminator, and the two graph-type DDL
+        // No clause-level expression this walk owns: the DROP forms, the
+        // empty-result terminator, and the two graph-type DDL
         // clauses whose bodies the graph-type gate validates.
         Clause::DropIndex(_)
         | Clause::DropConstraint(_)
-        | Clause::AlterDatabase(_)
         | Clause::CreateGraphType(_)
         | Clause::AlterCurrentGraphType(_)
         | Clause::Finish => {}

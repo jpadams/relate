@@ -1,10 +1,10 @@
-# Unsupported database-administration commands (ADR-0116 §2, ADR-0119):
-# recognized by the parser, rejected with UnsupportedAdministrationCommand
-# (51N27). One TSV row per command: <statement>\t<echoed text> (the echo
-# strips a leading `CYPHER n` preamble and a trailing semicolon). This is
-# the one home for the list — parser unit tests and the relate
-# integration tests (ce_admin.rs) both read it; add a command here, never
-# in a test table.
+# Unsupported database-administration commands (ADR-0116 §2, ADR-0119;
+# ADR-0576 Decision 3 moved every `ALTER DATABASE` form here): recognized
+# by the parser, rejected with UnsupportedAdministrationCommand (51N27).
+# One TSV row per command: <statement>\t<echoed text> (the echo strips a
+# trailing semicolon). This is the one home for the list — parser unit
+# tests and the relate integration tests (ce_admin.rs) both read it; add
+# a command here, never in a test table.
 CREATE DATABASE foo	CREATE DATABASE foo
 CREATE OR REPLACE DATABASE foo	CREATE OR REPLACE DATABASE foo
 CREATE COMPOSITE DATABASE foo	CREATE COMPOSITE DATABASE foo
@@ -16,6 +16,8 @@ ALTER DATABASE foo REMOVE OPTION txLogEnrichment	ALTER DATABASE foo REMOVE OPTIO
 ALTER DATABASE foo SET TOPOLOGY 1 PRIMARIES	ALTER DATABASE foo SET TOPOLOGY 1 PRIMARIES
 ALTER DATABASE foo SET DEFAULT LANGUAGE CYPHER 5 WAIT	ALTER DATABASE foo SET DEFAULT LANGUAGE CYPHER 5 WAIT
 ALTER DATABASE foo SET DEFAULT LANGUAGE CYPHER 5 SET ACCESS READ ONLY	ALTER DATABASE foo SET DEFAULT LANGUAGE CYPHER 5 SET ACCESS READ ONLY
+ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5	ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5
+ALTER DATABASE neo4j IF EXISTS SET DEFAULT LANGUAGE CYPHER 25	ALTER DATABASE neo4j IF EXISTS SET DEFAULT LANGUAGE CYPHER 25
 START DATABASE foo	START DATABASE foo
 STOP DATABASE foo	STOP DATABASE foo
 CREATE ALIAS a FOR DATABASE foo	CREATE ALIAS a FOR DATABASE foo
@@ -23,5 +25,4 @@ ALTER ALIAS a SET DATABASE foo	ALTER ALIAS a SET DATABASE foo
 DROP ALIAS a FOR DATABASE	DROP ALIAS a FOR DATABASE
 SHOW ALIASES FOR DATABASE	SHOW ALIASES FOR DATABASE
 SHOW ALIAS a FOR DATABASE foo	SHOW ALIAS a FOR DATABASE foo
-CYPHER 25 CREATE DATABASE foo	CREATE DATABASE foo
 CREATE DATABASE foo;	CREATE DATABASE foo

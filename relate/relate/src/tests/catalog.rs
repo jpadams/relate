@@ -14,8 +14,8 @@ fn catalog_show_schema_database_and_graph_type() {
     assert_eq!(indexes.rows[0][1], Value::String("TEXT".into()));
     assert_eq!(indexes.rows[0][2], Value::String("text-3.0".into()));
 
-    c.query("ALTER DATABASE neo4j SET DEFAULT LANGUAGE CYPHER 5")
-        .unwrap();
+    // `SHOW DATABASES` keeps the `defaultLanguage` column — the constant
+    // `CYPHER 25` (ADR-0576 Decision 4), never a stored fact.
     let databases = c
         .query("SHOW DATABASE neo4j YIELD name, defaultLanguage")
         .unwrap();
@@ -23,7 +23,7 @@ fn catalog_show_schema_database_and_graph_type() {
         databases.rows[0],
         vec![
             Value::String("neo4j".into()),
-            Value::String("CYPHER 5".into())
+            Value::String("CYPHER 25".into())
         ]
     );
 

@@ -10,7 +10,7 @@ use relate_core::Value;
 use crate::graph::Graph;
 use crate::shortest::test_support::counting_expands;
 
-use super::test_support::{exec_cypher, Builder};
+use super::test_support::{error_of, exec_cypher, try_exec_cypher, Builder};
 
 /// The single value of a one-row, one-column result, and the expansions
 /// it took.
@@ -117,19 +117,25 @@ fn assert_shortest_null_bound(g: &Graph, bound: &str) {
 }
 
 #[test]
-fn relationship_property_map_runs_on_enumeration() {
-    // a→b with k: 0, and a→m→b with k: 1.
+fn shortest_path_expression_property_map_is_rejected() {
+    // 42N56 (the expression half, main's #217): a `shortestPath()`/
+    // `allShortestPaths()` expression pattern carries no relationship
+    // property map — the map is a compile-time rejection for every
+    // spelling, quantified bounds included. The old premise (the BFS
+    // ignores the map and the enumeration answers) died with that rule.
     let b = Builder::new();
     let (a, end, m) = (b.node("a", &["N"]), b.node("b", &["N"]), b.node("m", &[]));
     for (from, to, k) in [(a, end, 0), (a, m, 1), (m, end, 1)] {
         b.rel(from, to, "E", &[("k", Value::Int(k))]);
     }
     let g = b.done();
-    let (hops, expands) = value(
+    let error = error_of(try_exec_cypher(
         &g,
         "MATCH (a:N {id: 'a'}), (b:N {id: 'b'}) \
          RETURN length(shortestPath((a)-[*1..3 {k: 1}]->(b)))",
+    ));
+    assert!(
+        error.contains("properties are not supported in the shortestPath() function"),
+        "{error}"
     );
-    assert_eq!(hops, Value::Int(2));
-    assert_eq!(expands, 0, "the BFS ignores relationship property maps");
 }

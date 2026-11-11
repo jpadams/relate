@@ -163,7 +163,6 @@ mod tests {
                 relate_ir::Expr::Null,
                 relate_ir::Expr::Null,
             ],
-            None,
         )
         .unwrap_err()
         .to_string();
@@ -186,7 +185,7 @@ mod tests {
         let row = crate::row::Row::new();
         let params = std::collections::BTreeMap::new();
         let call = |name: &str, args: &[relate_ir::Expr]| {
-            super::super::function(&graph, &row, &params, name, false, args, None)
+            super::super::function(&graph, &row, &params, name, false, args)
         };
 
         let out = call("date.realtime", &[relate_ir::Expr::String("+14:00".into())]).unwrap();

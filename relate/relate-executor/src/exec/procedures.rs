@@ -149,12 +149,7 @@ pub(crate) fn compose_rows<'a>(
     where_clause: Option<&Expr>,
     mut produce: impl FnMut(&Row) -> Result<Vec<Cow<'a, BTreeMap<String, Value>>>>,
 ) -> Result<Vec<Row>> {
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     let yields: Vec<(String, Option<String>)> = yield_items.resolved_pairs(default_yields);
     // The YIELD key rule (`alias`, else the column) resolved once; every
     // loop below reads the same keys.
@@ -174,7 +169,7 @@ pub(crate) fn compose_rows<'a>(
                 );
             }
             if where_clause
-                .map(|predicate| eval(graph, &row, predicate, params, cypher_version))
+                .map(|predicate| eval(graph, &row, predicate, params))
                 .transpose()?
                 .is_none_or(|value| value.truthy() == Some(true))
             {
@@ -580,7 +575,7 @@ pub(crate) fn call_arg_value(
 ) -> Result<Option<Value>> {
     if explicit {
         args.get(index)
-            .map(|expr| eval(ctx.graph, row, expr, ctx.params, ctx.cypher_version))
+            .map(|expr| eval(ctx.graph, row, expr, ctx.params))
             .transpose()
     } else {
         Ok(ctx
@@ -608,12 +603,7 @@ pub(crate) fn exec_fulltext_query_call(
         where_clause,
         ..
     } = call;
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     if args.len() != 2 {
         return Err(Error::syntax(format!(
             "InvalidNumberOfArguments: {name} expected 2, got {}",
@@ -634,11 +624,11 @@ pub(crate) fn exec_fulltext_query_call(
         optional,
         where_clause,
         |input| {
-            let index_name = eval(graph, input, &args[0], params, cypher_version)?
+            let index_name = eval(graph, input, &args[0], params)?
                 .as_string()
                 .ok_or_else(|| Error::invalid_argument_type("indexName must be STRING"))?
                 .to_string();
-            let query = eval(graph, input, &args[1], params, cypher_version)?
+            let query = eval(graph, input, &args[1], params)?
                 .as_string()
                 .ok_or_else(|| Error::invalid_argument_type("query must be STRING"))?
                 .to_string();
@@ -691,12 +681,7 @@ fn exec_vector_query_call(
         where_clause,
         ..
     } = call;
-    let ExecCtx {
-        graph,
-        params,
-        cypher_version,
-        ..
-    } = ctx;
+    let ExecCtx { graph, params, .. } = ctx;
     if args.len() != 3 {
         return Err(Error::syntax(format!(
             "InvalidNumberOfArguments: {name} expected 3, got {}",
@@ -714,17 +699,17 @@ fn exec_vector_query_call(
         optional,
         where_clause,
         |input| {
-            let index_name = eval(graph, input, &args[0], params, cypher_version)?
+            let index_name = eval(graph, input, &args[0], params)?
                 .as_string()
                 .ok_or_else(|| Error::invalid_argument_type("indexName must be STRING"))?
                 .to_string();
-            let limit = match eval(graph, input, &args[1], params, cypher_version)? {
+            let limit = match eval(graph, input, &args[1], params)? {
                 Value::Int(value) if (1..=i32::MAX as i64).contains(&value) => value as usize,
                 _ => return Err(Error::ty(
                     "InvalidArgumentValue: numberOfNearestNeighbours must be a positive INTEGER",
                 )),
             };
-            let query = eval(graph, input, &args[2], params, cypher_version)?;
+            let query = eval(graph, input, &args[2], params)?;
             let Some(query) = vector_operand(&query)? else {
                 return Ok(Vec::new());
             };

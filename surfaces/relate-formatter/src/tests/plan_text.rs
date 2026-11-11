@@ -3,8 +3,8 @@
 //! over a real engine plan tree (built through the canonical producer
 //! `PlanNode::to_value` + `value_to_cypher`, never hand-copied wire forms).
 //! These pin the text-layout facts the engine tests used to own before the
-//! engine's own renderer was deleted: the header echo (preamble stripped,
-//! `CYPHER 5` preserved), the boxed operator table, the estimate column's
+//! engine's own renderer was deleted: the header echo (preamble stripped),
+//! the boxed operator table, the estimate column's
 //! gate, the PROFILE ratio column with its `!` marker and unavailable
 //! spelling, the never-executed marker, and the warnings column and footer.
 
@@ -43,10 +43,6 @@ fn header_heads_the_engine_echo_and_collapses_whitespace() {
     assert_eq!(
         plan_header_lines("MATCH (n)   RETURN\n  n"),
         ["Query: MATCH (n) RETURN n", "Plan:"]
-    );
-    assert_eq!(
-        plan_header_lines("CYPHER 5 RETURN 1 AS n"),
-        ["Query: CYPHER 5 RETURN 1 AS n", "Plan:"]
     );
 }
 

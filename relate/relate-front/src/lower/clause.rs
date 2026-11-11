@@ -99,8 +99,7 @@ pub(super) fn lower_clause(c: &cl::Clause) -> Result<mdb::Clause> {
         | cl::Clause::ShowGraphType(_)
         | cl::Clause::ShowCurrentGraphType(_)
         | cl::Clause::CreateGraphType(_)
-        | cl::Clause::AlterCurrentGraphType(_)
-        | cl::Clause::AlterDatabase(_) => lower_schema_ddl(c)?,
+        | cl::Clause::AlterCurrentGraphType(_) => lower_schema_ddl(c)?,
         cl::Clause::Finish => mdb::Clause::Finish,
         cl::Clause::LoadCSV(l) => mdb::Clause::LoadCsv {
             with_headers: l.with_headers,

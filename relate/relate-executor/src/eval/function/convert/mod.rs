@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use relate_core::{Error, Result, Value};
 
-use crate::ctx::is_cypher5;
 use crate::eval::numeric::float_to_i64;
 use crate::overlay::ExecGraph;
 
@@ -19,24 +18,18 @@ use string::{float_from_string, integer_from_string, IntegerString};
 
 mod string;
 
-pub(super) fn bi_tostring(
-    _graph: &ExecGraph<'_>,
-    _n: &str,
-    vals: Vec<Value>,
-    cypher_version: Option<u32>,
-) -> Result<Value> {
+pub(super) fn bi_tostring(_graph: &ExecGraph<'_>, _n: &str, vals: Vec<Value>) -> Result<Value> {
     // The row's `ARITY_EXACTLY_ONE` contract rejects a second argument
     // before any argument is evaluated (LABS-785).
-    to_string_value(vals.first(), cypher_version)
+    to_string_value(vals.first())
 }
 
 pub(super) fn bi_tostringornull(
     _graph: &ExecGraph<'_>,
     _n: &str,
     vals: Vec<Value>,
-    cypher_version: Option<u32>,
 ) -> Result<Value> {
-    Ok(to_string_value(vals.first(), cypher_version).unwrap_or(Value::Null))
+    Ok(to_string_value(vals.first()).unwrap_or(Value::Null))
 }
 pub(super) fn bi_toint(_graph: &ExecGraph<'_>, _n: &str, vals: Vec<Value>) -> Result<Value> {
     to_integer_value(vals.first())
@@ -74,48 +67,32 @@ pub(super) fn bi_tofloatlist(_graph: &ExecGraph<'_>, _n: &str, vals: Vec<Value>)
     convert_list(&vals, ListProjection::Float)
 }
 
-pub(super) fn bi_tostringlist(
-    _graph: &ExecGraph<'_>,
-    _n: &str,
-    vals: Vec<Value>,
-    cypher_version: Option<u32>,
-) -> Result<Value> {
-    convert_list(&vals, ListProjection::String { cypher_version })
+pub(super) fn bi_tostringlist(_graph: &ExecGraph<'_>, _n: &str, vals: Vec<Value>) -> Result<Value> {
+    convert_list(&vals, ListProjection::String)
+}
+
+/// Which `toString()` form is deciding: the scalar form (`toString()`)
+/// maps a null argument to null and rejects a byte array, while the
+/// element form (`toStringList()`) renders null as the string `"null"`
+/// and maps the rejected byte array to null — the two documented
+/// exceptions the form arms state inline.
+#[derive(Clone, Copy)]
+enum ToStringForm {
+    Scalar,
+    Element,
 }
 
 /// One `toStringList()` element. An element is converted with the
-/// `toString()` scalar policy, except that the dialect decides what a
-/// container, a graph value and null become rather than raising: in Cypher
-/// 25 they render in display form (`null` included, matching TCK
-/// TypeConversion4 [10]); under an explicit `CYPHER 5` preamble they become
-/// null elements (TypeConversion4 [9]). A byte array is not a
-/// stringifiable element in either dialect.
-fn to_string_element(v: &Value, cypher_version: Option<u32>) -> Value {
-    let cypher5 = is_cypher5(cypher_version);
-    match v {
-        Value::Null if cypher5 => Value::Null,
-        Value::Null => Value::String("null".into()),
-        Value::Bytes(_) => Value::Null,
-        Value::List(_)
-        | Value::Map(_)
-        | Value::Node(_)
-        | Value::Relationship(_)
-        | Value::Path(_) => {
-            if cypher5 {
-                Value::Null
-            } else {
-                Value::String(v.to_display_string().into())
-            }
-        }
-        Value::Vector { .. } => Value::String(v.to_cypher_literal().into()),
-        Value::String(s) => Value::String(Arc::clone(s)),
-        Value::Bool(_)
-        | Value::Int(_)
-        | Value::Float(_)
-        | Value::Temporal(_)
-        | Value::Point(_)
-        | Value::Uuid(_) => Value::String(super::render_accepted_scalar(v)),
-    }
+/// `toString()` scalar policy, except that the policy decides what a
+/// container, a graph value and null become rather than raising: they
+/// render in display form (`null` included, matching TCK TypeConversion4
+/// [10]). A byte array is not a stringifiable element.
+fn to_string_element(v: &Value) -> Value {
+    // The element form maps every input to a value (its null and byte
+    // arms state the two exceptions), so no error path remains to
+    // re-inspect or swallow.
+    to_string_form(Some(v), ToStringForm::Element)
+        .expect("the element form maps every input to a value")
 }
 pub(super) fn bi_tobool(_graph: &ExecGraph<'_>, _n: &str, vals: Vec<Value>) -> Result<Value> {
     to_boolean_value(vals.first())
@@ -143,13 +120,13 @@ pub(super) fn bi_tobooleanlist(
 /// truncates to integers, `toFloatList()` widens to floats,
 /// `toBooleanList()` maps each element with the `toBoolean` rules, and
 /// `toStringList()` renders each element with the scalar `toString()`
-/// policy whose dialect `cypher_version` selects.
+/// policy.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum ListProjection {
     Integer,
     Float,
     Boolean,
-    String { cypher_version: Option<u32> },
+    String,
 }
 
 /// Shared body of `toIntegerList()`/`toFloatList()`/`toBooleanList()`/
@@ -195,7 +172,7 @@ fn convert_list(vals: &[Value], projection: ListProjection) -> Result<Value> {
 /// and null render per dialect, a vector in its literal form).
 fn convert_element(v: &Value, projection: ListProjection) -> Value {
     match (projection, v) {
-        (ListProjection::String { cypher_version }, v) => to_string_element(v, cypher_version),
+        (ListProjection::String, v) => to_string_element(v),
         (ListProjection::Boolean, v) => to_boolean_value(Some(v)).unwrap_or(Value::Null),
         (_, Value::Null) => Value::Null,
         (ListProjection::Integer, Value::Int(i)) => Value::Int(*i),
@@ -223,42 +200,48 @@ fn tostring_type_error() -> Error {
 /// Shared body of `toString()`/`toStringOrNull()`: convert an optional
 /// value to its string form. Null and absent input yield `Value::Null`;
 /// only a non-convertible *type* errors, which the `OrNull` variant maps to
-/// null. `cypher_version` selects the dialect: CIP-271 (containers render
-/// in display form) is Cypher-25-only, while an explicit `CYPHER 5`
-/// preamble keeps the pre-CIP-271 contract (CIP-150) in which every
-/// container is non-stringifiable.
-fn to_string_value(v: Option<&Value>, cypher_version: Option<u32>) -> Result<Value> {
+/// null. CIP-271's container acceptance applies uniformly: every container
+/// and graph value renders in display form.
+fn to_string_value(v: Option<&Value>) -> Result<Value> {
+    to_string_form(v, ToStringForm::Scalar)
+}
+
+/// The one body both `toString()` forms read, parameterized by
+/// [`ToStringForm`]: the scalar form's null and byte arms are the
+/// `OrNull` contract, the element form's are `toStringList()`'s two
+/// documented exceptions.
+fn to_string_form(v: Option<&Value>, form: ToStringForm) -> Result<Value> {
     let Some(v) = v else {
-        return Ok(Value::Null);
+        return Ok(match form {
+            ToStringForm::Scalar => Value::Null,
+            ToStringForm::Element => Value::String("null".into()),
+        });
     };
-    // The one type error this function raises: `toString()` reports it,
-    // `toStringOrNull()` maps it to null.
+    // The one type error the scalar form raises: `toString()` reports it,
+    // `toStringOrNull()` maps it to null; the element form maps the same
+    // input to null instead (its second documented exception).
     let type_error = tostring_type_error;
-    let cypher5 = is_cypher5(cypher_version);
     // The routing match is exhaustive over `Value`: a new variant fails
     // compilation here instead of being deferred to a renderer's `Option`.
     match v {
-        Value::Null => Ok(Value::Null),
+        Value::Null => Ok(match form {
+            ToStringForm::Scalar => Value::Null,
+            ToStringForm::Element => Value::String("null".into()),
+        }),
         // A byte array is a homogeneous LIST<INTEGER> (ADR-0327) and is
-        // rejected in every dialect.
-        Value::Bytes(_) => Err(type_error()),
+        // rejected by the scalar form; the element form maps it to null.
+        Value::Bytes(_) => match form {
+            ToStringForm::Scalar => Err(type_error()),
+            ToStringForm::Element => Ok(Value::Null),
+        },
         // One arm for the container and graph-value vocabulary: CIP-271
-        // (Cypher 25) renders every one in display form — a temporal nested
-        // in any container renders at full precision (ADR-0448) — while the
-        // CYPHER-5 dialect keeps the pre-CIP-271 contract (CIP-150) and
-        // rejects it. The dialect test sits inside, so the vocabulary has
-        // one spelling.
+        // renders every one in display form — a temporal nested in any
+        // container renders at full precision (ADR-0448).
         Value::List(_)
         | Value::Map(_)
         | Value::Node(_)
         | Value::Relationship(_)
-        | Value::Path(_) => {
-            if cypher5 {
-                Err(type_error())
-            } else {
-                Ok(Value::String(v.to_display_string().into()))
-            }
-        }
+        | Value::Path(_) => Ok(Value::String(v.to_display_string().into())),
         // A Vector renders in its literal form — the one scalar outside
         // the shared renderer's acceptance set. Every dialect renders it.
         Value::Vector { .. } => Ok(Value::String(v.to_cypher_literal().into())),

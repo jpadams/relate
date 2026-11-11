@@ -151,7 +151,7 @@ preview_feature_registry! {
         "CIP-274: the `coll.zip` collection function, callable and \
          `SHOW`-listed only under this opt-in (ADR-0497). A live Neo4j probe \
          records the name as front-end registered but unreachable \
-         -- no `SHOW FUNCTIONS` row, 42N48 under CYPHER 5 and 25 -- so the default dialect must \
+         -- no `SHOW FUNCTIONS` row, 42N48 -- so the default dialect must \
          not advertise it. Row and gate are deleted when CIP-274 ships in a release.",
         "coll-zip"
     ),
