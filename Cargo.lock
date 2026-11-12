@@ -2608,7 +2608,6 @@ version = "1.0.0"
 dependencies = [
  "clap",
  "csv",
- "pprof",
  "relate",
  "relate-datasets",
  "relate-splitter",
@@ -2673,6 +2672,7 @@ dependencies = [
  "flate2",
  "fs4",
  "libc",
+ "pprof",
  "relate",
  "relate-bolt",
  "relate-core",
