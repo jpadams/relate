@@ -57,6 +57,11 @@ mod frontier_tables_tests;
 // reset), sized by the keys inserted — never by the store's span.
 pub(crate) mod node_map;
 
+// Input-keyed memoisation of pure per-node checks (LABS-1478): the
+// stage-local table and the `Memoized` predicate wrapper the chain kernel
+// puts in front of its admission.
+pub(crate) mod memo;
+
 // The re-arrival rule (ADR-0478 §3): the frontier BFS's pool-exactness
 // seam — the default pool's trail-existence proofs at every accepting
 // arrival it cannot already prove a trail for, and the walk pool's
@@ -134,6 +139,8 @@ mod chain;
 mod chain_count;
 #[cfg(test)]
 mod chain_count_tests;
+#[cfg(test)]
+mod memo_differential_tests;
 mod hub_star;
 
 // The chain count fold's entry, lifted the way the aggregate folds lift
