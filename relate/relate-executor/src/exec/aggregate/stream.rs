@@ -18,37 +18,26 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use relate_core::{Error, ErrorKind, Result, Value};
+use relate_core::{Error, Result, Value};
 use relate_ir::{classify_aggregate, AggregateArity, AggregateKind, Expr};
-use relate_names::SmallName;
 
-use crate::eval::{eval, fold_aggregate, needs_numbers, FoldInput, Percentile, StreamFold};
+use crate::eval::StreamFold;
 use crate::overlay::ExecGraph;
 #[cfg(test)]
 use crate::overlay::RetainedTotal;
+#[cfg(test)]
 use crate::row::Row;
 
-use super::columns::{AccTable, SiteColumn, SiteState};
+use super::columns::{AccTable, Call, SiteColumn, SiteState};
 #[cfg(test)]
 use super::eval::FoldedGroup;
 use super::eval::{agg_eval, AggScope};
-use super::pool::{shareable, PoolSite, SortedPool};
-
-/// One aggregate call, validated: the borrowed pieces every offer and the
-/// finish read.
-#[derive(Clone, Copy)]
-pub(super) struct Call<'e> {
-    kind: AggregateKind,
-    pub(super) name: &'e SmallName,
-    pub(super) operand: &'e Expr,
-    /// The percentile argument of a `PercentilePair` call.
-    pub(super) percentile: Option<&'e Expr>,
-}
+use super::pool::{shareable, PoolSite};
 
 /// The aggregate call sites of one aggregating projection, as an empty
-/// accumulator table: every group's table is opened from it.
+/// accumulator table the aggregation takes ([`Self::into_table`]).
 pub(crate) struct AggSites<'e> {
-    blank: AccTable<'e>,
+    table: AccTable<'e>,
 }
 
 impl<'e> AggSites<'e> {
@@ -73,37 +62,33 @@ impl<'e> AggSites<'e> {
             }
             for expr in found.into_inner() {
                 if sites.iter().all(|site| !std::ptr::eq(site.expr, expr)) {
-                    sites.push(SiteColumn {
-                        expr,
-                        lenient: is_lenient,
-                        state: site_state(expr)?,
-                    });
+                    sites.push(SiteColumn::new(expr, is_lenient, site_state(expr)?));
                 }
             }
         }
         let pools = pool_percentiles(&mut sites);
         Ok(Self {
-            blank: AccTable::new(sites, pools),
+            table: AccTable::new(sites, pools),
         })
     }
 
-    /// A fresh table with no groups: each landing group opens its slot in
+    /// The table with no groups: each landing group opens its slot in
     /// every column ([`AccTable::open_group`]).
-    pub(super) fn open_table(&self) -> AccTable<'e> {
-        self.blank.empty_like()
+    pub(super) fn into_table(self) -> AccTable<'e> {
+        self.table
     }
 
     /// The expressions the finish reads from a group's seed beyond the
     /// projection itself: every percentile's argument.
     pub(super) fn seed_reads(&self) -> impl Iterator<Item = &'e Expr> + '_ {
-        self.blank.sites().iter().filter_map(SiteColumn::percentile)
+        self.table.sites().iter().filter_map(SiteColumn::percentile)
     }
 
     /// One group's accumulators on their own (the single-group harness the
     /// tests drive).
     #[cfg(test)]
-    pub(crate) fn open_group(&self) -> GroupAccs<'e> {
-        let mut table = self.open_table();
+    pub(crate) fn open_group(self) -> GroupAccs<'e> {
+        let mut table = self.into_table();
         table.open_group();
         GroupAccs(table)
     }
@@ -120,8 +105,9 @@ impl<'e> GroupAccs<'e> {
         graph: &ExecGraph<'_>,
         row: &Row,
         params: &BTreeMap<String, Value>,
+        total: &mut RetainedTotal,
     ) -> Result<()> {
-        self.0.offer(0, graph, row, params)
+        self.0.offer(0, graph, row, params, total)
     }
 
     pub(crate) fn settle(
@@ -156,9 +142,9 @@ fn pool_percentiles<'e>(sites: &mut [SiteColumn<'e>]) -> Vec<PoolSite<'e>> {
             continue;
         };
         let call = *call;
-        let Some(percentile) = call.percentile else {
+        if call.percentile.is_none() {
             continue;
-        };
+        }
         if !shareable(call.operand) {
             continue;
         }
@@ -172,12 +158,7 @@ fn pool_percentiles<'e>(sites: &mut [SiteColumn<'e>]) -> Vec<PoolSite<'e>> {
                 pools.len() - 1
             }
         };
-        site.state = SiteState::Pooled {
-            pool: index,
-            call,
-            percentile,
-            failed: BTreeMap::new(),
-        };
+        site.state = SiteState::Pooled { pool: index, call };
     }
     pools
 }
@@ -231,86 +212,12 @@ fn site_state(expr: &Expr) -> Result<SiteState<'_>> {
             folds: Vec::new(),
             held: Vec::new(),
             seen: dedups.then(Vec::new),
-            failed: BTreeMap::new(),
         },
         None => SiteState::Retain {
             call,
             vals: Vec::new(),
             charged: Vec::new(),
             seen: distinct.then(Vec::new),
-            failed: BTreeMap::new(),
         },
     })
-}
-
-/// The validated percentile argument of a call. The percentile depends only
-/// on the group's first row; an empty group has no row to ask and no
-/// percentile to report (`None`).
-fn percentile_input(
-    graph: &ExecGraph<'_>,
-    call: Call<'_>,
-    percentile: &Expr,
-    seed: Option<&Row>,
-    params: &BTreeMap<String, Value>,
-) -> Result<Option<Percentile>> {
-    let Some(first) = seed else {
-        return Ok(None);
-    };
-    let p = eval(graph, first, percentile, params)?;
-    // Two distinct rejections: a non-numeric percentile is the
-    // wrong-type class, an out-of-[0, 1] one the NumberOutOfRange
-    // kind (ADR-0175's 22N03 mapping).
-    let Some(p) = p.as_number() else {
-        return Err(Error::invalid_argument_type("percentile must be a number"));
-    };
-    if !(0.0..=1.0).contains(&p) {
-        return Err(Error::argument_value_kind(
-            ErrorKind::NumberOutOfRange,
-            "percentile",
-        ));
-    }
-    call.name
-        .with_str(|text| Percentile::new(call.kind, p, text))
-        .map(Some)
-}
-
-/// A retaining site's result: the percentile argument is validated first,
-/// and the shared per-kind fold finishes the operands (`collect` and
-/// the DISTINCT percentiles).
-pub(super) fn finish_retained(
-    graph: &ExecGraph<'_>,
-    vals: Vec<Value>,
-    call: Call<'_>,
-    seed: Option<&Row>,
-    params: &BTreeMap<String, Value>,
-) -> Result<Value> {
-    let input = match call.percentile {
-        None => FoldInput::Many(call.kind),
-        Some(percentile) => match percentile_input(graph, call, percentile, seed, params)? {
-            Some(percentile) => FoldInput::Percentile(percentile),
-            None => return Ok(Value::Null),
-        },
-    };
-    call.name.with_str(|text| fold_aggregate(input, text, vals))
-}
-
-/// A pooled percentile's result: the same order of rejections as the
-/// per-site fold (a parked evaluation failure is already a failed site, read
-/// before this; then the percentile argument, then a non-numeric operand),
-/// then the rank in the sample the group sorted once.
-pub(super) fn finish_pooled(
-    graph: &ExecGraph<'_>,
-    pool: &SortedPool,
-    call: Call<'_>,
-    percentile: &Expr,
-    seed: Option<&Row>,
-    params: &BTreeMap<String, Value>,
-) -> Result<Value> {
-    let Some(percentile) = percentile_input(graph, call, percentile, seed, params)? else {
-        return Ok(Value::Null);
-    };
-    if pool.non_numeric {
-        return Err(call.name.with_str(needs_numbers));
-    }
-    Ok(percentile.rank_in_sorted(&pool.vals))
 }

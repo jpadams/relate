@@ -21,14 +21,17 @@
 //!   `EXISTS`/`COUNT`/`COLLECT` subquery in any finish-time expression: it
 //!   opens its own scope that can capture outer variables by name.
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use relate_core::{Error, Node, Result, Value};
-use relate_ir::{classify_aggregate, Expr, MapProjectionItem};
+use relate_ir::{classify_aggregate, Expr, MapProjectionItem, Projection};
 
+use crate::eval::is_agg_expr;
 use crate::row::{Row, RowNames};
 
+use super::super::scope::is_star_item;
 use super::key::KeyValues;
 
 /// A kept value in 24 bytes, not a 48-byte [`Value`]: the dominant seed
@@ -71,17 +74,28 @@ impl Kept {
         }
     }
 
+    /// Whether `value` is held boxed: the one classification of the
+    /// inline/boxed partition, which [`Self::new`] constructs by and
+    /// [`Self::heap_bytes`] bills by (pinned by `kept_boxes_exactly_the_values_billed_as_boxed`).
+    fn boxes(value: &Value) -> bool {
+        !matches!(
+            value,
+            Value::Null
+                | Value::Bool(_)
+                | Value::Int(_)
+                | Value::Float(_)
+                | Value::String(_)
+                | Value::Node(_)
+        )
+    }
+
     /// Heap beyond the inline slot: the box of an `Other`, plus the
     /// payload the group solely owns (a shared payload adds nothing).
     fn heap_bytes(value: &Value) -> u64 {
-        let boxed = match value {
-            Value::Null
-            | Value::Bool(_)
-            | Value::Int(_)
-            | Value::Float(_)
-            | Value::String(_)
-            | Value::Node(_) => 0,
-            _ => size_of::<Value>() as u64,
+        let boxed = if Self::boxes(value) {
+            size_of::<Value>() as u64
+        } else {
+            0
         };
         boxed + crate::workspace::owned_heap(value)
     }
@@ -119,6 +133,8 @@ impl Reads {
     /// column that exists under that name).
     fn leaves(&mut self, expr: &Expr) {
         match expr {
+            // The one `*` decline: the item carries every in-scope variable
+            // through to the output row.
             Expr::Star => self.whole = true,
             Expr::CountStar => {}
             Expr::Function { name, args, .. } => {
@@ -153,17 +169,14 @@ impl Reads {
 impl SeedPlan {
     /// The plan for an aggregation whose seed is read by `finish_reads`.
     /// The consumer inventory — the one spelling of it, which the module
-    /// doc points at: the non-aggregate leaves of the projection items, a
-    /// percentile's second argument, the `ORDER BY` keys, HAVING, and the
-    /// plain post-aggregation WHERE (the predicate the projection applies
-    /// to the emitted rows, so its reads must survive the narrowing) —
-    /// must arrive whole in `finish_reads`; a consumer the chain omits
-    /// loses its columns. `star` is true when a `*` item or key is in
-    /// play.
-    pub(crate) fn plan<'e>(star: bool, finish_reads: impl IntoIterator<Item = &'e Expr>) -> Self {
-        if star {
-            return Self::Whole;
-        }
+    /// doc points at: the non-aggregate leaves of the projection items (a
+    /// `*` item among them, which declines the narrowing), a percentile's
+    /// second argument, the `ORDER BY` keys, HAVING, and the plain
+    /// post-aggregation WHERE (the predicate the projection applies to the
+    /// emitted rows, so its reads must survive the narrowing) — must
+    /// arrive whole in `finish_reads`; a consumer the chain omits loses
+    /// its columns.
+    pub(super) fn plan<'e>(finish_reads: impl IntoIterator<Item = &'e Expr>) -> Self {
         let mut reads = Reads {
             names: HashSet::new(),
             whole: false,
@@ -175,6 +188,37 @@ impl SeedPlan {
             Self::Whole
         } else {
             Self::Columns(reads.names)
+        }
+    }
+}
+
+/// How the finish answers one projection item, classified once per item.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ItemRole {
+    /// The `*` item: its variables are already in the seed row.
+    Star,
+    /// An aggregate expression: answered by the group's folded sites; its
+    /// non-aggregate leaves (`sum(x) + tax`) still read the seed.
+    Aggregate,
+    /// A pure non-aggregate item that is a grouping key: answered by the
+    /// key's first-seen value. Until planned it holds the key's position;
+    /// planned, the index into the seed's kept key slots.
+    Key(usize),
+    /// Any other item: evaluated against the seed row.
+    Leaf,
+}
+
+impl ItemRole {
+    fn of(item: &Projection, key_exprs: &[Cow<'_, Expr>]) -> Self {
+        if is_star_item(item) {
+            Self::Star
+        } else if is_agg_expr(&item.expr) {
+            Self::Aggregate
+        } else {
+            key_exprs
+                .iter()
+                .position(|key| **key == item.expr)
+                .map_or(Self::Leaf, Self::Key)
         }
     }
 }
@@ -202,16 +246,59 @@ pub(super) enum SeedStore {
 }
 
 impl SeedStore {
-    pub(super) fn new(plan: SeedPlan, key_slots: Vec<usize>) -> Self {
-        match plan {
-            SeedPlan::Whole => Self::Whole(Vec::new()),
-            SeedPlan::Columns(wanted) => Self::Columns {
-                wanted,
-                resolved: None,
-                key_slots,
-                values: Vec::new(),
-            },
+    /// Plan the seed of one aggregation and classify its items. A grouping
+    /// key an item restates is answered by the key's first-seen value
+    /// (kept once per group); the finish reads the seed only for the
+    /// remaining items, `consumers` (`ORDER BY` keys, HAVING, the plain
+    /// WHERE, the percentile arguments — see [`SeedPlan::plan`]) — and
+    /// keeps the whole row only where the analysis declines. The returned
+    /// roles name each item's kept key slot when the seed is narrowed.
+    pub(super) fn planned<'e>(
+        items: &'e [Projection],
+        key_exprs: &[Cow<'_, Expr>],
+        consumers: impl IntoIterator<Item = &'e Expr>,
+    ) -> (Self, Vec<ItemRole>) {
+        let mut roles: Vec<ItemRole> = items
+            .iter()
+            .map(|item| ItemRole::of(item, key_exprs))
+            .collect();
+        let plan = SeedPlan::plan(
+            items
+                .iter()
+                .zip(&roles)
+                .filter(|(_, role)| !matches!(role, ItemRole::Key(_)))
+                .map(|(item, _)| &item.expr)
+                .chain(consumers),
+        );
+        let SeedPlan::Columns(wanted) = plan else {
+            // The whole row answers: no item reads a kept key value.
+            for role in &mut roles {
+                if matches!(role, ItemRole::Key(_)) {
+                    *role = ItemRole::Leaf;
+                }
+            }
+            return (Self::Whole(Vec::new()), roles);
+        };
+        let mut key_slots: Vec<usize> = Vec::new();
+        for role in &mut roles {
+            if let ItemRole::Key(key) = role {
+                let slot = key_slots
+                    .iter()
+                    .position(|kept| kept == key)
+                    .unwrap_or_else(|| {
+                        key_slots.push(*key);
+                        key_slots.len() - 1
+                    });
+                *key = slot;
+            }
         }
+        let store = Self::Columns {
+            wanted,
+            resolved: None,
+            key_slots,
+            values: Vec::new(),
+        };
+        (store, roles)
     }
 
     /// Bytes the next landing adds: the slot growth of the flat buffer
@@ -329,6 +416,76 @@ impl SeedStore {
                     keys,
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use relate_ir::Expr;
+
+    use super::*;
+    use crate::exec::test_support::{agg_fn_over, node_value};
+
+    fn var(name: &str) -> Expr {
+        Expr::Variable(name.into())
+    }
+
+    fn columns(plan: SeedPlan) -> Vec<String> {
+        let SeedPlan::Columns(names) = plan else {
+            panic!("a narrowed plan")
+        };
+        let mut names: Vec<String> = names.into_iter().collect();
+        names.sort();
+        names
+    }
+
+    /// An aggregate call's operands are evaluated while the rows stream;
+    /// the finish never reads them again.
+    #[test]
+    fn aggregate_operands_are_not_seed_reads() {
+        let count_x = agg_fn_over("count", var("x"));
+        assert!(columns(SeedPlan::plan([&count_x])).is_empty());
+        let mixed = Expr::Binary {
+            op: relate_ir::BinaryOp::Add,
+            left: Box::new(agg_fn_over("sum", var("x"))),
+            right: Box::new(var("tax")),
+        };
+        assert_eq!(columns(SeedPlan::plan([&mixed])), ["tax"]);
+    }
+
+    /// The two shapes the analysis declines.
+    #[test]
+    fn star_and_captured_scopes_decline() {
+        assert!(matches!(SeedPlan::plan([&Expr::Star]), SeedPlan::Whole));
+        let query =
+            relate_front::parse_and_lower("RETURN EXISTS { (a)-[:E]->() } AS x").expect("parses");
+        let Some(relate_ir::Clause::Return { items, .. }) = query.parts[0].clauses.last() else {
+            panic!("a RETURN")
+        };
+        assert!(matches!(SeedPlan::plan([&items[0].expr]), SeedPlan::Whole));
+    }
+
+    /// The one partition: a value is billed a box exactly when it is kept
+    /// in one.
+    #[test]
+    fn kept_boxes_exactly_the_values_billed_as_boxed() {
+        let list = Value::List(Arc::new(vec![Value::Int(1)]));
+        for (value, boxed) in [
+            (Value::Null, false),
+            (Value::Bool(true), false),
+            (Value::Int(1), false),
+            (Value::Float(1.5), false),
+            (Value::String("s".into()), false),
+            (node_value(1), false),
+            (list, true),
+        ] {
+            assert_eq!(Kept::boxes(&value), boxed, "{value:?}");
+            assert_eq!(
+                matches!(Kept::new(value), Kept::Other(_)),
+                boxed,
+                "boxing disagrees with the billing partition"
+            );
         }
     }
 }

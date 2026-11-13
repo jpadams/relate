@@ -14,18 +14,18 @@
 
 use std::collections::BTreeMap;
 
-use relate_core::{Error, Result, Value};
-use relate_ir::Expr;
+use relate_core::{Error, ErrorKind, Result, Value};
+use relate_ir::{AggregateKind, Expr};
+use relate_names::SmallName;
 
 use crate::distinct_set::DistinctSet;
-use crate::eval::{eval, StreamFold};
+use crate::eval::{eval, fold_aggregate, needs_numbers, FoldInput, Percentile, StreamFold};
 use crate::overlay::{ExecGraph, RetainedTotal};
 use crate::row::Row;
 use crate::workspace::buffer_growth;
 
 use super::eval::FoldedGroup;
 use super::pool::{PoolSite, PoolState, SortedPool};
-use super::stream::{finish_pooled, finish_retained, Call};
 
 /// Groups whose lenient site failed to fold: the error is parked here and
 /// surfaces when the site is read. Sparse — empty unless an `ORDER BY` key
@@ -46,11 +46,39 @@ fn parked_error_bytes(error: &Error) -> u64 {
 /// Per-entry bookkeeping of a `BTreeMap` node, a conservative flat figure.
 const BTREE_ENTRY_OVERHEAD: u64 = 16;
 
-/// Whether an operand is admitted for `group`: true when there is no
-/// seen-set (the call is not DISTINCT) or the value is first seen there.
-fn admits(seen: &mut Option<Vec<DistinctSet>>, group: usize, value: &Value) -> Result<bool> {
-    seen.as_mut()
-        .map_or(Ok(true), |seen| seen[group].insert_value(value))
+/// One aggregate call, validated: the borrowed pieces every offer and the
+/// finish read.
+#[derive(Clone, Copy)]
+pub(super) struct Call<'e> {
+    pub(super) kind: AggregateKind,
+    pub(super) name: &'e SmallName,
+    pub(super) operand: &'e Expr,
+    /// The percentile argument of a `PercentilePair` call.
+    pub(super) percentile: Option<&'e Expr>,
+}
+
+/// The operand `call` yields for `row` in `group`, when it is to be folded:
+/// `None` for a group whose site already failed (nothing is evaluated any
+/// more) and for a DISTINCT call's operand already seen there. The one
+/// preamble every streaming and retaining offer shares.
+fn admitted_operand(
+    failed: &Failed,
+    seen: &mut Option<Vec<DistinctSet>>,
+    group: usize,
+    call: &Call<'_>,
+    graph: &ExecGraph<'_>,
+    row: &Row,
+    params: &BTreeMap<String, Value>,
+) -> Result<Option<Value>> {
+    if failed.contains_key(&group) {
+        return Ok(None);
+    }
+    graph.cancel_tick()?;
+    let value = eval(graph, row, call.operand, params)?;
+    let admitted = seen
+        .as_mut()
+        .map_or(Ok(true), |seen| seen[group].insert_value(&value))?;
+    Ok(admitted.then_some(value))
 }
 
 /// The one strict-raises/lenient-parks rule of an offer: a failure on a
@@ -80,7 +108,6 @@ pub(super) enum SiteState<'e> {
         /// A DISTINCT call's per-group seen-set (`Some` for such a site):
         /// an operand folds only when first seen and is dropped at once.
         seen: Option<Vec<DistinctSet>>,
-        failed: Failed,
     },
     /// `collect` and the DISTINCT percentiles: the operands are the state,
     /// charged to the aggregation's running total as they settle.
@@ -92,16 +119,12 @@ pub(super) enum SiteState<'e> {
         /// A DISTINCT call's per-group seen-set: only first-seen operands
         /// reach `vals`.
         seen: Option<Vec<DistinctSet>>,
-        failed: Failed,
     },
     /// A plain percentile call: its operands live in the shared pool
     /// column at this index, not here.
     Pooled {
         pool: usize,
         call: Call<'e>,
-        /// The call's percentile argument, resolved when it was pooled.
-        percentile: &'e Expr,
-        failed: Failed,
     },
     /// An arity violation (a backtick-escaped `` `count`() `` bypasses the
     /// parser and front validation): raised when a group resolves, as the
@@ -112,10 +135,12 @@ pub(super) enum SiteState<'e> {
 
 /// One aggregate call site: the call's identity (the evaluator asks for its
 /// value by this reference), whether only an `ORDER BY` key or HAVING reads
-/// it (a fold error parks instead of failing the statement), and its state.
+/// it (a fold error parks instead of failing the statement), the groups
+/// whose fold already failed, and its state.
 pub(super) struct SiteColumn<'e> {
     pub(super) expr: &'e Expr,
     pub(super) lenient: bool,
+    failed: Failed,
     pub(super) state: SiteState<'e>,
 }
 
@@ -129,52 +154,14 @@ pub(crate) struct AccTable<'e> {
     groups: usize,
     pools: Vec<PoolColumn<'e>>,
     sites: Vec<SiteColumn<'e>>,
-    /// Bytes of parked lenient failures not yet charged; [`Self::settle`]
-    /// bills them to the running total.
-    parked_bytes: u64,
 }
 
 impl<'e> SiteColumn<'e> {
-    /// The same site with no groups.
-    fn empty_like(&self) -> Self {
-        let state = match &self.state {
-            SiteState::CountStar(_) => SiteState::CountStar(Vec::new()),
-            SiteState::Stream {
-                call,
-                template,
-                seen,
-                ..
-            } => SiteState::Stream {
-                call: *call,
-                template: template.clone(),
-                folds: Vec::new(),
-                held: Vec::new(),
-                seen: seen.as_ref().map(|_| Vec::new()),
-                failed: Failed::new(),
-            },
-            SiteState::Retain { call, seen, .. } => SiteState::Retain {
-                call: *call,
-                vals: Vec::new(),
-                charged: Vec::new(),
-                seen: seen.as_ref().map(|_| Vec::new()),
-                failed: Failed::new(),
-            },
-            SiteState::Pooled {
-                pool,
-                call,
-                percentile,
-                ..
-            } => SiteState::Pooled {
-                pool: *pool,
-                call: *call,
-                percentile,
-                failed: Failed::new(),
-            },
-            SiteState::Rejected(error) => SiteState::Rejected(error.clone()),
-        };
+    pub(super) fn new(expr: &'e Expr, lenient: bool, state: SiteState<'e>) -> Self {
         Self {
-            expr: self.expr,
-            lenient: self.lenient,
+            expr,
+            lenient,
+            failed: Failed::new(),
             state,
         }
     }
@@ -183,8 +170,7 @@ impl<'e> SiteColumn<'e> {
     /// group's seed.
     pub(super) fn percentile(&self) -> Option<&'e Expr> {
         match &self.state {
-            SiteState::Retain { call, .. } => call.percentile,
-            SiteState::Pooled { percentile, .. } => Some(percentile),
+            SiteState::Retain { call, .. } | SiteState::Pooled { call, .. } => call.percentile,
             _ => None,
         }
     }
@@ -246,37 +232,24 @@ impl<'e> SiteColumn<'e> {
         row: &Row,
         params: &BTreeMap<String, Value>,
     ) -> Result<()> {
-        match &mut self.state {
+        let Self { failed, state, .. } = self;
+        match state {
             SiteState::CountStar(counts) => counts[group] += 1,
             SiteState::Stream {
-                call,
-                folds,
-                seen,
-                failed,
-                ..
+                call, folds, seen, ..
             } => {
-                if failed.contains_key(&group) {
-                    return Ok(());
-                }
-                graph.cancel_tick()?;
-                let value = eval(graph, row, call.operand, params)?;
-                if admits(seen, group, &value)? {
+                if let Some(value) =
+                    admitted_operand(failed, seen, group, call, graph, row, params)?
+                {
                     call.name.with_str(|name| folds[group].offer(value, name))?;
                 }
             }
             SiteState::Retain {
-                call,
-                vals,
-                seen,
-                failed,
-                ..
+                call, vals, seen, ..
             } => {
-                if failed.contains_key(&group) {
-                    return Ok(());
-                }
-                graph.cancel_tick()?;
-                let value = eval(graph, row, call.operand, params)?;
-                if admits(seen, group, &value)? {
+                if let Some(value) =
+                    admitted_operand(failed, seen, group, call, graph, row, params)?
+                {
                     vals[group].push(value);
                 }
             }
@@ -285,29 +258,52 @@ impl<'e> SiteColumn<'e> {
         Ok(())
     }
 
-    /// A lenient site's operand failed for `group`: park the error and drop
-    /// what the group's slot retained. The failure surfaces when the site
-    /// is read. Returns the bytes the parked error retains, for the caller
-    /// to bill.
-    fn park_failure(&mut self, group: usize, error: Error) -> u64 {
-        let bytes = parked_error_bytes(&error);
+    /// Drop what group `group`'s slot retained: the operands (or the fold)
+    /// and the DISTINCT seen-set, whichever site shape holds them. A pooled
+    /// site holds nothing here (its pool state releases the sample).
+    fn release(&mut self, group: usize) {
         match &mut self.state {
-            SiteState::Stream { failed, .. } | SiteState::Pooled { failed, .. } => {
-                failed.insert(group, error);
+            SiteState::Stream {
+                template,
+                folds,
+                seen,
+                ..
+            } => {
+                folds[group] = template.clone();
+                if let Some(seen) = seen {
+                    seen[group] = DistinctSet::default();
+                }
             }
             SiteState::Retain {
                 vals,
                 charged,
-                failed,
+                seen,
                 ..
             } => {
                 vals[group] = Vec::new();
                 charged[group] = 0;
-                failed.insert(group, error);
+                if let Some(seen) = seen {
+                    seen[group] = DistinctSet::default();
+                }
             }
-            SiteState::CountStar(_) | SiteState::Rejected(_) => return 0,
+            SiteState::CountStar(_) | SiteState::Pooled { .. } | SiteState::Rejected(_) => {}
         }
-        bytes
+    }
+
+    /// A lenient site's operand failed for `group`: bill what the parked
+    /// error retains to `total`, release what the slot kept, and park the
+    /// error. The failure surfaces when the site is read.
+    fn park_failure(
+        &mut self,
+        group: usize,
+        error: Error,
+        graph: &ExecGraph<'_>,
+        total: &mut RetainedTotal,
+    ) -> Result<()> {
+        total.add_bytes(graph, parked_error_bytes(&error))?;
+        self.release(group);
+        self.failed.insert(group, error);
+        Ok(())
     }
 
     fn settle(
@@ -316,16 +312,11 @@ impl<'e> SiteColumn<'e> {
         graph: &ExecGraph<'_>,
         total: &mut RetainedTotal,
     ) -> Result<()> {
+        if self.failed.contains_key(&group) {
+            return Ok(());
+        }
         match &mut self.state {
-            SiteState::Retain {
-                vals,
-                charged,
-                failed,
-                ..
-            } => {
-                if failed.contains_key(&group) {
-                    return Ok(());
-                }
+            SiteState::Retain { vals, charged, .. } => {
                 for value in &vals[group][charged[group]..] {
                     let slot_bytes = buffer_growth(
                         charged[group],
@@ -360,29 +351,20 @@ impl<'e> SiteColumn<'e> {
         seed: Option<&Row>,
         params: &BTreeMap<String, Value>,
     ) -> Result<Value> {
+        if let Some(error) = self.failed.get(&group) {
+            return Err(error.clone());
+        }
         match &mut self.state {
             SiteState::CountStar(counts) => Ok(Value::Int(counts[group])),
-            SiteState::Stream { folds, failed, .. } => match failed.get(&group) {
-                Some(error) => Err(error.clone()),
-                None => std::mem::replace(&mut folds[group], StreamFold::Count(0)).finish(),
-            },
-            SiteState::Retain {
-                call, vals, failed, ..
-            } => match failed.get(&group) {
-                Some(error) => Err(error.clone()),
-                None => {
-                    finish_retained(graph, std::mem::take(&mut vals[group]), *call, seed, params)
-                }
-            },
-            SiteState::Pooled {
-                pool,
-                call,
-                percentile,
-                failed,
-            } => match failed.get(&group) {
-                Some(error) => Err(error.clone()),
-                None => finish_pooled(graph, &pools[*pool], *call, percentile, seed, params),
-            },
+            SiteState::Stream { folds, .. } => {
+                std::mem::replace(&mut folds[group], StreamFold::Count(0)).finish()
+            }
+            SiteState::Retain { call, vals, .. } => {
+                finish_retained(graph, std::mem::take(&mut vals[group]), *call, seed, params)
+            }
+            SiteState::Pooled { pool, call } => {
+                finish_pooled(graph, &pools[*pool], *call, seed, params)
+            }
             SiteState::Rejected(error) => Err(error.clone()),
         }
     }
@@ -392,7 +374,6 @@ impl<'e> AccTable<'e> {
     pub(super) fn new(sites: Vec<SiteColumn<'e>>, pools: Vec<PoolSite<'e>>) -> Self {
         Self {
             groups: 0,
-            parked_bytes: 0,
             pools: pools
                 .into_iter()
                 .map(|site| PoolColumn {
@@ -401,23 +382,6 @@ impl<'e> AccTable<'e> {
                 })
                 .collect(),
             sites,
-        }
-    }
-
-    /// The same sites and pools with no groups.
-    pub(super) fn empty_like(&self) -> Self {
-        Self {
-            groups: 0,
-            parked_bytes: 0,
-            pools: self
-                .pools
-                .iter()
-                .map(|pool| PoolColumn {
-                    site: pool.site,
-                    states: Vec::new(),
-                })
-                .collect(),
-            sites: self.sites.iter().map(SiteColumn::empty_like).collect(),
         }
     }
 
@@ -454,13 +418,15 @@ impl<'e> AccTable<'e> {
     /// Offer one input row to every site of group `group`. A streaming site
     /// evaluates its operand and folds it into its constant-size state; a
     /// retaining site keeps the value. What a site kept is charged by
-    /// [`Self::settle`], once the spent row has let go of its share.
+    /// [`Self::settle`], once the spent row has let go of its share; a
+    /// lenient failure that parks is billed to `total` here, as it parks.
     pub(super) fn offer(
         &mut self,
         group: usize,
         graph: &ExecGraph<'_>,
         row: &Row,
         params: &BTreeMap<String, Value>,
+        total: &mut RetainedTotal,
     ) -> Result<()> {
         for index in 0..self.pools.len() {
             let pool = &mut self.pools[index];
@@ -472,9 +438,7 @@ impl<'e> AccTable<'e> {
                 state.stop();
                 for site in &mut self.sites {
                     if matches!(site.state, SiteState::Pooled { pool, .. } if pool == index) {
-                        self.parked_bytes = self
-                            .parked_bytes
-                            .saturating_add(site.park_failure(group, error.clone()));
+                        site.park_failure(group, error.clone(), graph, total)?;
                     }
                 }
             }
@@ -482,9 +446,7 @@ impl<'e> AccTable<'e> {
         for site in &mut self.sites {
             let offered = site.offer(group, graph, row, params);
             if let Some(error) = parked(site.lenient, offered)? {
-                self.parked_bytes = self
-                    .parked_bytes
-                    .saturating_add(site.park_failure(group, error));
+                site.park_failure(group, error, graph, total)?;
             }
         }
         Ok(())
@@ -505,7 +467,6 @@ impl<'e> AccTable<'e> {
         graph: &ExecGraph<'_>,
         total: &mut RetainedTotal,
     ) -> Result<()> {
-        total.add_bytes(graph, std::mem::take(&mut self.parked_bytes))?;
         for pool in &mut self.pools {
             pool.states[group].settle(graph, total)?;
         }
@@ -539,5 +500,162 @@ impl<'e> AccTable<'e> {
                 })
                 .collect(),
         )
+    }
+}
+
+/// The validated percentile argument of a call. The percentile depends only
+/// on the group's first row; an empty group has no row to ask and no
+/// percentile to report (`None`).
+fn percentile_input(
+    graph: &ExecGraph<'_>,
+    call: Call<'_>,
+    seed: Option<&Row>,
+    params: &BTreeMap<String, Value>,
+) -> Result<Option<Percentile>> {
+    let percentile = call
+        .percentile
+        .ok_or_else(|| Error::internal("a percentile call carries its percentile argument"))?;
+    let Some(first) = seed else {
+        return Ok(None);
+    };
+    let p = eval(graph, first, percentile, params)?;
+    // Two distinct rejections: a non-numeric percentile is the
+    // wrong-type class, an out-of-[0, 1] one the NumberOutOfRange
+    // kind (ADR-0175's 22N03 mapping).
+    let Some(p) = p.as_number() else {
+        return Err(Error::invalid_argument_type("percentile must be a number"));
+    };
+    if !(0.0..=1.0).contains(&p) {
+        return Err(Error::argument_value_kind(
+            ErrorKind::NumberOutOfRange,
+            "percentile",
+        ));
+    }
+    call.name
+        .with_str(|text| Percentile::new(call.kind, p, text))
+        .map(Some)
+}
+
+/// A retaining site's result: the percentile argument is validated first,
+/// and the shared per-kind fold finishes the operands (`collect` and
+/// the DISTINCT percentiles).
+fn finish_retained(
+    graph: &ExecGraph<'_>,
+    vals: Vec<Value>,
+    call: Call<'_>,
+    seed: Option<&Row>,
+    params: &BTreeMap<String, Value>,
+) -> Result<Value> {
+    let input = match call.percentile {
+        None => FoldInput::Many(call.kind),
+        Some(_) => match percentile_input(graph, call, seed, params)? {
+            Some(percentile) => FoldInput::Percentile(percentile),
+            None => return Ok(Value::Null),
+        },
+    };
+    call.name.with_str(|text| fold_aggregate(input, text, vals))
+}
+
+/// A pooled percentile's result: the same order of rejections as the
+/// per-site fold (a parked evaluation failure is already a failed site, read
+/// before this; then the percentile argument, then a non-numeric operand),
+/// then the rank in the sample the group sorted once.
+fn finish_pooled(
+    graph: &ExecGraph<'_>,
+    pool: &SortedPool,
+    call: Call<'_>,
+    seed: Option<&Row>,
+    params: &BTreeMap<String, Value>,
+) -> Result<Value> {
+    let Some(percentile) = percentile_input(graph, call, seed, params)? else {
+        return Ok(Value::Null);
+    };
+    if pool.non_numeric {
+        return Err(call.name.with_str(needs_numbers));
+    }
+    Ok(percentile.rank_in_sorted(&pool.vals))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::stream::AggSites;
+    use super::*;
+    use crate::exec::test_support::{agg_fn_over, group_with_vals, percentile_fn};
+    use crate::graph::Graph;
+
+    fn p_of_x() -> Expr {
+        Expr::Property {
+            key_id: Default::default(),
+            expr: Box::new(Expr::Variable("x".into())),
+            key: SmallName::from_name("p"),
+        }
+    }
+
+    /// A lenient site that parks a failure releases what its group slot
+    /// retained, whichever shape the site has (a streaming fold, retained
+    /// operands, or a shared percentile pool), and every site answers the
+    /// group with the parked error.
+    #[test]
+    fn a_parked_failure_releases_the_slot_in_every_site_shape() {
+        let g = Graph::default();
+        let graph = ExecGraph::read(&g);
+        let params = BTreeMap::new();
+        let calls = [
+            agg_fn_over("count", p_of_x()),
+            agg_fn_over("collect", p_of_x()),
+            percentile_fn_over_p(),
+        ];
+        let mut table = AggSites::discover(&graph, [], calls.iter(), &params)
+            .expect("discovered")
+            .into_table();
+        table.open_group();
+        let mut total = graph.retain_bytes(0).expect("a fresh total");
+        let ok = Value::Map(BTreeMap::from([("p".to_string(), Value::Int(1))]).into());
+        let rows = group_with_vals(&[ok, Value::Int(5)]);
+        table
+            .offer(0, &graph, &rows[0], &params, &mut total)
+            .expect("offered");
+        table.settle(0, &graph, &mut total).expect("settled");
+        let SiteState::Retain { vals, .. } = &table.sites[1].state else {
+            panic!("collect retains")
+        };
+        assert_eq!(vals[0].len(), 1);
+        assert_eq!(table.pools[0].states[0].held(), 1);
+        let before = total.total();
+
+        // `5.p` fails on every lenient site: parked, billed, released.
+        table
+            .offer(0, &graph, &rows[1], &params, &mut total)
+            .expect("parked");
+        assert!(total.total() > before, "the parked errors are billed");
+        let SiteState::Stream { folds, .. } = &table.sites[0].state else {
+            panic!("count streams")
+        };
+        assert_eq!(
+            folds[0].clone().finish().expect("a fresh count"),
+            Value::Int(0)
+        );
+        let SiteState::Retain { vals, charged, .. } = &table.sites[1].state else {
+            panic!("collect retains")
+        };
+        assert!(vals[0].is_empty());
+        assert_eq!(charged[0], 0);
+        assert_eq!(table.pools[0].states[0].held(), 0);
+        assert!(table.sites.iter().all(|site| site.failed.contains_key(&0)));
+        let folded = table.finish_group(0, &graph, rows.first(), &params);
+        for call in &calls {
+            assert!(folded.value(call).is_err(), "{call:?}");
+        }
+    }
+
+    fn percentile_fn_over_p() -> Expr {
+        let Expr::Function { name, distinct, .. } = percentile_fn("percentileCont", 0.5) else {
+            panic!("a function call")
+        };
+        Expr::Function {
+            name,
+            distinct,
+            args: vec![p_of_x(), Expr::Float(0.5)],
+        }
     }
 }

@@ -53,9 +53,18 @@ pub(super) struct PoolState {
 }
 
 impl PoolState {
-    /// Stop collecting: the failure was parked on the reading sites.
+    /// Stop collecting: the failure was parked on the reading sites, so
+    /// the buffer is released with it (the sites answer with the parked
+    /// error, never from the sample).
     pub(super) fn stop(&mut self) {
         self.stopped = true;
+        self.sample = PercentileSample::default();
+    }
+
+    /// How many numbers the buffer holds.
+    #[cfg(test)]
+    pub(super) fn held(&self) -> usize {
+        self.sample.len()
     }
 
     /// Offer one input row: evaluate the operand once and keep the number.

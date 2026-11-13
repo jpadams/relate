@@ -8,6 +8,16 @@ use crate::exec::aggregate::{agg_eval, AggScope, AggSites, FoldedGroup};
 use crate::overlay::ExecGraph;
 use crate::row::Row;
 
+/// A bare node value (label `V`, no properties): the one fixture the
+/// group-key, seed and footprint tests build node keys from.
+pub(crate) fn node_value(id: i64) -> Value {
+    Value::Node(std::sync::Arc::new(relate_core::Node {
+        id,
+        labels: std::sync::Arc::new(vec!["V".into()]),
+        properties: std::sync::Arc::default(),
+    }))
+}
+
 /// A one-argument aggregate call over a caller-chosen operand — the
 /// parameterized form of the shape the aggregate tests, the charge tests,
 /// the horizontal rewrite's tests, and the match-predicate test all build.
@@ -37,7 +47,7 @@ pub(crate) fn fold_group_rows<'e>(
     let mut accs = sites.open_group();
     let mut total = graph.retain_bytes(0)?;
     for row in group {
-        accs.offer(graph, row, params)?;
+        accs.offer(graph, row, params, &mut total)?;
         accs.settle(graph, &mut total)?;
     }
     let folded = accs.finish(graph, group.first(), params);
