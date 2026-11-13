@@ -14,9 +14,13 @@
 //! itself needs a change to `Value`'s representation in `relate-core` and
 //! is a separate decision.
 //!
-//! **Not cryptographic.** Two 64-bit lanes are folded with 64x64->128
-//! multiplies, keyed with a per-process random seed, so a client that
-//! controls the values cannot craft a collision without the seed.
+//! **Not cryptographic.** Scalars are folded into two 64-bit lanes with
+//! 64x64->128 multiplies; strings and byte runs go through XXH3-128
+//! (`xxhash-rust`, no dependencies), which runs at tens of GB/s where this
+//! module's own word loop managed 3. Both are keyed with a per-process
+//! random seed, so a client that controls the values cannot craft a
+//! collision without it; neither is designed against a determined
+//! adversary.
 //!
 //! **What hashes.** The representation, tagged by variant: a value equal
 //! under the engine's `=` but spelled differently (`1` and `1.0`) gets two
@@ -69,12 +73,18 @@ fn fold(x: u64, y: u64) -> u64 {
 struct Lanes {
     a: u64,
     b: u64,
+    /// The per-process seed for the byte runs' XXH3.
+    seed: u64,
 }
 
 impl Lanes {
     fn new() -> Self {
         let (a, b) = seed();
-        Self { a, b }
+        Self {
+            a,
+            b,
+            seed: a ^ b.rotate_left(32),
+        }
     }
 
     #[inline]
@@ -83,20 +93,15 @@ impl Lanes {
         self.b = fold(self.b ^ w.rotate_left(32) ^ K2, K3 ^ self.a.rotate_left(29));
     }
 
-    /// A length-prefixed byte run: the length first makes `("ab","c")` and
+    /// A byte run: its length, then its XXH3-128 (seeded per process, SIMD
+    /// where the target has it, 20-50 GB/s on large runs) folded in as two
+    /// words. Each run is hashed on its own, so `("ab","c")` and
     /// `("a","bc")` differ.
     fn bytes(&mut self, bytes: &[u8]) {
         self.word(bytes.len() as u64);
-        let mut chunks = bytes.chunks_exact(8);
-        for chunk in &mut chunks {
-            self.word(u64::from_le_bytes(chunk.try_into().expect("8-byte chunk")));
-        }
-        let tail = chunks.remainder();
-        if !tail.is_empty() {
-            let mut last = [0u8; 8];
-            last[..tail.len()].copy_from_slice(tail);
-            self.word(u64::from_le_bytes(last));
-        }
+        let digest = xxhash_rust::xxh3::xxh3_128_with_seed(bytes, self.seed);
+        self.word(digest as u64);
+        self.word((digest >> 64) as u64);
     }
 
     fn finish(self) -> Hash128 {

@@ -73,7 +73,12 @@ pub(crate) struct MemoPolicy {
     /// allocated: a stage that never gets this far pays one counter
     /// increment per input and nothing else.
     pub(crate) warm_up: u32,
-    /// Probes after which the hit rate is reviewed once.
+    /// Probes after which the hit rate is reviewed once. A memo over a
+    /// large key domain starts cold: its cumulative hit rate after `n`
+    /// probes is about the fraction of the domain already seen, so the
+    /// review must wait until the table has had time to fill, or it
+    /// disables a memo that would have paid (LABS-1478: a 4096 window
+    /// disabled the label memo on a 1.6M-node graph).
     pub(crate) window: u32,
     /// Below this hit rate (percent) at the review, the memo drops its
     /// table and bypasses itself: every answer was used once, so the
@@ -87,7 +92,7 @@ impl MemoPolicy {
     /// A store-read check (a label or property test): about 20-100 ns.
     pub(crate) const MODERATE: Self = Self {
         warm_up: 1024,
-        window: 4096,
+        window: 1 << 20,
         min_hit_percent: 10,
         max_bytes: 8 << 20,
     };
@@ -98,7 +103,7 @@ impl MemoPolicy {
     )]
     pub(crate) const EXPENSIVE: Self = Self {
         warm_up: 8,
-        window: 256,
+        window: 1 << 16,
         min_hit_percent: 2,
         max_bytes: 8 << 20,
     };
