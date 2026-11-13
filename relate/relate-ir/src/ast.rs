@@ -38,6 +38,39 @@ impl Query {
         }
         tail
     }
+
+    /// Whether this query projects columns: its true final stage (the end of
+    /// its `NEXT` chain, not merely its own part list) ends in a `RETURN`,
+    /// or in a `CONDITIONAL` / nested `CALL { … }` that projects. A body
+    /// that does not — an update clause, a bare procedure call — leaves a
+    /// `CALL { … }` a *unit* subquery.
+    ///
+    /// The one IR spelling of the fact: the planner's subquery-scope fold
+    /// and the redundant-`OPTIONAL` notification detector both read it.
+    pub fn projects_columns(&self) -> bool {
+        // A `Query` invariantly carries at least one part (the executor
+        // spells the same invariant at its `stage_export_columns` sites); an
+        // empty `parts` is a broken invariant to surface, never a "does not
+        // project" verdict.
+        let part = self
+            .final_stage()
+            .parts
+            .last()
+            .expect("a Query invariantly carries at least one part");
+        match part.clauses.last() {
+            Some(Clause::Return { .. }) => true,
+            Some(Clause::Conditional {
+                branches,
+                else_query,
+            }) => branches
+                .first()
+                .map(|(_, branch)| branch.projects_columns())
+                .or_else(|| else_query.as_deref().map(Query::projects_columns))
+                .unwrap_or(false),
+            Some(Clause::CallSubquery { query, .. }) => query.projects_columns(),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
