@@ -15,8 +15,11 @@ import (
 	"github.com/dagger/querybuilder"
 )
 
+const CacheSharingModeLocked = core.CacheSharingModeLocked
+
 type Check = core.Check
 type Container = core.Container
+type ContainerWithMountedCacheOpts = core.ContainerWithMountedCacheOpts
 type Directory = core.Directory
 type ID = core.ID
 type Node = core.Node
