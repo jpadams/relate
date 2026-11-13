@@ -194,7 +194,7 @@ fn show_databases_label(clause: &Clause) -> Option<&'static str> {
     }
 }
 
-/// ADR-0116 §2 / CIP-213 NE1.4: whether the plan combines `SHOW DATABASES`
+/// ADR-0116 §2: whether the plan combines `SHOW DATABASES`
 /// with a `NEXT` stage. The front-end's NEXT-chain validation rejects the
 /// combination before planning; this classifier is the execution-phase
 /// backstop the facade checks after its EXPLAIN early return (EXPLAIN plans
