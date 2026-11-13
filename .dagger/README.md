@@ -47,8 +47,9 @@ Settings (constructor arguments):
   recorded result without running cargo. `.dagger/` is excluded from the source, so
   editing the pipeline does not invalidate every gate.
 - **Build trees.** When the source does change, each gate reuses its own cargo
-  target directory (cache volume `relate-target-<gate>`) and the shared registry
-  volumes. Cargo then rebuilds only the crates the change affects.
+  target directory (cache volume `relate-target-<gate>`) and the shared CARGO_HOME
+  volume (`relate-cargo-home`, which also holds cargo's unpack lock). Cargo then
+  rebuilds only the crates the change affects.
 - **Freshness.** Cargo compares mtimes, and source loaded from a git ref (as
   Cloud Checks loads it) has one fixed 1980 mtime, so a warm build tree would
   look newer than changed sources. Before cargo runs, each gate restamps the

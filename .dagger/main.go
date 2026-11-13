@@ -135,8 +135,12 @@ func (m *RelateCi) TestLoad(ctx context.Context) error {
 // evicting another's. The registry is shared and read-mostly.
 func (m *RelateCi) cargo(ctx context.Context, gate string, invocations ...string) error {
 	ctr := m.toolchain().
-		WithMountedCache("/usr/local/cargo/registry", core.NewCacheVolume("relate-cargo-registry")).
-		WithMountedCache("/usr/local/cargo/git", core.NewCacheVolume("relate-cargo-git")).
+		// The whole CARGO_HOME is one shared volume, as in .sonic/ci.yml:
+		// its .package-cache file is cargo's download/unpack lock, so gates
+		// filling an empty registry at once must share it or race ("File
+		// exists"). The toolchain's binaries stay in /usr/local/cargo/bin.
+		WithMountedCache("/cargo-home", core.NewCacheVolume("relate-cargo-home")).
+		WithEnvVariable("CARGO_HOME", "/cargo-home").
 		// LOCKED: two runs of one gate (two commits at once on Cloud)
 		// take turns on its build tree and mtime ledger.
 		WithMountedCache("/target", core.NewCacheVolume("relate-target-"+gate),
