@@ -3,14 +3,14 @@
 
 use crate::help::HelpTopic;
 // The direct `usage_error` sites in this module are the pull/push
-// `--namespace` refusals; every other exit goes through
-// `command_usage_error`, which needs no `HelpScope` of its own.
-#[cfg(any(feature = "pull", feature = "push"))]
+// `--namespace` refusals and the hidden feedback verb; every other exit
+// goes through `command_usage_error`, which needs no `HelpScope` of its own.
+#[cfg(any(feature = "pull", feature = "push", feature = "feedback"))]
 use crate::help::HelpScope;
 use crate::parse_error::ParseError;
 
 use super::command_usage_error;
-#[cfg(any(feature = "pull", feature = "push"))]
+#[cfg(any(feature = "pull", feature = "push", feature = "feedback"))]
 use super::usage_error;
 
 /// Every command word (ADR-0069, ADR-0200). The set is the same in every
@@ -30,6 +30,7 @@ pub(crate) const COMMAND_WORDS: &[&str] = &[
     "upgrade",
     "update",
     "telemetry",
+    "feedback",
     "pull",
     "push",
     "run",
@@ -66,6 +67,13 @@ pub(crate) enum LifecycleCommand {
     #[cfg(feature = "telemetry")]
     Telemetry {
         action: crate::telemetry_cmd::TelemetryAction,
+    },
+    /// `relate feedback submit|enable|disable|status` (ADR-0588 §3):
+    /// person-consented agent feedback, plus the hidden `serve` MCP path
+    /// (§4).
+    #[cfg(feature = "feedback")]
+    Feedback {
+        action: crate::feedback_cmd::FeedbackAction,
     },
     /// `relate pull [--from FILE] --query Q [--param N=V] --database PATH` (ADR-0080,
     /// ADR-0158: `Q` may be a statement list, file, or `-`)
@@ -119,6 +127,15 @@ pub(crate) enum LifecycleCommand {
 }
 
 impl LifecycleCommand {
+    /// Whether this command is help-shaped — the `command_topic` `None`
+    /// set (`Help`, `NotIncluded`, `RunHelp`): a page to print, never a
+    /// command with a query of its own. The end-of-parse conflict stage
+    /// exempts these exactly as it exempts `--help`/`--version` (round 4):
+    /// a help page is a no-side-effect exit, so no conflict can precede it.
+    pub(crate) fn is_help_shaped(&self) -> bool {
+        self.command_topic().is_none()
+    }
+
     /// The topic of the parsed command itself, or `None` for the
     /// help-shaped commands — `Help` (whose topic names the page to
     /// print, not a command to run), `NotIncluded` (whose page is
@@ -129,15 +146,6 @@ impl LifecycleCommand {
     /// descriptor. The help-shaped arms are ungated — their variants
     /// exist in every build — so only the arms of feature-gated
     /// variants carry a gate.
-    /// Whether this command is help-shaped — the `command_topic` `None`
-    /// set (`Help`, `NotIncluded`, `RunHelp`): a page to print, never a
-    /// command to run. The end-of-parse conflict stage exempts these
-    /// exactly as it exempts `--help`/`--version` (round 4): a help page
-    /// is a no-side-effect exit, so no conflict can precede it.
-    pub(crate) fn is_help_shaped(&self) -> bool {
-        self.command_topic().is_none()
-    }
-
     fn command_topic(&self) -> Option<HelpTopic> {
         match self {
             Self::Help { .. } | Self::NotIncluded { .. } => None,
@@ -147,6 +155,8 @@ impl LifecycleCommand {
             Self::Upgrade { .. } => Some(HelpTopic::Upgrade),
             #[cfg(feature = "telemetry")]
             Self::Telemetry { .. } => Some(HelpTopic::Telemetry),
+            #[cfg(feature = "feedback")]
+            Self::Feedback { .. } => Some(HelpTopic::Feedback),
             #[cfg(feature = "pull")]
             Self::Pull { .. } => Some(HelpTopic::Pull),
             #[cfg(feature = "push")]
@@ -267,6 +277,8 @@ pub(super) fn parse_lifecycle_command(
         "upgrade" => help_or(HelpTopic::Upgrade, rest, || parse_upgrade_command(rest)),
         #[cfg(feature = "telemetry")]
         "telemetry" => help_or(HelpTopic::Telemetry, rest, || parse_telemetry_command(rest)),
+        #[cfg(feature = "feedback")]
+        "feedback" => help_or(HelpTopic::Feedback, rest, || parse_feedback_command(rest)),
         #[cfg(feature = "pull")]
         "pull" => help_or(HelpTopic::Pull, rest, || {
             parse_pull_command(rest, namespace)
@@ -369,6 +381,20 @@ fn parse_telemetry_command(rest: &[String]) -> LifecycleCommand {
         rest,
         crate::telemetry_cmd::parse_action,
         |action| LifecycleCommand::Telemetry { action },
+    )
+}
+
+/// Parse the arguments after a first-positional `feedback` verb into a
+/// [`LifecycleCommand`]. `feedback_cmd` owns the
+/// `submit|enable|disable|status` grammar (and the hidden `serve` action);
+/// the shared wrapper maps its `Err` onto the usage-error convention.
+#[cfg(feature = "feedback")]
+fn parse_feedback_command(rest: &[String]) -> LifecycleCommand {
+    parse_args_or_usage_error(
+        HelpTopic::Feedback,
+        rest,
+        crate::feedback_cmd::parse_action,
+        |action| LifecycleCommand::Feedback { action },
     )
 }
 

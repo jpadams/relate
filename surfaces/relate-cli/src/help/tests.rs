@@ -222,6 +222,7 @@ fn top_level_commands_follow_the_build() {
         (cfg!(feature = "skill"), "skill"),
         (cfg!(feature = "upgrade"), "upgrade"),
         (cfg!(feature = "telemetry"), "telemetry"),
+        (cfg!(feature = "feedback"), "feedback"),
         (cfg!(feature = "extensions"), "run"),
         // `extension` is reserved in COMMAND_WORDS in every build but
         // listed only where compiled in (ADR-0431 §3) — the row must

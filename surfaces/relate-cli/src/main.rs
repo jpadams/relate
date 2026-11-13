@@ -17,10 +17,15 @@ mod agent_vars;
 mod atomic_file;
 mod clone_cmd;
 // The config directory (ADR-0079 §3's resolution): shared by telemetry's
-// state walk and the extension registry's discovery (ADR-0429 §6) —
-// the eggs' first-run banner marker (ADR-0543) — compiled exactly when
-// one of them is.
-#[cfg(any(feature = "telemetry", feature = "extensions", feature = "eggs"))]
+// state walk, the feedback consent record (ADR-0588) and the extension
+// registry's discovery (ADR-0429 §6) — the eggs' first-run banner marker
+// (ADR-0543) — compiled exactly when one of them is.
+#[cfg(any(
+    feature = "telemetry",
+    feature = "feedback",
+    feature = "extensions",
+    feature = "eggs"
+))]
 mod config_dir;
 mod dot_info;
 mod eggs;
@@ -49,6 +54,12 @@ mod extension_init;
 // the install flow). `full` + `agent` bundles (ADR-0429 §8).
 #[cfg(feature = "extensions")]
 mod extensions;
+// Person-consented agent feedback (ADR-0588): `feedback
+// submit|enable|disable|status` plus the hidden `serve` MCP path. The crate
+// owns the report model, the submit pipeline and the MCP loop; this module
+// owns the grammar, the sender-owned context and the exit code.
+#[cfg(feature = "feedback")]
+mod feedback_cmd;
 #[cfg(feature = "fetch-params")]
 mod fetch_params;
 mod flags;
@@ -622,6 +633,12 @@ fn run_lifecycle_command(cmd: LifecycleCommand, telemetry: &mut telemetry::Telem
             let action = if opts.check { Some("check") } else { None };
             let exit_code = upgrade_cmd::run(opts);
             finish_command(telemetry, name, action, exit_code);
+        }
+        #[cfg(feature = "feedback")]
+        LifecycleCommand::Feedback { action } => {
+            let action_word = action.as_str();
+            let exit_code = feedback_cmd::run(action);
+            finish_command(telemetry, name, Some(action_word), exit_code);
         }
         #[cfg(feature = "telemetry")]
         LifecycleCommand::Telemetry { action } => {

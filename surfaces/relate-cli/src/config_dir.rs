@@ -43,23 +43,49 @@ pub(crate) const CONFIG_DIR_NAME: &str = "relate";
 /// surfaces (`telemetry_cmd`'s runs, the handle's event walks) and by
 /// the registry's real-env entry (`ActionRegistry::load` in
 /// `extensions::registry`, ADR-0429 §6).
-#[cfg(any(feature = "telemetry", feature = "extensions"))]
+#[cfg(any(feature = "telemetry", feature = "feedback", feature = "extensions"))]
 pub(crate) fn config_dir() -> Option<PathBuf> {
-    config_dir_with(&|k| std::env::var(k).ok())
+    config_dir_with(&real_env)
 }
 
 /// The user-facing hint for the unresolved-base error, stated once
 /// beside the resolution it names so the advertised bases cannot drift
 /// from the chain. Consumed by the `telemetry` command and the
 /// extension surfaces' no-base refusals, hence the gate.
-#[cfg(any(feature = "telemetry", feature = "extensions"))]
+#[cfg(any(feature = "telemetry", feature = "feedback", feature = "extensions"))]
 pub(crate) const NO_BASE_HINT: &str = "set $XDG_CONFIG_HOME, $HOME, $APPDATA, or $USERPROFILE";
 
-/// One base read's shared half: set and non-empty — the module's one
-/// spelling of that rule (see the module doc for why an empty value
-/// never names a base).
-fn non_empty(env: &dyn Fn(&str) -> Option<String>, key: &str) -> Option<String> {
+/// The unresolved-base refusal, printed and answered with exit 1: one
+/// message and one exit code for every config writer, `command` naming the
+/// verb whose write could not start (e.g. `telemetry`, `feedback enable`).
+#[cfg(any(feature = "telemetry", feature = "feedback"))]
+pub(crate) fn no_base(command: &str) -> i32 {
+    crate::print_error(format!(
+        "Error: {command}: cannot resolve a config directory ({NO_BASE_HINT})"
+    ));
+    1
+}
+
+/// The process environment, unfiltered — [`env_var`] and [`config_dir_with`]
+/// apply the set-and-non-empty rule to it.
+#[cfg(any(feature = "telemetry", feature = "feedback", feature = "extensions"))]
+fn real_env(key: &str) -> Option<String> {
+    std::env::var(key).ok()
+}
+
+/// One environment read's shared half: set and non-empty — the CLI's one
+/// spelling of that rule (see the module doc for why an empty value never
+/// names a base). `pub(crate)` because the same rule governs every real-env
+/// read in the binary, not just the base resolution.
+pub(crate) fn non_empty(env: &dyn Fn(&str) -> Option<String>, key: &str) -> Option<String> {
     env(key).filter(|v| !v.is_empty())
+}
+
+/// [`non_empty`] over the process environment: the telemetry handle's and
+/// the feedback verbs' one real-env read.
+#[cfg(any(feature = "telemetry", feature = "feedback"))]
+pub(crate) fn env_var(key: &str) -> Option<String> {
+    non_empty(&real_env, key)
 }
 
 /// The absolute-reading tiers' shared read: set, non-empty, and absolute

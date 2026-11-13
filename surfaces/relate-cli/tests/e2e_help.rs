@@ -225,6 +225,17 @@ fn test_each_compiled_in_command_has_its_own_help() {
             aliases: &[],
         },
         HelpCase {
+            word: "feedback",
+            synopsis: "Usage: relate feedback",
+            needles: &[
+                "submit|enable|disable|status",
+                "--category",
+                "--expected",
+                "--observed",
+            ],
+            aliases: &[],
+        },
+        HelpCase {
             // The verb's own page: the dynamic installed-actions section
             // (rendering the fresh-install zero state under the isolated
             // `$HOME`), the shared store block, and the discovery note.

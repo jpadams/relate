@@ -1,9 +1,10 @@
-//! The agent-mode resolution (ADR-0407's override ladder): the decided
-//! [`AgentMode`] and its one resolution, consumed by the row cap's gate
-//! and the announcement. Never mounted into the e2e harness — the
-//! detection vocabulary it reads lives in the mounted `agent_vars` (see
-//! that module's header for the split's reason) — so its tests import
-//! the canonical helpers.
+//! The resolutions over the detection vocabulary: the agent-mode ladder
+//! (ADR-0407) — the decided [`AgentMode`] and its one resolution, consumed
+//! by the row cap's gate and the announcement — and the one invoker
+//! classification. Never mounted into the e2e harness — the detection
+//! vocabulary they read lives in the mounted `agent_vars` (see that
+//! module's header for the split's reason) — so its tests import the
+//! canonical helpers.
 
 use crate::agent_vars::detected_var;
 
@@ -97,6 +98,36 @@ pub(crate) fn effective_agent_mode_from_env(
     stdout_is_tty: bool,
 ) -> Result<AgentMode, String> {
     effective_agent_mode(force, &|k| std::env::var(k).ok(), stdout_is_tty)
+}
+
+/// Who launched the process, before a surface's own vocabulary: a detected
+/// agent harness, automation (`CI`), or a person. One classification — the
+/// telemetry envelope's `invoker` dimension and the feedback report's
+/// `invoker` both map it, so a process reports the same answer to each.
+#[cfg(any(feature = "telemetry", feature = "feedback"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Launched {
+    Agent,
+    Ci,
+    Human,
+}
+
+/// Classify who launched the process: a known agent marker first (the most
+/// specific signal), then a truthy `CI`, else a person. Callers spell the
+/// answer in their own vocabulary — the telemetry envelope says `ci` where
+/// the feedback report says `script`.
+#[cfg(any(feature = "telemetry", feature = "feedback"))]
+pub(crate) fn launched_by(env: &dyn Fn(&str) -> Option<String>) -> Launched {
+    if detected_var(env).is_some() {
+        return Launched::Agent;
+    }
+    let ci = env("CI").unwrap_or_default();
+    let ci = ci.trim();
+    if !ci.is_empty() && ci != "0" && !ci.eq_ignore_ascii_case("false") {
+        Launched::Ci
+    } else {
+        Launched::Human
+    }
 }
 
 #[cfg(test)]

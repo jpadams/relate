@@ -25,6 +25,8 @@ mod agent_context;
 mod clone;
 #[cfg(feature = "extensions")]
 mod extension;
+#[cfg(feature = "feedback")]
+mod feedback;
 #[cfg(feature = "info")]
 mod info;
 mod options;
@@ -64,6 +66,8 @@ pub(crate) enum HelpTopic {
     Upgrade,
     #[cfg(feature = "telemetry")]
     Telemetry,
+    #[cfg(feature = "feedback")]
+    Feedback,
     /// `relate run <name> [flags]` (ADR-0429 §1, LABS-552): dispatch
     /// an installed extension action. The one command whose page is
     /// machine-state-dependent (the installed-actions listing).
@@ -288,6 +292,30 @@ pub(crate) fn commands() -> &'static [CommandSpec] {
             "relate telemetry status",
         )],
         help: telemetry::telemetry_help,
+    },
+    #[cfg(feature = "feedback")]
+    CommandSpec {
+        topic: HelpTopic::Feedback,
+        word: "feedback",
+        aliases: &[],
+        usage: feedback::FEEDBACK_USAGE.into(),
+        blurb: "Report CLI friction or manage feedback consent (submit, enable, disable, status)",
+        rejects_query: false,
+        post_verb_access: false,
+        flags: Cow::Borrowed(&[
+            "--category",
+            "--expected",
+            "--observed",
+            "--command",
+            "--error-code",
+            "--model",
+            "--request-id",
+        ]),
+        examples: &[(
+            "See whether feedback reporting is enabled",
+            "relate feedback status",
+        )],
+        help: feedback::feedback_help,
     },
     #[cfg(feature = "extensions")]
     CommandSpec {

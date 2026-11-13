@@ -18,6 +18,7 @@ const COMMAND_WORDS: &[&str] = &[
     "upgrade",
     "update",
     "telemetry",
+    "feedback",
     "pull",
     "push",
     "run",
@@ -103,6 +104,7 @@ fn test_command_help_pages_follow_the_build() {
             "skill" => "otherwise refuse it",
             "upgrade" => "--yes",
             "telemetry" => "on|off|status",
+            "feedback" => "submit|enable|disable|status",
             // The dynamic installed-actions section: present in the
             // zero-installed state too (ADR-0429 §1).
             "run" => "Installed actions",
@@ -365,6 +367,14 @@ fn test_upgrade_is_not_included_without_upgrade_feature() {
 #[test]
 fn test_telemetry_is_not_included_without_telemetry_feature() {
     assert_not_included(&["telemetry", "status"], "telemetry");
+}
+
+/// `feedback` rides `full` + `agent` (ADR-0588 §5): a compiled-out build
+/// keeps the word as a command and answers the ADR-0104 not-included error.
+#[cfg(not(feature = "feedback"))]
+#[test]
+fn test_feedback_is_not_included_without_feedback_feature() {
+    assert_not_included(&["feedback", "status"], "feedback");
 }
 
 /// `run` rides `extensions` at `full` + `agent` (ADR-0429 §8), never

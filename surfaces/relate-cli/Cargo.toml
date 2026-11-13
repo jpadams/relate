@@ -35,6 +35,13 @@ relate = { workspace = true }
 # the MCP wire facts (the handshake revision, the JSON-RPC vocabulary,
 # the caps) the host's extension mount states from.
 relate-wire = { workspace = true, optional = true }
+# The Mixpanel `/track` client and the telemetry consent model (ADR-0588):
+# telemetry's POST path, opt-out resolution, and state files live there, and
+# the `feedback` verbs ride the same crate.
+relate-feedback = { workspace = true, optional = true }
+# The feedback verbs stamp one absolute `now` into the consent record and the
+# submit pipeline (ADR-0588 §3); the workspace's one clock.
+chrono = { workspace = true, optional = true }
 relate-load = { workspace = true, optional = true }
 relate-auth = { workspace = true, optional = true }
 # relate-serve for the one shutdown-signal wait (ADR-0238); the same
@@ -53,7 +60,6 @@ ssh-key = { workspace = true, optional = true }
 # pure-Rust miniz_oxide backend, already a workspace dependency (ADR-0385).
 flate2 = { workspace = true, optional = true }
 rustyline = { workspace = true, optional = true }
-rand = { workspace = true, optional = true }
 # Hidden REPL dot commands and Archie (ADR-0543), linked only by `eggs`.
 relate-eggs = { workspace = true, optional = true }
 
@@ -61,8 +67,8 @@ relate-eggs = { workspace = true, optional = true }
 # `full` bundle is the default and matches the release binary.
 [features]
 default = ["full"]
-full = ["repl", "pull", "push", "skill", "upgrade", "telemetry", "fetch-params", "remote-database", "parquet", "info", "http", "mcp", "bolt", "agent-context", "extensions", "extension-install", "eggs"]
-agent = ["skill", "pull", "push", "fetch-params", "remote-database", "info", "agent-context", "extensions", "extension-install"]
+full = ["repl", "pull", "push", "skill", "upgrade", "telemetry", "feedback", "fetch-params", "remote-database", "parquet", "info", "http", "mcp", "bolt", "agent-context", "extensions", "extension-install", "eggs"]
+agent = ["skill", "pull", "push", "feedback", "fetch-params", "remote-database", "info", "agent-context", "extensions", "extension-install"]
 minimal = []
 repl = ["dep:rustyline"]
 pull = ["dep:relate-load"]
@@ -75,7 +81,14 @@ skill = []
 # stated once here, so the two features cannot drift apart.
 release-verify = ["dep:ureq", "dep:sha2", "dep:ssh-key"]
 upgrade = ["release-verify", "staging"]
-telemetry = ["dep:ureq", "dep:rand", "staging"]
+telemetry = ["dep:relate-feedback", "staging"]
+# Person-consented agent feedback (ADR-0588 §3): `relate feedback
+# submit|enable|disable|status` (and the hidden `serve` path). `full` +
+# `agent` — agents are the audience, never `minimal`. The verbs need the
+# crate's feedback domain and its one clock, and the report context carries
+# the `agent-context` exit-code table's code names (the `--error-code`
+# allow-list is that vocabulary, not a second spelling).
+feedback = ["dep:relate-feedback", "dep:chrono", "agent-context"]
 # The staged-file marker (LABS-872): the `atomic_file` kit — the shared
 # non-predictable staging-name recipe, the exclusive create step, and the
 # atomic writers — compiled exactly when a feature that stages a file is on
@@ -155,6 +168,9 @@ libc = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }
+# The feedback serve e2e writes an `authorized-until` deadline the consent
+# record reads back; the crate's clock is already the workspace's.
+chrono = { workspace = true }
 relate-test-support = { workspace = true, features = ["durability", "loopback"] }
 tempfile = { workspace = true }
 # The first-party importer children (ADR-0431 §11), as dev dependencies so

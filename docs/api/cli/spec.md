@@ -20,6 +20,7 @@ relate skill install|remove|list|check [--agent NAME] [--force]
 relate upgrade [--yes] [--check]
 relate update  [--yes] [--check]  (alias of upgrade)
 relate telemetry on|off|status
+relate feedback submit|enable|disable|status [FLAGS]
 relate pull [--from FILE] --query Q [--param N=V] [--allow-plaintext] --database PATH  # Q: statement, `;`-list, file, or `-`
 relate push --to CREDS --database PATH [--query Q | --labels L1,L2 | --types T1,T2] [--batch-size N] [--nodes-update POLICY] [--rels-update POLICY] [--updated-at NAME[,NAME]] [--rel-mode MODE] [--merge-key LABEL:PROP[,PROP]] [--rel-key TYPE:PROP[,PROP]] [--unkeyed-labels ACTION] [--dry-run] [--json] [--allow-plaintext]
 relate run <name> [flags]
@@ -241,7 +242,8 @@ require a compiled-in capability: `--snapshot-format parquet` needs the
 | `push` | `relate push` (ADR-0401): pull's mirror — push a scoped subgraph of `--database` into a Neo4j/Aura remote over the same Query API v2 client | `relate-load` | `push` is a not-included command |
 | `skill` | `relate skill install\|remove\|list\|check` and the embedded skill bundle | none | `skill` is a not-included command |
 | `upgrade` | `relate upgrade` and its `update` alias | `ureq`, `sha2`, `ssh-key` | `upgrade` / `update` are not-included commands |
-| `telemetry` | `relate telemetry on\|off\|status` and all usage-metrics emission | `ureq`, `rand` | `telemetry` is a not-included command; no events are recorded or sent, no first-run notice, no config/state files, no network |
+| `telemetry` | `relate telemetry on\|off\|status` and all usage-metrics emission | `relate-feedback` | `telemetry` is a not-included command; no events are recorded or sent, no first-run notice, no config/state files, no network |
+| `feedback` | `relate feedback submit\|enable\|disable\|status` (ADR-0588) | `relate-feedback`, `chrono` | `feedback` is a not-included command; no consent record, no receipts, no report is sent |
 | `fetch-params` | the `--fetch-params NAME=SOURCE` fetch (http(s) URL or file, parse JSON, bind as the parameter `NAME`; ADR-0267) | `ureq` | The flag still parses in every build (ADR-0270); a `--fetch-params` value fails closed at resolution (exit 1) with `--fetch-params is not compiled into this build (enable the "fetch-params" feature)`; `--help` omits the flag |
 | `remote-database` | the remote `--load SOURCE` fetch (LABS-872): an `http(s)` URL naming a `.rl` bundle is downloaded to a scratch copy and loaded into `--database` (ADR-0500) | `ureq` | A URL source still parses in every build (ADR-0104) and every policy refusal still applies (safe mode, `--read-only=live`, unsupported URL shapes); the fetch fails closed (exit 1) with `<url>: the remote bundle fetch is not compiled into this build (enable the "remote-database" feature)`, and `--help` omits the URL lines |
 | `parquet` | Parquet snapshot codec (`relate/parquet`, ADR-0105) | `arrow`, `parquet` (through `relate`) | New directories and `.rl` bundles default to JSON; `--snapshot-format parquet`, `RELATE_SNAPSHOT_FORMAT=parquet`, or opening an existing Parquet store fails at open (exit 1) with `parquet snapshot codec is not compiled into this build (enable the "parquet" feature)`; `--help` lists `(json, markdown)` only |
@@ -257,8 +259,8 @@ require a compiled-in capability: `--snapshot-format parquet` needs the
 
 | Bundle | Features | Intended use |
 | --- | --- | --- |
-| `full` (**default**) | `repl`, `pull`, `push`, `skill`, `upgrade`, `telemetry`, `fetch-params`, `remote-database`, `parquet`, `extensions`, `extension-install`, `info`, `http`, `mcp`, `bolt`, `agent-context`, `eggs` | Release binary (GitHub releases, install script, Homebrew); developer workstations |
-| `agent` | `skill`, `pull`, `push`, `fetch-params`, `remote-database`, `info`, `agent-context`, `extensions`, `extension-install` | Sandbox/Docker images for AI agents: one-shot/stdin queries, JSON output, remote/file JSON sources via `--fetch-params`, a database loaded from a URL via `--load` (ADR-0500), the `run` extension mount, no self-update, no telemetry; JSON snapshots only; the extension channel and install verbs ride along (ADR-0431 §3: `full` and `agent` carry both) |
+| `full` (**default**) | `repl`, `pull`, `push`, `skill`, `upgrade`, `telemetry`, `feedback`, `fetch-params`, `remote-database`, `parquet`, `extensions`, `extension-install`, `info`, `http`, `mcp`, `bolt`, `agent-context`, `eggs` | Release binary (GitHub releases, install script, Homebrew); developer workstations |
+| `agent` | `skill`, `pull`, `push`, `feedback`, `fetch-params`, `remote-database`, `info`, `agent-context`, `extensions`, `extension-install` | Sandbox/Docker images for AI agents: one-shot/stdin queries, JSON output, remote/file JSON sources via `--fetch-params`, a database loaded from a URL via `--load` (ADR-0500), the `run` extension mount, person-consented feedback reports (`feedback`, ADR-0588), no self-update, no telemetry; JSON snapshots only; the extension channel and install verbs ride along (ADR-0431 §3: `full` and `agent` carry both) |
 | `minimal` | *(none)* | Smallest query-only shell: one-shot, stdin, and plain interactive input; JSON snapshots only |
 | `serve` | `serve` | The bare compile gate (ADR-0232): `serve` with every surface flag an unknown flag — a usage error at run, the smallest serve-shaped build; the empty-`SURFACE_FLAGS` shape is a CI-tested lane (LABS-628) |
 
@@ -312,7 +314,7 @@ the load surface, so the explicit `parquet` feature adds nothing. Only
 that weight in the other bundles and the FFI cdylib).
 
 **Compiled-out commands.** Every command word (`query`, `skill`, `upgrade`,
-`update`, `telemetry`, `pull`, `push`, `run`, `info`, `serve`,
+`update`, `telemetry`, `feedback`, `pull`, `push`, `run`, `info`, `serve`,
 `agent-context`, `extension`) is recognized
 as a command in
 every build, under the same first-positional rule as
@@ -359,6 +361,10 @@ documented under [`query` command](#query-command); it is listed in
 | `upgrade [--yes] [--check]` | `upgrade` | | Self-update to the latest release listed by the website's `releases.json` (ADR-0250); the download probes the direct release route and falls back to the authenticated GitHub API asset route on a 404 with `GITHUB_TOKEN` set (ADR-0358) |
 | `update [--yes] [--check]` | `upgrade` | | Alias of `upgrade` |
 | `telemetry on\|off\|status` | `telemetry` | enabled | Manage anonymous usage metrics (ADR-0079) |
+| `feedback submit --category NAME --expected TEXT --observed TEXT [--command PATH] [--error-code CODE] [--model MODEL] [--request-id UUID]` | `feedback` | | Send one person-consented feedback report (ADR-0588) |
+| `feedback enable` | `feedback` | | Authorize feedback reports for 30 days, to the resolved destination |
+| `feedback disable` | `feedback` | | Revoke the feedback authorization |
+| `feedback status` | `feedback` | | Print whether feedback reporting is enabled |
 | `pull [--from FILE] --query Q [--param N=V] [--allow-plaintext] --database PATH` | `pull` | | Pull a Neo4j/Aura subgraph over HTTP Query API v2 into `--database` (ADR-0080, ADR-0200). `Q` is a Cypher statement, a `;`-separated statement list, a file path, or `-` (stdin); all statements run streamed in one process with one checkpoint (ADR-0158) |
 | `push --to CREDS --database PATH [--query Q \| --labels L1,L2 \| --types T1,T2] [--batch-size N] [--nodes-update POLICY] [--rels-update POLICY] [--updated-at NAME[,NAME]] [--rel-mode MODE] [--merge-key LABEL:PROP[,PROP]] [--rel-key TYPE:PROP[,PROP]] [--unkeyed-labels ACTION] [--dry-run] [--json] [--allow-plaintext]` | `push` | `5000`, `add`, `add`, none, `keyed`, none, none, `skip` | Push a scoped subgraph of `--database` into a Neo4j/Aura remote over HTTP Query API v2 (ADR-0401, ADR-0200) — `pull`'s mirror, over the same client and the same credentials file. Merge keys come from the store's uniqueness/node-key constraints; see the flag table below |
 | `run <name> [flags]` | `extensions` | `:memory:` | Dispatch an installed command-kind extension (ADR-0429, LABS-552): the host parses the action's argv from its manifest flag table, drives the child's wire batches (ADR-0430) into a host-owned store through the `run_import` lifecycle, prints the child's summary, and REPL-handoffs on a TTY `:memory:` run. See [the `run` command](#run-command) |
@@ -421,6 +427,31 @@ argument exits 2 with the `agent-context` usage line and a `--help` hint.
 ```bash
 relate agent-context
 relate agent-context query
+```
+
+`feedback serve` (feature `feedback`) is **hidden**: it has no help page and
+is not listed in `relate --help`. An MCP client launches it and speaks
+newline-delimited JSON-RPC 2.0 on the process's own stdin/stdout until it
+closes stdin (ADR-0588 §4). It exposes exactly one tool, `feedback_submit`,
+whose arguments are `category` (one of `unclear_error`,
+`unexpected_behavior`, `missing_capability`, `other_friction`),
+`expected` and `observed` (at most 255 bytes each) and an optional
+`command`; no other properties are accepted. The input schema carries no
+length bound: JSON Schema counts characters, the validator counts bytes.
+Each call runs the same submit
+pipeline the shell path runs — the `DO_NOT_TRACK`/telemetry opt-out layers
+first, then the recorded feedback authorization (an absent or expired one
+skips with `not_enabled` or `authorization_expired`, no prompt), then local
+validation and redaction, then at most one POST — and returns the outcome
+JSON document as one text content block, with `isError` set unless the
+outcome is `sent` or `skipped`. Reports go only to the Mixpanel hosts over
+`https`, or to a loopback endpoint over `http`; the destination is the one
+`feedback enable` recorded, so a `RELATE_FEEDBACK_ENDPOINT` set here cannot
+divert it, and `RELATE_FEEDBACK_TOKEN` overrides the compiled-in project
+token ([Environment](#environment)).
+
+```bash
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | relate feedback serve
 ```
 
 `skill remove` is stricter: with no replacement bundle to fall back on, it
@@ -674,6 +705,76 @@ hand-rolled parser's usage-error convention
 ```bash
 relate telemetry status
 ```
+
+### Feedback reports
+
+`relate feedback submit|enable|disable|status` sends a person-consented
+report about the CLI to the maintainers (ADR-0588). A report is free text;
+only the validated, redacted payload leaves the machine, and a locally
+rejected report never records its text. URLs, emails, host names, IP
+addresses, file paths, data filenames, secrets, Cypher and pasted output are
+rejected whole; the one exception is a documentation link to this project's
+own docs or repository, by path (`relatedb.ai/<path>`,
+`github.com/relatedb/relate/<path>`), or to the Neo4j Cypher manual
+(`neo4j.com/docs/`). A bare host URL with no path (`relatedb.ai`,
+`github.com/relatedb/relate`) is refused. The verbs ride the `feedback`
+feature (`full` and `agent`; the `minimal` build has none of them).
+
+`feedback enable` records the consent — the destination a report will use
+(a later `RELATE_FEEDBACK_ENDPOINT` cannot divert it) and an authorization
+running for 30 days — in the `feedback` object
+of `<config>/relate/config.json` and prints
+`feedback enabled until <RFC3339> (<config path>)`. A `RELATE_FEEDBACK_ENDPOINT`
+the endpoint policy refuses, or a run that resolves no destination at all
+(the compiled-in token is empty and no override is set), is reported on
+stderr and records nothing (exit 1): an authorization with no destination
+would only turn every later submit into `not_configured`. `feedback disable` clears
+the record and prints `feedback disabled (<config path>)`; later submits send
+nothing. `feedback status` prints `enabled (until <RFC3339>)` for a live
+authorization, otherwise `disabled (<reason>)`, where the reason is the
+deciding telemetry layer (`DO_NOT_TRACK`, `RELATE_TELEMETRY`, `config file` —
+any of them suppresses every send), `not enabled`, or
+`authorization expired`; an `enable` that a refused override stopped leaves
+no record, so `status` reports `disabled (not enabled)`.
+
+`feedback submit` sends one report and prints one compact JSON outcome
+document on stdout: `outcome` (`sent`, `skipped`, `rejected`, `failed`,
+`unknown`), `reason`, `request_id`, `report_id`, `elapsed_ms`, `violations`,
+`dropped_fields`, `payload` (only when sent), and `receipt_path`. Its flags:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--category NAME` | required | `unclear_error`, `unexpected_behavior`, `missing_capability`, or `other_friction` |
+| `--expected TEXT` | required | What you expected; non-blank, at most 255 bytes (a longer value is rejected, never truncated) |
+| `--observed TEXT` | required | What actually happened; the same rules as `--expected` |
+| `--command PATH` | unset | The CLI command path; kept only when it names a visible command, else dropped and named in `dropped_fields` |
+| `--error-code CODE` | unset | The CLI error code; kept only when it names a nonzero row of the [query-run exit-code table](#query-run-errors) (`fatal_error`, `usage_error`, `conflict`, `validation_error`, `timeout`), else dropped and named in `dropped_fields` |
+| `--model MODEL` | unset | The agent model label: lowercase, at most 40 characters, a provider prefix or an `o<digit>` family name; else dropped and named in `dropped_fields` |
+| `--request-id UUID` | generated | A lowercase UUIDv4 request id; an invalid value is a violation and a fresh id is used. The same id can be resent after `failed` or `unknown` |
+
+The report's sender-owned fields — `schema_version`, `surface`, `cli_version`,
+`os`, `os_arch`, `invoker` (`agent`, `script`, or `human`) and the agent
+harness label — are never taken from the flags. Exit codes: `submit` exits
+**0** for `sent` and `skipped` (a normal local decision: telemetry opted out
+or feedback not enabled), **1** for `rejected`, `failed`, and `unknown`
+(including `not_configured`, when no destination is configured: no
+`RELATE_FEEDBACK_TOKEN` and no override), and **2** for a usage error (a bare
+verb, an unknown action, a missing required flag, or extra arguments).
+`enable`, `disable` and `status` exit **0** on success and **1** when no
+config directory resolves, the write fails, or `enable` refuses a
+`RELATE_FEEDBACK_ENDPOINT` override. Every rejection and send attempt
+appends one line to `feedback-receipts.jsonl` in the config directory.
+
+```bash
+relate feedback enable
+relate feedback submit --category unclear_error \
+  --expected "the info command to print the version" \
+  --observed "it printed help instead" --command info
+relate feedback status
+relate feedback disable
+```
+
+See the [executable feedback example](examples/feedback.md).
 
 `pull` runs a shape query against Neo4j or Aura over HTTP Query API v2 and
 streams the returned nodes and relationships into `DATABASE` in batched
@@ -1191,7 +1292,7 @@ asserts the shared credential behavior (401 without, success with) on both,
 and SIGINTs the server to check the clean shutdown.
 
 A database directory literally named `clone`, `skill`, `upgrade`,
-`update`, `telemetry`, `pull`, `info`, or `serve` stays reachable
+`update`, `telemetry`, `feedback`, `pull`, `info`, or `serve` stays reachable
 via `--database` (`relate --database skill`); after `--` the word is a
 statement, not a path.
 
@@ -1714,7 +1815,7 @@ usual error and exit code and no progress line or error object.
 A single statement, a run that succeeds, and an interactive session print
 nothing extra. The report changes nothing about execution: there is still no
 `--atomic` or `--continue-on-error`. Usage errors, the lifecycle commands
-(`clone`, `pull`, `info`, `skill`, `upgrade`, `telemetry`, `run`,
+(`clone`, `pull`, `info`, `skill`, `upgrade`, `telemetry`, `feedback`, `run`,
 `extension`) and the interactive shell keep their existing output and 0/1/2
 codes.
 
@@ -1848,7 +1949,7 @@ Its layout is:
   `       relate <COMMAND> [ARGS]`;
 - a `Commands:` section indexing every command compiled into this binary, one
   line each — `query`, `clone`, `info`, `pull`, `push`, `skill`, `upgrade`
-  (its line names the `update` alias), `telemetry`, `run` (whose own page
+  (its line names the `update` alias), `telemetry`, `feedback`, `run` (whose own page
   carries the dynamic installed-actions listing; the top-level page stays
   byte-stable across installs, ADR-0429 §1), `serve`, `agent-context`, and
   `extension`;
@@ -1955,6 +2056,8 @@ See the [executable help example](examples/help.md).
 | `RELATE_AUTH` | `serve` | Basic-auth credential (`user:password`, or `none`) for every served network surface; `--auth` overrides it, and with neither set a token is generated and persisted (ADR-0232 §1). A present-but-malformed value is a loud startup error |
 | `RELATE_MIXPANEL_ENDPOINT` | usage metrics | Override the Mixpanel `/track` POST URL (dev/test); `https://` required for any host, `http://` allowed only for loopback hosts (`localhost`, `127.0.0.1`, `::1`); a rejected value disables telemetry for the run with one stderr warning (ADR-0263) |
 | `RELATE_MIXPANEL_TOKEN` | usage metrics | Override the compiled-in Mixpanel project token (dev/test) |
+| `RELATE_FEEDBACK_ENDPOINT` | agent feedback | Override the feedback `/track` POST URL (dev/test), resolved when `feedback enable` records the destination: `https://` for the Mixpanel hosts (`api.mixpanel.com`, `api-eu.mixpanel.com`, `api-in.mixpanel.com`) only, `http://` only for loopback hosts; any other value is refused and records no destination, so a report ends `failed`/`not_configured` instead of being sent elsewhere. A later change to the variable cannot divert a recorded consent (ADR-0588 §3) |
+| `RELATE_FEEDBACK_TOKEN` | agent feedback | Override the compiled-in feedback Mixpanel project token (dev/test); the endpoint is resolved at `feedback enable`, while the token itself is read at send time. An empty token means no default destination; reports then go only to a loopback `RELATE_FEEDBACK_ENDPOINT` (ADR-0588 §3) |
 | `RELATE_BULK_BATCH_THRESHOLD` | query engine | Estimated touched-entity count at which an eligible global bulk write (`MATCH (n) DETACH DELETE n`, cross-product `CREATE`, global `SET`/`REMOVE`) switches to batched commits; default `10000` (ADR-0209). Unset defaults; a set value that does not parse as a positive integer fails `Database::open` with a semantic error (same contract as `RELATE_LOGICAL_GRAPH_SIZE_LIMIT`); read once at open |
 | `RELATE_BULK_BATCH_BUDGET` | query engine | Estimated touched-entity budget per batch commit of an eligible global bulk write; default `25000` (ADR-0209). Unset defaults; a set value that does not parse as a positive integer fails `Database::open` with a semantic error (same contract as `RELATE_LOGICAL_GRAPH_SIZE_LIMIT`); read once at open |
 | `RELATE_PREVIEW` | query engine | Global opt-in for preview Cypher features (ADR-0371): a comma-separated list of kebab-case feature names, whitespace tolerated, read once at open. Unset or empty enables nothing. An unknown name fails `Database::open` (exit 1) with `Error: …: invalid RELATE_PREVIEW value: unknown preview feature '<name>' (known features: …)` naming the known names — fail-closed, never silently ignored. Fourteen features are gated live: `hybrid-search` (CIP-278 hybrid search `COMBINE`, ADR-0379), `local-callables` (`DEFINE PROCEDURE`/`DEFINE FUNCTION`, CIP-231, ADR-0382), `ontology` (the `db.ontology.*` procedure family, ADR-0378), the CIP graph-type trio — `graph-type-opt-props` (CIP-283 optional properties `prop :: ANY`), `graph-type-default-values` (`DEFAULT ON COMMIT <value expression>`, CIP-262) and `graph-type-implied-labels` (CIP-266 implied labels, inheritance) — `obfuscated-literals` (the Neo4j `******` dummy literal, gated at the lexer so the disabled form is the parser's own syntax error — ADR-0454), `mixed-label-syntax` (Neo4j's mixed-label-syntax allowance: colon-conjunction, GQL label symbols and `IS` may mix across one clause's label expressions — ADR-0456), `float16-coordinate-types` (CIP-280 FLOAT16/BFLOAT16 vector coordinate types in `VECTOR<…>` type expressions and the `vector()` constructor — ADR-0464), `chronological-comparisons` (Cypher 25's four chronological operators — `IS [NOT] BEFORE`, `AFTER`, `SAME INSTANT`, `SAME REPRESENTATION` — ADR-0467) and `complex-search-patterns` (widening a SEARCH MATCH statement's pattern shape — ADR-0467), `coll-zip` (CIP-274's `coll.zip`, ADR-0497), `coll-has` (CIP-286's `coll.hasAnyOf`/`coll.hasAllOf`/`coll.hasNoneOf`, ADR-0497), `gql-stddev-aliases` (CIP-245's `stddev_samp`/`stddev_pop` spellings, ADR-0497). The name gates are one of the four gate-location exceptions ADR-0497 records: they gate *name admission*, not syntax, so a gated name invoked while disabled fails with the registry's ordinary unknown-function rejection (`UnknownFunction: <name>`, 42N48) exactly like any unknown name — never the authored `preview feature …` error, which would advertise a name the catalogue must not list. While a name gate is off its names are also absent from `SHOW FUNCTIONS`. With `ontology` off, every `db.ontology.*` call fails with the authored `semantic error: SemanticError: preview feature 'ontology' is not enabled: set RELATE_PREVIEW=ontology`, and `SHOW PROCEDURES` omits the four rows; with it on, the four rows are listed with unchanged signatures and modes and every call runs. Enabling it on a served store — `relate serve` with Bolt, HTTP or MCP — exposes the four procedures, including the store-level writers `db.ontology.set` and `db.ontology.drop`, to every connected client: the gate is the server process's environment, read once at open, not a per-caller check. A gated feature invoked while disabled fails with `Error: …: preview feature '<name>' is not enabled: set RELATE_PREVIEW=<name>` |

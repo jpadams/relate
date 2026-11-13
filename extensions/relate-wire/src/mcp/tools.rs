@@ -2,14 +2,17 @@
 //! every tool name, its client-facing title and description, its input
 //! schema, its capability annotations, and the mounts that serve it.
 //!
-//! Both MCP surfaces derive from this table and add nothing of their own but
+//! Every MCP surface derives from this table and adds nothing of its own but
 //! policy:
 //!
 //! - the extension mount (`surfaces/relate-cli/src/extensions/mcp.rs`)
-//!   serves its five rows as they are, and
+//!   serves its five rows as they are,
 //! - the product MCP server (`surfaces/relate-mcp/src/tools.rs`) serves
 //!   the three agent-facing rows with its namespace prefix applied and its
-//!   writing tool dropped when it runs read-only.
+//!   writing tool dropped when it runs read-only, and
+//! - the feedback server (`surfaces/relate-feedback/src/serve.rs`) declares
+//!   its one row from its own vocabulary and renders it here, so no surface
+//!   spells an annotation or a listing envelope of its own.
 //!
 //! No second table, no per-mount description, no parallel refusal string:
 //! a rename is an edit here, and every surface's `tools/list` moves with it.
@@ -57,6 +60,9 @@ pub enum Mount {
     /// The product MCP server (`relate serve --mcp`): the three tools an
     /// agent calls.
     Product,
+    /// The feedback server (`relate feedback serve`): the one agent-feedback
+    /// tool, declared by that surface from its own vocabulary.
+    Feedback,
 }
 
 /// The mounts one table row serves: one, or both.
@@ -68,6 +74,8 @@ pub enum Served {
     Product,
     /// Both mounts, under one name and one schema.
     Both,
+    /// Only the feedback server, whose tool is declared by its own surface.
+    Feedback,
 }
 
 impl Served {
@@ -77,6 +85,7 @@ impl Served {
             Self::Both => true,
             Self::Extension => mount == Mount::Extension,
             Self::Product => mount == Mount::Product,
+            Self::Feedback => mount == Mount::Feedback,
         }
     }
 }

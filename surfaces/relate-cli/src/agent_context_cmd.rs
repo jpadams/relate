@@ -35,6 +35,19 @@ const EXIT_CODES: &[(i32, &str, &str)] = &[
     (7, "timeout", "a statement exceeded --timeout"),
 ];
 
+/// The nonzero table rows' `code` names: the vocabulary a report's
+/// `--error-code` is allow-listed against, read from the one table so the
+/// two cannot spell different sets. Only the `feedback` feature's command
+/// reads it, so an `agent-context`-only build does not compile it unused.
+#[cfg(feature = "feedback")]
+pub(crate) fn error_code_names() -> Vec<String> {
+    EXIT_CODES
+        .iter()
+        .filter(|(exit, ..)| *exit != 0)
+        .map(|(_, code, _)| code.to_string())
+        .collect()
+}
+
 /// Parse the argument tail after the `agent-context` verb: nothing (the
 /// index), or one command word. The word resolves through
 /// [`help::find_command`], the one place the `update` → `upgrade` alias
