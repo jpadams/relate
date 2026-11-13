@@ -1,0 +1,6 @@
+name = "relate-ci"
+include = []
+
+[entrypoint]
+  kind = "dang"
+  source = "./internal/dagger/entrypoint"

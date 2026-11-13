@@ -1,0 +1,12 @@
+[modules.go-sdk]
+source = "dagger.io/sdk/go"
+
+[sdks.go]
+module = "go-sdk"
+
+[sdks.go.scopes.".dagger"]
+is-module = true
+name = "relate-ci"
+
+[modules.relate-ci]
+source = ".dagger"
