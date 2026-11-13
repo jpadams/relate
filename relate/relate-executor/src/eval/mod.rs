@@ -32,6 +32,7 @@ mod labels;
 mod numeric;
 mod predicates;
 mod quantifier;
+mod regex_cache;
 mod string;
 mod temporal;
 #[cfg(test)]

@@ -4,7 +4,9 @@ name: tmp-labs-1478-perf
 on:
   push:
     branches: [perf/labs-1478-label-memo]
-    paths: [.github/workflows/tmp-labs-1478-perf.yml]
+    paths:
+      - .github/workflows/tmp-labs-1478-perf.yml
+      - relate/relate-executor/**
   workflow_dispatch:
     inputs:
       rounds:

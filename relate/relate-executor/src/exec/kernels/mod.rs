@@ -61,6 +61,7 @@ pub(crate) mod node_map;
 // stage-local table and the `Memoized` predicate wrapper the chain kernel
 // puts in front of its admission.
 pub(crate) mod memo;
+pub(crate) mod value_hash;
 
 // The re-arrival rule (ADR-0478 §3): the frontier BFS's pool-exactness
 // seam — the default pool's trail-existence proofs at every accepting
@@ -139,9 +140,9 @@ mod chain;
 mod chain_count;
 #[cfg(test)]
 mod chain_count_tests;
+mod hub_star;
 #[cfg(test)]
 mod memo_differential_tests;
-mod hub_star;
 
 // The chain count fold's entry, lifted the way the aggregate folds lift
 // theirs (`agg_fold`): the module stays private to the kernels, the one
