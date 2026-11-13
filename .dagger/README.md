@@ -38,7 +38,7 @@ Settings (constructor arguments):
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `jobs` | `0` (one per CPU) | Caps `CARGO_BUILD_JOBS`. Lower it when the local engine is short on memory. A linker killed by signal 9 is an out-of-memory kill. Set it per user so the repo default stays uncapped: `dagger settings --global relate-ci jobs 4`. |
+| `jobs` | `0` (one per CPU) | Caps `CARGO_BUILD_JOBS`. Lower it when the local engine is short on memory. A linker killed by signal 9 is an out-of-memory kill. Set it per user so the repo default stays uncapped: `dagger settings --global relate-ci jobs 4`. A `--global` setting is keyed by the workspace's git remote, so it applies to that remote only (a fork, or a `-W <git ref>` run of another remote, needs its own). |
 
 ## Caching
 
@@ -49,6 +49,16 @@ Settings (constructor arguments):
 - **Build trees.** When the source does change, each gate reuses its own cargo
   target directory (cache volume `relate-target-<gate>`) and the shared registry
   volumes. Cargo then rebuilds only the crates the change affects.
+- **Freshness.** Cargo compares mtimes, and source loaded from a git ref (as
+  Cloud Checks loads it) has one fixed 1980 mtime, so a warm build tree would
+  look newer than changed sources. Before cargo runs, each gate restamps the
+  source from a ledger in its target volume. A file whose content hash is
+  unchanged keeps its earlier stamp. A new or changed file (a revert included) is
+  stamped now. The volume is mounted `LOCKED`, so two runs of one gate take
+  turns.
+- **Disk.** Each gate's build tree is several GB, and there are eleven of them.
+  On a laptop engine, prune with `docker volume` / Docker Desktop's cleanup, or
+  run on Cloud with `--engine cloud`.
 
 ## Files
 

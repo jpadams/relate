@@ -137,7 +137,10 @@ func (m *RelateCi) cargo(ctx context.Context, gate string, invocations ...string
 	ctr := m.toolchain().
 		WithMountedCache("/usr/local/cargo/registry", core.NewCacheVolume("relate-cargo-registry")).
 		WithMountedCache("/usr/local/cargo/git", core.NewCacheVolume("relate-cargo-git")).
-		WithMountedCache("/target", core.NewCacheVolume("relate-target-"+gate)).
+		// LOCKED: two runs of one gate (two commits at once on Cloud)
+		// take turns on its build tree and mtime ledger.
+		WithMountedCache("/target", core.NewCacheVolume("relate-target-"+gate),
+			dagger.ContainerWithMountedCacheOpts{Sharing: dagger.CacheSharingModeLocked}).
 		WithEnvVariable("CARGO_TARGET_DIR", "/target").
 		// ci.yml's workflow env: one-shot builds, trimmed debug info, and
 		// the CLI's usage metrics opted out (ADR-0079).
@@ -147,13 +150,46 @@ func (m *RelateCi) cargo(ctx context.Context, gate string, invocations ...string
 	if m.Jobs > 0 {
 		ctr = ctr.WithEnvVariable("CARGO_BUILD_JOBS", strconv.Itoa(m.Jobs))
 	}
-	ctr = ctr.WithDirectory("/src", m.Source).WithWorkdir("/src")
+	ctr = ctr.WithDirectory("/src", m.Source).
+		WithWorkdir("/src").
+		WithExec([]string{"perl", "-e", stampMtimes})
 	for _, args := range invocations {
 		ctr = ctr.WithExec(append([]string{"cargo"}, strings.Fields(args)...))
 	}
 	_, err := ctr.Sync(ctx)
 	return err
 }
+
+// Cargo decides freshness by mtime alone: a source newer than its build
+// output is rebuilt. Source loaded from a git ref carries one fixed mtime
+// (1980), older than every artifact in a warm target volume, so a changed
+// file would look fresh and the gate would pass on stale artifacts. This
+// gives each file the mtime a developer's checkout would: a ledger in the
+// gate's target volume records each path's content hash and stamp; an
+// unchanged file keeps its stamp, a new or changed one (a revert included)
+// is stamped now. The ledger is written before cargo runs, as a working
+// tree's mtimes change before a build, so a failed build leaves the same
+// state a failed local build does.
+const stampMtimes = `
+use strict; use warnings; use Digest::SHA; use File::Find;
+my $ledger = "/target/.source-mtimes";
+my %seen;
+if (open my $in, "<", $ledger) {
+    while (<$in>) { chomp; my ($hash, $stamp, $path) = split / /, $_, 3; $seen{$path} = [$hash, $stamp]; }
+}
+my $now = time;
+open my $out, ">", "$ledger.tmp" or die "ledger: $!";
+find({ no_chdir => 1, wanted => sub {
+    return unless -f $_ && !-l $_;
+    my $hash = Digest::SHA->new(256)->addfile($_)->hexdigest;
+    my $prev = $seen{$_};
+    my $stamp = ($prev && $prev->[0] eq $hash) ? $prev->[1] : $now;
+    utime $stamp, $stamp, $_ or die "utime $_: $!";
+    print $out "$hash $stamp $_\n";
+}}, ".");
+close $out or die "ledger: $!";
+rename "$ledger.tmp", $ledger or die "ledger: $!";
+`
 
 // The Rust image plus the components and test runner the gates use. It
 // reads no source, so every gate shares one cached copy.
